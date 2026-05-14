@@ -1,27 +1,77 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 
 export default function LoginPage() {
+  const [mode, setMode] = useState('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('mode') === 'signup') {
+      setMode('signup');
+    }
+  }, []);
 
   async function handleLogin() {
     if (!email.trim() || !password.trim()) {
       setError('Please enter your email and password.');
       return;
     }
+    setLoading(true);
+    setError('');
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) setError(error.message);
+    setLoading(false);
+  }
+
+  async function handleSignUp() {
+    if (!name.trim() || !email.trim() || !password.trim()) {
+      setError('Please fill out all fields.');
+      return;
+    }
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters.');
+      return;
+    }
 
     setLoading(true);
     setError('');
 
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error: signUpError } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: { full_name: name }
+      }
+    });
 
-    if (error) {
-      setError(error.message);
+    if (signUpError) {
+      setError(signUpError.message);
+      setLoading(false);
+      return;
     }
 
+    if (data.user) {
+      const trialStart = new Date();
+      const trialEnd = new Date();
+      trialEnd.setDate(trialEnd.getDate() + 14);
+
+      await supabase.from('profiles').insert({
+        id: data.user.id,
+        full_name: name,
+        email: email,
+        trial_start: trialStart.toISOString(),
+        trial_end: trialEnd.toISOString(),
+        is_subscribed: false,
+      });
+    }
+
+    setSuccess('Account created! Check your email to confirm, then sign in.');
     setLoading(false);
   }
 
@@ -34,10 +84,8 @@ export default function LoginPage() {
       alignItems: 'center',
       padding: 24,
     }}>
-      <div style={{
-        width: '100%',
-        maxWidth: 420,
-      }}>
+      <div style={{ width: '100%', maxWidth: 420 }}>
+
         {/* Logo */}
         <div style={{ textAlign: 'center', marginBottom: 48 }}>
           <div style={{
@@ -55,6 +103,38 @@ export default function LoginPage() {
           }}>PRO DASHBOARD</div>
         </div>
 
+        {/* Toggle Tabs */}
+        <div style={{
+          display: 'flex',
+          backgroundColor: '#111827',
+          borderRadius: 10,
+          padding: 4,
+          marginBottom: 16,
+          border: '1px solid #1F2937',
+        }}>
+          {['login', 'signup'].map((m) => (
+            <button
+              key={m}
+              onClick={() => { setMode(m); setError(''); setSuccess(''); }}
+              style={{
+                flex: 1,
+                padding: '10px',
+                border: 'none',
+                borderRadius: 8,
+                cursor: 'pointer',
+                fontWeight: 700,
+                fontSize: 13,
+                letterSpacing: 1,
+                backgroundColor: mode === m ? '#F97316' : 'transparent',
+                color: mode === m ? '#0A0F1E' : '#6B7280',
+                transition: 'all 0.2s',
+              }}
+            >
+              {m === 'login' ? 'SIGN IN' : 'FREE TRIAL'}
+            </button>
+          ))}
+        </div>
+
         {/* Card */}
         <div style={{
           backgroundColor: '#111827',
@@ -66,15 +146,20 @@ export default function LoginPage() {
             color: '#FFFFFF',
             fontSize: 22,
             fontWeight: 800,
-            marginBottom: 8,
             margin: 0,
-          }}>Sign In</h2>
+          }}>
+            {mode === 'login' ? 'Sign In' : 'Start Free Trial'}
+          </h2>
           <p style={{
             color: '#6B7280',
             fontSize: 14,
             marginBottom: 24,
             marginTop: 6,
-          }}>Access your construction dashboard</p>
+          }}>
+            {mode === 'login'
+              ? 'Access your construction dashboard'
+              : '14 days free — no credit card required'}
+          </p>
 
           {error && (
             <div style={{
@@ -85,8 +170,49 @@ export default function LoginPage() {
               color: '#EF4444',
               fontSize: 13,
               marginBottom: 16,
-            }}>
-              {error}
+            }}>{error}</div>
+          )}
+
+          {success && (
+            <div style={{
+              backgroundColor: '#10B98120',
+              border: '1px solid #10B981',
+              borderRadius: 8,
+              padding: '10px 14px',
+              color: '#10B981',
+              fontSize: 13,
+              marginBottom: 16,
+            }}>{success}</div>
+          )}
+
+          {/* Name — signup only */}
+          {mode === 'signup' && (
+            <div style={{ marginBottom: 16 }}>
+              <label style={{
+                display: 'block',
+                fontSize: 11,
+                fontWeight: 700,
+                color: '#6B7280',
+                letterSpacing: 2,
+                marginBottom: 8,
+              }}>FULL NAME</label>
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="John Smith"
+                style={{
+                  width: '100%',
+                  padding: '12px 16px',
+                  backgroundColor: '#1F2937',
+                  border: '1px solid #374151',
+                  borderRadius: 10,
+                  color: '#FFFFFF',
+                  fontSize: 15,
+                  outline: 'none',
+                  boxSizing: 'border-box',
+                }}
+              />
             </div>
           )}
 
@@ -104,7 +230,7 @@ export default function LoginPage() {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
+              onKeyDown={(e) => e.key === 'Enter' && (mode === 'login' ? handleLogin() : handleSignUp())}
               placeholder="you@company.com"
               style={{
                 width: '100%',
@@ -134,7 +260,7 @@ export default function LoginPage() {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
+              onKeyDown={(e) => e.key === 'Enter' && (mode === 'login' ? handleLogin() : handleSignUp())}
               placeholder="••••••••"
               style={{
                 width: '100%',
@@ -152,7 +278,7 @@ export default function LoginPage() {
 
           {/* Button */}
           <button
-            onClick={handleLogin}
+            onClick={mode === 'login' ? handleLogin : handleSignUp}
             disabled={loading}
             style={{
               width: '100%',
@@ -167,7 +293,9 @@ export default function LoginPage() {
               cursor: loading ? 'not-allowed' : 'pointer',
             }}
           >
-            {loading ? 'SIGNING IN...' : 'SIGN IN'}
+            {loading
+              ? (mode === 'login' ? 'SIGNING IN...' : 'CREATING ACCOUNT...')
+              : (mode === 'login' ? 'SIGN IN' : 'START FREE TRIAL')}
           </button>
         </div>
 
@@ -177,8 +305,11 @@ export default function LoginPage() {
           fontSize: 12,
           marginTop: 24,
         }}>
-          Use your FieldOps mobile app credentials to sign in
+          {mode === 'login'
+            ? "Don't have an account? Click FREE TRIAL above"
+            : 'Already have an account? Click SIGN IN above'}
         </p>
+
       </div>
     </div>
   );
