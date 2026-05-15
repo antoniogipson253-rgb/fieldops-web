@@ -58,7 +58,7 @@ export default function ProfilePage() {
     try {
       const { error } = await supabase
         .from('profiles')
-        .update({ full_name: fullName.trim(), role, phone: phone.trim() || null })
+        .update({ full_name: fullName.trim(), phone: phone.trim() || null })
         .eq('id', currentUser!.id);
       if (error) throw error;
       queryClient.invalidateQueries({ queryKey: ['web-profile'] });
@@ -71,13 +71,6 @@ export default function ProfilePage() {
     }
   }
 
-  const ROLES = ['admin', 'pm', 'foreman', 'worker'];
-  const roleLabels: Record<string, string> = {
-    admin: 'Admin',
-    pm: 'Project Manager',
-    foreman: 'Foreman',
-    worker: 'Worker',
-  };
 
   const initials = fullName
     ? fullName.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2)
@@ -155,30 +148,6 @@ export default function ProfilePage() {
               />
             </div>
 
-            <div style={{ marginBottom: 20 }}>
-              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#6B7280', letterSpacing: 2, marginBottom: 8 }}>ROLE</label>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                {ROLES.map((r) => (
-                  <button
-                    key={r}
-                    onClick={() => setRole(r)}
-                    style={{
-                      padding: '8px 16px',
-                      backgroundColor: role === r ? '#F9731620' : '#1F2937',
-                      border: '1px solid',
-                      borderColor: role === r ? '#F97316' : '#374151',
-                      borderRadius: 8,
-                      color: role === r ? '#F97316' : '#6B7280',
-                      fontSize: 13,
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    {roleLabels[r]}
-                  </button>
-                ))}
-              </div>
-            </div>
 
             <button
               onClick={handleSave}
