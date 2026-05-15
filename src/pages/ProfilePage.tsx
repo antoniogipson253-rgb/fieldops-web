@@ -5,7 +5,6 @@ import { supabase } from '../lib/supabase';
 export default function ProfilePage() {
   const queryClient = useQueryClient();
   const [fullName, setFullName] = useState('');
-  const [role, setRole] = useState('worker');
   const [phone, setPhone] = useState('');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -47,7 +46,6 @@ export default function ProfilePage() {
   useEffect(() => {
     if (profile) {
       setFullName(profile.full_name ?? '');
-      setRole(profile.role ?? 'worker');
       setPhone(profile.phone ?? '');
     }
   }, [profile]);
