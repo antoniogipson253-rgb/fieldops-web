@@ -13,6 +13,8 @@ serve(async (req) => {
   }
 
   try {
+    const { priceId } = await req.json()
+
     const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') ?? '', {
       apiVersion: '2023-10-16',
     })
@@ -33,7 +35,7 @@ serve(async (req) => {
       mode: 'subscription',
       line_items: [
         {
-          price: 'price_1TXROFDmd1wcZvf6exVM4dex',
+          price: priceId,
           quantity: 1,
         },
       ],
