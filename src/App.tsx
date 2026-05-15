@@ -75,13 +75,18 @@ function TrialGuard({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     async function checkTrial() {
       const { data: { user } } = await supabase.auth.getUser();
+      console.log('TrialGuard user:', user?.email);
       if (!user) return;
       const { data, error } = await supabase
         .from('profiles')
         .select('trial_end, is_subscribed')
         .eq('id', user.id)
         .single();
-      if (error || !data) return;
+      if (error || !data) {
+        console.log('TrialGuard error or no data:', error);
+        return;
+      }
+      console.log('TrialGuard data:', data);
       if (data.is_subscribed) return;
       const now = new Date();
       const trialEnd = new Date(data.trial_end);
