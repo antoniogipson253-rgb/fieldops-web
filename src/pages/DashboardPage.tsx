@@ -200,22 +200,37 @@ export default function DashboardPage() {
             <p style={{ color: '#6B7280', fontSize: 14, marginBottom: 32, lineHeight: 1.6 }}>
               Your 14-day free trial has ended. Upgrade to keep access to your dashboard, projects, and team.
             </p>
-            <a
-              href="mailto:fieldops.pro1@gmail.com?subject=FieldOps Upgrade"
-              style={{
-                display: 'inline-block',
-                padding: '14px 32px',
-                backgroundColor: '#F97316',
-                borderRadius: 10,
-                color: '#0A0F1E',
-                fontWeight: 900,
-                fontSize: 15,
-                letterSpacing: 2,
-                textDecoration: 'none',
-              }}
-            >
-              UPGRADE NOW
-            </a>
+              <button
+  onClick={async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    const response = await fetch(
+      `${process.env.REACT_APP_SUPABASE_URL}/functions/v1/create-checkout`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`,
+        },
+      }
+    );
+    const { url } = await response.json();
+    if (url) window.location.href = url;
+  }}
+  style={{
+    display: 'inline-block',
+    padding: '14px 32px',
+    backgroundColor: '#F97316',
+    borderRadius: 10,
+    color: '#0A0F1E',
+    fontWeight: 900,
+    fontSize: 15,
+    letterSpacing: 2,
+    border: 'none',
+    cursor: 'pointer',
+  }}
+>
+  UPGRADE NOW
+</button>
             <p style={{ color: '#374151', fontSize: 12, marginTop: 16 }}>
               Questions? Email us at fieldops.pro1@gmail.com
             </p>
