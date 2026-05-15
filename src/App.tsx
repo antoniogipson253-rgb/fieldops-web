@@ -87,7 +87,7 @@ function TrialGuard({ children }: { children: React.ReactNode }) {
         return;
       }
       console.log('TrialGuard data:', data);
-      if (data.is_subscribed) return;
+      if (data.is_subscribed === true) return;
       const now = new Date();
       const trialEnd = new Date(data.trial_end);
       const daysLeft = Math.ceil((trialEnd.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
