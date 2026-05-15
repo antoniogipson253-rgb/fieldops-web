@@ -3,11 +3,55 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useIsAdmin, useCurrentUser, useUserRole } from '../lib/useIsAdmin';
 
+const PLANS = [
+  {
+    id: 'field',
+    name: 'Field Plan',
+    price: '$1,500/year',
+    employees: '1-10 employees',
+    priceId: 'price_1TXScSDmd1wcZvf6j7URtxhK',
+    color: '#6B7280',
+    features: ['Full platform access', 'Task management', 'Clock in/out with GPS', 'Scheduling', 'Photo uploads', 'Reports', '1TB storage'],
+    popular: false,
+  },
+  {
+    id: 'crew',
+    name: 'Crew Plan',
+    price: '$3,500/year',
+    employees: '11-40 employees',
+    priceId: 'price_1TXSeADmd1wcZvf6GteMGf9L',
+    color: '#F97316',
+    features: ['Everything in Field Plan', 'Advanced reporting', 'Role permissions', 'Multi-project dashboard', 'Priority support', 'Client portal access', '2TB storage'],
+    popular: true,
+  },
+  {
+    id: 'project',
+    name: 'Project Plan',
+    price: '$8,500/year',
+    employees: '41-120 employees',
+    priceId: 'price_1TXSfGDmd1wcZvf6Bv74UzZ8',
+    color: '#3B82F6',
+    features: ['Everything in Crew Plan', 'Advanced workforce analytics', 'Multi-job oversight tools', 'Custom onboarding', 'Dedicated support priority', '2TB storage'],
+    popular: false,
+  },
+  {
+    id: 'enterprise',
+    name: 'Enterprise Plan',
+    price: 'Custom Pricing',
+    employees: '120+ employees',
+    priceId: null,
+    color: '#8B5CF6',
+    features: ['Custom workflows', 'Integration support', 'Dedicated onboarding', 'Enterprise deployment support'],
+    popular: false,
+  },
+];
+
 export default function DashboardPage() {
   const [search, setSearch] = useState('');
   const [groupByEmployee, setGroupByEmployee] = useState(false);
   const [trialExpired, setTrialExpired] = useState(false);
   const [trialDaysLeft, setTrialDaysLeft] = useState<number | null>(null);
+  const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
   const { data: isAdmin } = useIsAdmin();
   const { data: currentUser } = useCurrentUser();
   const { data: userRole } = useUserRole();
@@ -34,6 +78,34 @@ export default function DashboardPage() {
     }
     checkTrial();
   }, [currentUser]);
+
+  async function handleUpgrade(priceId: string | null, planId: string) {
+    if (!priceId) {
+      window.location.href = 'mailto:fieldops.pro1@gmail.com?subject=Enterprise Plan Inquiry';
+      return;
+    }
+    setCheckoutLoading(planId);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const response = await fetch(
+        `${process.env.REACT_APP_SUPABASE_URL}/functions/v1/create-checkout`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session?.access_token}`,
+          },
+          body: JSON.stringify({ priceId }),
+        }
+      );
+      const { url } = await response.json();
+      if (url) window.location.href = url;
+    } catch (e) {
+      alert('Something went wrong. Please try again.');
+    } finally {
+      setCheckoutLoading(null);
+    }
+  }
 
   const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ['dashboard-stats'],
@@ -167,7 +239,7 @@ export default function DashboardPage() {
   const roleLabel = isAdmin
     ? 'Overview of all projects and tasks'
     : isPM
-    ? 'Project Manager — your assigned tasks'
+    ? 'Project Manager - your assigned tasks'
     : 'Your assigned tasks';
 
   return (
@@ -183,55 +255,77 @@ export default function DashboardPage() {
           alignItems: 'center',
           padding: 24,
           zIndex: 9999,
+          overflowY: 'auto',
         }}>
-          <div style={{
-            backgroundColor: '#111827',
-            borderRadius: 16,
-            padding: 48,
-            border: '1px solid #EF4444',
-            maxWidth: 480,
-            width: '100%',
-            textAlign: 'center',
-          }}>
-            <div style={{ fontSize: 48, marginBottom: 16 }}>⏰</div>
-            <h2 style={{ color: '#EF4444', fontSize: 24, fontWeight: 900, marginBottom: 8 }}>
-              Your Trial Has Expired
-            </h2>
-            <p style={{ color: '#6B7280', fontSize: 14, marginBottom: 32, lineHeight: 1.6 }}>
-              Your 14-day free trial has ended. Upgrade to keep access to your dashboard, projects, and team.
-            </p>
-              <button
-  onClick={async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    const response = await fetch(
-      `${process.env.REACT_APP_SUPABASE_URL}/functions/v1/create-checkout`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session?.access_token}`,
-        },
-      }
-    );
-    const { url } = await response.json();
-    if (url) window.location.href = url;
-  }}
-  style={{
-    display: 'inline-block',
-    padding: '14px 32px',
-    backgroundColor: '#F97316',
-    borderRadius: 10,
-    color: '#0A0F1E',
-    fontWeight: 900,
-    fontSize: 15,
-    letterSpacing: 2,
-    border: 'none',
-    cursor: 'pointer',
-  }}
->
-  UPGRADE NOW
-</button>
-            <p style={{ color: '#374151', fontSize: 12, marginTop: 16 }}>
+          <div style={{ width: '100%', maxWidth: 900, padding: '40px 0' }}>
+            <div style={{ textAlign: 'center', marginBottom: 48 }}>
+              <div style={{ fontSize: 32, fontWeight: 900, color: '#FFFFFF', letterSpacing: 6, marginBottom: 8 }}>FIELDOPS</div>
+              <h2 style={{ color: '#EF4444', fontSize: 24, fontWeight: 900, marginBottom: 8 }}>Your Free Trial Has Ended</h2>
+              <p style={{ color: '#6B7280', fontSize: 15 }}>Choose a plan to keep access to your dashboard, projects, and team.</p>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 16 }}>
+              {PLANS.map((plan) => (
+                <div key={plan.id} style={{
+                  backgroundColor: '#111827',
+                  borderRadius: 16,
+                  padding: 24,
+                  border: `2px solid ${plan.popular ? plan.color : '#1F2937'}`,
+                  position: 'relative',
+                  display: 'flex',
+                  flexDirection: 'column',
+                }}>
+                  {plan.popular && (
+                    <div style={{
+                      position: 'absolute',
+                      top: -12,
+                      left: '50%',
+                      transform: 'translateX(-50%)',
+                      backgroundColor: '#F97316',
+                      color: '#0A0F1E',
+                      fontSize: 11,
+                      fontWeight: 900,
+                      padding: '3px 12px',
+                      borderRadius: 20,
+                      letterSpacing: 1,
+                    }}>
+                      MOST POPULAR
+                    </div>
+                  )}
+                  <div style={{ fontSize: 13, fontWeight: 700, color: plan.color, marginBottom: 4 }}>{plan.name}</div>
+                  <div style={{ fontSize: 22, fontWeight: 900, color: '#FFFFFF', marginBottom: 4 }}>{plan.price}</div>
+                  <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 16 }}>{plan.employees}</div>
+                  <div style={{ flex: 1, marginBottom: 20 }}>
+                    {plan.features.map((f) => (
+                      <div key={f} style={{ fontSize: 12, color: '#9CA3AF', marginBottom: 6, display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+                        <span style={{ color: plan.color, flexShrink: 0 }}>+</span>
+                        {f}
+                      </div>
+                    ))}
+                  </div>
+                  <button
+                    onClick={() => handleUpgrade(plan.priceId, plan.id)}
+                    disabled={checkoutLoading === plan.id}
+                    style={{
+                      width: '100%',
+                      padding: '12px',
+                      backgroundColor: plan.popular ? plan.color : 'transparent',
+                      border: `1px solid ${plan.color}`,
+                      borderRadius: 10,
+                      color: plan.popular ? '#0A0F1E' : plan.color,
+                      fontSize: 13,
+                      fontWeight: 900,
+                      cursor: checkoutLoading === plan.id ? 'not-allowed' : 'pointer',
+                      opacity: checkoutLoading === plan.id ? 0.7 : 1,
+                    }}
+                  >
+                    {checkoutLoading === plan.id ? 'Loading...' : plan.priceId ? 'Get Started' : 'Contact Us'}
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <p style={{ textAlign: 'center', color: '#374151', fontSize: 12, marginTop: 24 }}>
               Questions? Email us at fieldops.pro1@gmail.com
             </p>
           </div>
@@ -250,10 +344,10 @@ export default function DashboardPage() {
           alignItems: 'center',
         }}>
           <span style={{ color: '#F97316', fontSize: 13, fontWeight: 700 }}>
-            ⚠️ Your free trial expires in {trialDaysLeft} day{trialDaysLeft !== 1 ? 's' : ''}
+            Your free trial expires in {trialDaysLeft} day{trialDaysLeft !== 1 ? 's' : ''}
           </span>
-          <a
-            href="mailto:fieldops.pro1@gmail.com?subject=FieldOps Upgrade"
+          
+            <a href="mailto:fieldops.pro1@gmail.com?subject=FieldOps Upgrade"
             style={{ color: '#F97316', fontSize: 12, fontWeight: 700, textDecoration: 'underline' }}
           >
             Upgrade Now
@@ -335,7 +429,7 @@ export default function DashboardPage() {
               whiteSpace: 'nowrap',
             }}
           >
-            👤 Group by Employee
+            Group by Employee
           </button>
         )}
       </div>
