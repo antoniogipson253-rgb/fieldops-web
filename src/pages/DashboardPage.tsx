@@ -246,91 +246,172 @@ export default function DashboardPage() {
     <div style={{ padding: 32, color: '#FFFFFF' }}>
 
       {trialExpired && (
+  <div style={{
+    position: 'fixed',
+    top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: '#0D1117',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'flex-start',
+    padding: '48px 24px',
+    zIndex: 9999,
+    overflowY: 'auto',
+  }}>
+    <div style={{ width: '100%', maxWidth: 1100 }}>
+
+      <div style={{ textAlign: 'center', marginBottom: 56 }}>
         <div style={{
-          position: 'fixed',
-          top: 0, left: 0, right: 0, bottom: 0,
-          backgroundColor: '#0A0F1E',
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          padding: 24,
-          zIndex: 9999,
-          overflowY: 'auto',
-        }}>
-          <div style={{ width: '100%', maxWidth: 900, padding: '40px 0' }}>
-            <div style={{ textAlign: 'center', marginBottom: 48 }}>
-              <div style={{ fontSize: 32, fontWeight: 900, color: '#FFFFFF', letterSpacing: 6, marginBottom: 8 }}>FIELDOPS</div>
-              <h2 style={{ color: '#EF4444', fontSize: 24, fontWeight: 900, marginBottom: 8 }}>Your Free Trial Has Ended</h2>
-              <p style={{ color: '#6B7280', fontSize: 15 }}>Choose a plan to keep access to your dashboard, projects, and team.</p>
+          fontSize: 13,
+          fontWeight: 700,
+          color: '#F97316',
+          letterSpacing: 4,
+          marginBottom: 16,
+          textTransform: 'uppercase',
+        }}>FieldOps Pro</div>
+        <h1 style={{
+          fontSize: 42,
+          fontWeight: 900,
+          color: '#FFFFFF',
+          margin: '0 0 12px 0',
+          letterSpacing: 1,
+          textTransform: 'uppercase',
+        }}>Simple, Transparent Pricing</h1>
+        <p style={{ color: '#6B7280', fontSize: 16, margin: 0 }}>
+          Your free trial has ended. Choose the plan that fits your business. Cancel anytime.
+        </p>
+      </div>
+
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(4, 1fr)',
+        gap: 20,
+        marginBottom: 32,
+      }}>
+        {PLANS.map((plan) => (
+          <div key={plan.id} style={{
+            backgroundColor: '#111827',
+            borderRadius: 8,
+            padding: '32px 28px',
+            border: plan.popular ? '2px solid #F97316' : '1px solid #1F2937',
+            position: 'relative',
+            display: 'flex',
+            flexDirection: 'column',
+          }}>
+            {plan.popular && (
+              <div style={{
+                position: 'absolute',
+                top: -14,
+                left: '50%',
+                transform: 'translateX(-50%)',
+                backgroundColor: '#F97316',
+                color: '#FFFFFF',
+                fontSize: 11,
+                fontWeight: 800,
+                padding: '4px 16px',
+                borderRadius: 20,
+                letterSpacing: 2,
+                whiteSpace: 'nowrap',
+              }}>
+                MOST POPULAR
+              </div>
+            )}
+
+            <div style={{
+              fontSize: 16,
+              fontWeight: 900,
+              color: '#FFFFFF',
+              marginBottom: 6,
+              letterSpacing: 1,
+              textTransform: 'uppercase',
+            }}>{plan.name}</div>
+
+            <div style={{
+              fontSize: 13,
+              color: '#6B7280',
+              marginBottom: 24,
+            }}>{plan.employees}</div>
+
+            <div style={{ marginBottom: 28 }}>
+              {plan.priceId ? (
+                <>
+                  <span style={{ fontSize: 40, fontWeight: 900, color: '#FFFFFF' }}>
+                    {plan.price.split('/')[0]}
+                  </span>
+                  <span style={{ fontSize: 15, color: '#6B7280', marginLeft: 4 }}>/year</span>
+                </>
+              ) : (
+                <span style={{ fontSize: 32, fontWeight: 900, color: '#FFFFFF' }}>CUSTOM</span>
+              )}
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 16 }}>
-              {PLANS.map((plan) => (
-                <div key={plan.id} style={{
-                  backgroundColor: '#111827',
-                  borderRadius: 16,
-                  padding: 24,
-                  border: `2px solid ${plan.popular ? plan.color : '#1F2937'}`,
-                  position: 'relative',
+            <div style={{ flex: 1, marginBottom: 28 }}>
+              {plan.features.map((f) => (
+                <div key={f} style={{
+                  fontSize: 13,
+                  color: '#9CA3AF',
+                  marginBottom: 10,
                   display: 'flex',
-                  flexDirection: 'column',
+                  gap: 10,
+                  alignItems: 'flex-start',
                 }}>
-                  {plan.popular && (
+                  <div style={{
+                    width: 18,
+                    height: 18,
+                    borderRadius: 9,
+                    border: '1.5px solid #F97316',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                    marginTop: 1,
+                  }}>
                     <div style={{
-                      position: 'absolute',
-                      top: -12,
-                      left: '50%',
-                      transform: 'translateX(-50%)',
+                      width: 6,
+                      height: 6,
+                      borderRadius: 3,
                       backgroundColor: '#F97316',
-                      color: '#0A0F1E',
-                      fontSize: 11,
-                      fontWeight: 900,
-                      padding: '3px 12px',
-                      borderRadius: 20,
-                      letterSpacing: 1,
-                    }}>
-                      MOST POPULAR
-                    </div>
-                  )}
-                  <div style={{ fontSize: 13, fontWeight: 700, color: plan.color, marginBottom: 4 }}>{plan.name}</div>
-                  <div style={{ fontSize: 22, fontWeight: 900, color: '#FFFFFF', marginBottom: 4 }}>{plan.price}</div>
-                  <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 16 }}>{plan.employees}</div>
-                  <div style={{ flex: 1, marginBottom: 20 }}>
-                    {plan.features.map((f) => (
-                      <div key={f} style={{ fontSize: 12, color: '#9CA3AF', marginBottom: 6, display: 'flex', gap: 6, alignItems: 'flex-start' }}>
-                        <span style={{ color: plan.color, flexShrink: 0 }}>+</span>
-                        {f}
-                      </div>
-                    ))}
+                    }} />
                   </div>
-                  <button
-                    onClick={() => handleUpgrade(plan.priceId, plan.id)}
-                    disabled={checkoutLoading === plan.id}
-                    style={{
-                      width: '100%',
-                      padding: '12px',
-                      backgroundColor: plan.popular ? plan.color : 'transparent',
-                      border: `1px solid ${plan.color}`,
-                      borderRadius: 10,
-                      color: plan.popular ? '#0A0F1E' : plan.color,
-                      fontSize: 13,
-                      fontWeight: 900,
-                      cursor: checkoutLoading === plan.id ? 'not-allowed' : 'pointer',
-                      opacity: checkoutLoading === plan.id ? 0.7 : 1,
-                    }}
-                  >
-                    {checkoutLoading === plan.id ? 'Loading...' : plan.priceId ? 'Get Started' : 'Contact Us'}
-                  </button>
+                  {f}
                 </div>
               ))}
             </div>
 
-            <p style={{ textAlign: 'center', color: '#374151', fontSize: 12, marginTop: 24 }}>
-              Questions? Email us at fieldops.pro1@gmail.com
-            </p>
+            <button
+              onClick={() => handleUpgrade(plan.priceId, plan.id)}
+              disabled={checkoutLoading === plan.id}
+              style={{
+                width: '100%',
+                padding: '14px',
+                backgroundColor: plan.popular ? '#F97316' : 'transparent',
+                border: `1px solid ${plan.popular ? '#F97316' : '#374151'}`,
+                borderRadius: 6,
+                color: plan.popular ? '#FFFFFF' : '#FFFFFF',
+                fontSize: 13,
+                fontWeight: 800,
+                letterSpacing: 2,
+                cursor: checkoutLoading === plan.id ? 'not-allowed' : 'pointer',
+                opacity: checkoutLoading === plan.id ? 0.7 : 1,
+                textTransform: 'uppercase',
+                transition: 'all 0.15s',
+              }}
+            >
+              {checkoutLoading === plan.id
+                ? 'Loading...'
+                : plan.priceId
+                ? 'Choose Plan'
+                : 'Contact Sales'}
+            </button>
           </div>
-        </div>
-      )}
+        ))}
+      </div>
+
+      <p style={{ textAlign: 'center', color: '#374151', fontSize: 13 }}>
+        * Onboarding is included with every plan.
+      </p>
+    </div>
+  </div>
+)}
 
       {trialDaysLeft !== null && trialDaysLeft <= 7 && (
         <div style={{
