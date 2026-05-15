@@ -93,6 +93,7 @@ function TrialGuard({ children }: { children: React.ReactNode }) {
       const daysLeft = Math.ceil((trialEnd.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
 console.log('daysLeft:', daysLeft, 'trialEnd:', trialEnd, 'now:', now);
 if (daysLeft <= 0) {
+  console.log('Setting trial expired to true');
   setTrialExpired(true);
       } else {
         setTrialDaysLeft(daysLeft);
