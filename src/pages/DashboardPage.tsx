@@ -7,7 +7,7 @@ const PLANS = [
   {
     id: 'field',
     name: 'Field Plan',
-    price: '$1,500/year',
+    price: '$2,500/year',
     employees: '1-10 employees',
     priceId: 'price_1TXScSDmd1wcZvf6j7URtxhK',
     color: '#6B7280',
@@ -17,7 +17,7 @@ const PLANS = [
   {
     id: 'crew',
     name: 'Crew Plan',
-    price: '$3,500/year',
+    price: '$6,000/year',
     employees: '11-40 employees',
     priceId: 'price_1TXSeADmd1wcZvf6GteMGf9L',
     color: '#F97316',
@@ -27,7 +27,7 @@ const PLANS = [
   {
     id: 'project',
     name: 'Project Plan',
-    price: '$8,500/year',
+    price: '$12,000/year',
     employees: '41-120 employees',
     priceId: 'price_1TXSfGDmd1wcZvf6Bv74UzZ8',
     color: '#3B82F6',
