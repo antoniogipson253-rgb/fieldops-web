@@ -183,15 +183,20 @@ export default function TeamPage() {
         <div>
           <h1 style={{ fontSize: 28, fontWeight: 800, margin: 0, marginBottom: 4 }}>Team</h1>
           <p style={{ color: '#6B7280', fontSize: 14, margin: 0 }}>
-            {company?.name && <span style={{ color: '#F97316', fontWeight: 600 }}>{company.name} — </span>}
-            <span style={{ color: seatsRemaining <= 2 ? '#EF4444' : '#6B7280' }}>
-              {totalMembers}/{maxMembers} members
-            </span>
-            <span style={{ color: '#374151' }}> — </span>
-            <span style={{ color: seatsRemaining <= 2 ? '#EF4444' : '#22C55E', fontWeight: 600 }}>
-              {seatsRemaining} seat{seatsRemaining !== 1 ? 's' : ''} remaining
-            </span>
-          </p>
+  {company?.name && <span style={{ color: '#F97316', fontWeight: 600 }}>{company.name}</span>}
+  {isAdmin && (
+    <>
+      <span style={{ color: '#374151' }}> — </span>
+      <span style={{ color: seatsRemaining <= 2 ? '#EF4444' : '#6B7280' }}>
+        {totalMembers}/{maxMembers} members
+      </span>
+      <span style={{ color: '#374151' }}> — </span>
+      <span style={{ color: seatsRemaining <= 2 ? '#EF4444' : '#22C55E', fontWeight: 600 }}>
+        {seatsRemaining} seat{seatsRemaining !== 1 ? 's' : ''} remaining
+      </span>
+    </>
+  )}
+</p>
         </div>
         {isAdmin && (
           <button
