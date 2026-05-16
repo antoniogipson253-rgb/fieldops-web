@@ -31,16 +31,20 @@ serve(async (req) => {
     }
 
     if (event.type === 'checkout.session.completed') {
-      const session = event.data.object as any
-      const userId = session.metadata?.user_id
-      const priceId = session.line_items?.data?.[0]?.price?.id
+  const session = event.data.object as any
+  const userId = session.metadata?.user_id
+  const priceId = session.line_items?.data?.[0]?.price?.id
+  const customerId = session.customer
 
-      if (userId) {
-        // Update profile to subscribed
-        await supabaseAdmin
-          .from('profiles')
-          .update({ is_subscribed: true })
-          .eq('id', userId)
+  if (userId) {
+    // Update profile to subscribed and save customer ID
+    await supabaseAdmin
+      .from('profiles')
+      .update({
+        is_subscribed: true,
+        stripe_customer_id: customerId,
+      })
+      .eq('id', userId)
 
         // Get the price ID from the session line items
         const fullSession = await stripe.checkout.sessions.retrieve(session.id, {
@@ -50,23 +54,19 @@ serve(async (req) => {
         const planInfo = PLAN_MAP[paidPriceId]
 
         if (planInfo) {
-          // Find user's company and update plan + member limit
-          const { data: profile } = await supabaseAdmin
-            .from('profiles')
-            .select('company_id')
-            .eq('id', userId)
-            .single()
+  const { data: profile } = await supabaseAdmin
+    .from('profiles')
+    .select('company_id')
+    .eq('id', userId)
+    .single()
 
-          if (profile?.company_id) {
-            await supabaseAdmin
-              .from('companies')
-              .update({
-                plan: planInfo.plan,
-                max_members: planInfo.max_members,
-              })
-              .eq('id', profile.company_id)
-          }
-        }
+  if (profile?.company_id) {
+    await supabaseAdmin.rpc('update_company_plan_limits', {
+      p_company_id: profile.company_id,
+      p_plan: planInfo.plan,
+    })
+  }
+}
       }
     }
 

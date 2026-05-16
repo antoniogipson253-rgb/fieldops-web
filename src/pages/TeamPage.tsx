@@ -276,12 +276,17 @@ export default function TeamPage() {
 
       {/* Role Cards */}
       {isAdmin && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 24 }}>
-          {[
-            { role: 'admin' as Role, used: adminCount, max: company?.max_admins ?? 1 },
-            { role: 'project_manager' as Role, used: pmCount, max: company?.max_project_managers ?? 4 },
-            { role: 'worker' as Role, used: workerCount, max: company?.max_workers ?? 5 },
-          ].map(({ role, used, max }) => (
+  <div style={{ display: 'grid', gridTemplateColumns: currentPlan === 'trial' ? 'repeat(3, 1fr)' : '1fr', gap: 12, marginBottom: 24 }}>
+    {(currentPlan === 'trial'
+      ? [
+          { role: 'admin' as Role, used: adminCount, max: company?.max_admins ?? 1 },
+          { role: 'project_manager' as Role, used: pmCount, max: company?.max_project_managers ?? 4 },
+          { role: 'worker' as Role, used: workerCount, max: company?.max_workers ?? 5 },
+        ]
+      : [
+          { role: 'admin' as Role, used: adminCount, max: company?.max_admins ?? 1 },
+        ]
+    ).map(({ role, used, max }) => (
             <div key={role} style={{ backgroundColor: '#111827', borderRadius: 12, padding: 16, border: `1px solid ${roleColors[role]}30` }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: roleColors[role], marginBottom: 4 }}>{roleLabels[role]}</div>
               <div style={{ fontSize: 11, color: '#6B7280', lineHeight: 1.5, marginBottom: 8 }}>{roleDescriptions[role]}</div>
