@@ -57,8 +57,37 @@ export default function LoginPage() {
       return;
     }
     if (data.user) {
-      setSuccess('Account created! You can now sign in.');
-    }
+  // Wait a moment for the trigger to create the company
+  await new Promise(resolve => setTimeout(resolve, 2000));
+
+  // Get the company that was just created
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('company_id')
+    .eq('id', data.user.id)
+    .single();
+
+  if (profile?.company_id) {
+    // Create the storage bucket for this company
+    const { data: { session } } = await supabase.auth.getSession();
+    await fetch(
+      `${process.env.REACT_APP_SUPABASE_URL}/functions/v1/create-company-bucket`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({
+          company_id: profile.company_id,
+          company_name: company,
+        }),
+      }
+    );
+  }
+
+  setSuccess('Account created! You can now sign in.');
+}
     setLoading(false);
   }
 
