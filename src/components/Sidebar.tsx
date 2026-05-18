@@ -1,6 +1,6 @@
 import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { useIsAdmin, useUserRole } from '../lib/useIsAdmin';
+import { useIsAdmin } from '../lib/useIsAdmin';
 
 const allNavItems = [
   { path: '/', label: 'Dashboard', adminOnly: false },
