@@ -2,14 +2,15 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 
 const navItems = [
-  { path: '/', label: 'Dashboard', icon: '📊' },
-  { path: '/projects', label: 'Projects', icon: '📋' },
-  { path: '/tasks', label: 'Tasks', icon: '✅' },
-  { path: '/calendar', label: 'Calendar', icon: '📅' },
-  { path: '/team', label: 'Team', icon: '👥' },
-  { path: '/reports', label: 'Reports', icon: '📝' },
-  { path: '/files', label: 'Files', icon: '📁' },
-  { path: '/profile', label: 'Profile', icon: '👤' },
+  { path: '/', label: 'Dashboard' },
+  { path: '/projects', label: 'Projects' },
+  { path: '/tasks', label: 'Tasks' },
+  { path: '/calendar', label: 'Calendar' },
+  { path: '/team', label: 'Team' },
+  { path: '/reports', label: 'Reports' },
+  { path: '/payroll', label: 'Payroll' },
+  { path: '/files', label: 'Files' },
+  { path: '/profile', label: 'Profile' },
 ];
 
 export default function Sidebar() {
@@ -18,7 +19,7 @@ export default function Sidebar() {
 
   return (
     <div style={{
-      width: 240,
+      width: 220,
       minHeight: '100vh',
       backgroundColor: '#0D1321',
       borderRight: '1px solid #1F2937',
@@ -29,24 +30,13 @@ export default function Sidebar() {
       top: 0,
     }}>
       {/* Logo */}
-      <div style={{
-        paddingLeft: 24,
-        paddingRight: 24,
-        marginBottom: 32,
-      }}>
-        <div style={{
-          fontSize: 20,
-          fontWeight: 900,
-          color: '#FFFFFF',
-          letterSpacing: 4,
-        }}>FIELDOPS</div>
-        <div style={{
-          fontSize: 11,
-          color: '#F97316',
-          fontWeight: 600,
-          letterSpacing: 2,
-          marginTop: 2,
-        }}>PRO DASHBOARD</div>
+      <div style={{ paddingLeft: 24, paddingRight: 24, marginBottom: 32 }}>
+        <div style={{ fontSize: 20, fontWeight: 900, color: '#FFFFFF', letterSpacing: 4 }}>
+          FIELDOPS
+        </div>
+        <div style={{ fontSize: 11, color: '#F97316', fontWeight: 600, letterSpacing: 2, marginTop: 2 }}>
+          PRO DASHBOARD
+        </div>
       </div>
 
       {/* Nav Items */}
@@ -60,11 +50,9 @@ export default function Sidebar() {
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: 12,
                 width: '100%',
                 padding: '12px 24px',
                 backgroundColor: isActive ? '#F9731615' : 'transparent',
-                borderLeft: isActive ? '3px solid #F97316' : '3px solid transparent',
                 border: 'none',
                 borderLeftStyle: 'solid',
                 borderLeftWidth: 3,
@@ -73,11 +61,11 @@ export default function Sidebar() {
                 textAlign: 'left',
               }}
             >
-              <span style={{ fontSize: 18 }}>{item.icon}</span>
               <span style={{
                 fontSize: 14,
                 fontWeight: isActive ? 700 : 500,
                 color: isActive ? '#F97316' : '#9CA3AF',
+                letterSpacing: 1,
               }}>
                 {item.label}
               </span>

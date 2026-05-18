@@ -15,6 +15,7 @@ import ChatPage from './pages/ChatPage';
 import ProfilePage from './pages/ProfilePage';
 import CalendarPage from './pages/CalendarPage';
 import Sidebar from './components/Sidebar';
+import PayrollPage from './pages/PayrollPage';
 
 const PLANS = [
   {
@@ -318,6 +319,7 @@ export default function App() {
           <Route path="/team" element={<AuthGuard session={session}><AppLayout><TeamPage /></AppLayout></AuthGuard>} />
           <Route path="/reports" element={<AuthGuard session={session}><AppLayout><ReportsPage /></AppLayout></AuthGuard>} />
           <Route path="/files" element={<AuthGuard session={session}><AppLayout><FilesPage /></AppLayout></AuthGuard>} />
+          <Route path="/payroll" element={<AuthGuard session={session}><AppLayout><PayrollPage /></AppLayout></AuthGuard>} />
           <Route path="/profile" element={<AuthGuard session={session}><AppLayout><ProfilePage /></AppLayout></AuthGuard>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
