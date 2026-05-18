@@ -9,10 +9,6 @@ const priorityColors: Record<string, string> = {
 };
 
 
-const statusLabels: Record<string, string> = {
-  open: 'Open', in_progress: 'In Progress', completed: 'Done',
-};
-
 const inputStyle: React.CSSProperties = {
   width: '100%', padding: '10px 14px', backgroundColor: '#1F2937',
   border: '1px solid #374151', borderRadius: 8, color: '#FFFFFF',
