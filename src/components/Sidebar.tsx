@@ -1,21 +1,25 @@
 import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { useIsAdmin, useUserRole } from '../lib/useIsAdmin';
 
-const navItems = [
-  { path: '/', label: 'Dashboard' },
-  { path: '/projects', label: 'Projects' },
-  { path: '/tasks', label: 'Tasks' },
-  { path: '/calendar', label: 'Calendar' },
-  { path: '/team', label: 'Team' },
-  { path: '/reports', label: 'Reports' },
-  { path: '/payroll', label: 'Payroll' },
-  { path: '/files', label: 'Files' },
-  { path: '/profile', label: 'Profile' },
+const allNavItems = [
+  { path: '/', label: 'Dashboard', adminOnly: false },
+  { path: '/projects', label: 'Projects', adminOnly: false },
+  { path: '/tasks', label: 'Tasks', adminOnly: false },
+  { path: '/calendar', label: 'Calendar', adminOnly: false },
+  { path: '/team', label: 'Team', adminOnly: false },
+  { path: '/reports', label: 'Reports', adminOnly: false },
+  { path: '/payroll', label: 'Payroll', adminOnly: true },
+  { path: '/files', label: 'Files', adminOnly: false },
+  { path: '/profile', label: 'Profile', adminOnly: false },
 ];
 
 export default function Sidebar() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { data: isAdmin } = useIsAdmin();
+
+  const navItems = allNavItems.filter((item) => !item.adminOnly || isAdmin);
 
   return (
     <div style={{
@@ -29,17 +33,11 @@ export default function Sidebar() {
       position: 'sticky',
       top: 0,
     }}>
-      {/* Logo */}
       <div style={{ paddingLeft: 24, paddingRight: 24, marginBottom: 32 }}>
-        <div style={{ fontSize: 20, fontWeight: 900, color: '#FFFFFF', letterSpacing: 4 }}>
-          FIELDOPS
-        </div>
-        <div style={{ fontSize: 11, color: '#F97316', fontWeight: 600, letterSpacing: 2, marginTop: 2 }}>
-          PRO DASHBOARD
-        </div>
+        <div style={{ fontSize: 20, fontWeight: 900, color: '#FFFFFF', letterSpacing: 4 }}>FIELDOPS</div>
+        <div style={{ fontSize: 11, color: '#F97316', fontWeight: 600, letterSpacing: 2, marginTop: 2 }}>PRO DASHBOARD</div>
       </div>
 
-      {/* Nav Items */}
       <nav style={{ flex: 1 }}>
         {navItems.map((item) => {
           const isActive = location.pathname === item.path;
@@ -74,7 +72,6 @@ export default function Sidebar() {
         })}
       </nav>
 
-      {/* Sign Out */}
       <div style={{ padding: '0 16px' }}>
         <button
           onClick={() => supabase.auth.signOut()}
