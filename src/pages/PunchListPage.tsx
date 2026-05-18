@@ -8,9 +8,6 @@ const priorityColors: Record<string, string> = {
   high: '#E24B4A', medium: '#EF9F27', low: '#1D9E75',
 };
 
-const statusColors: Record<string, string> = {
-  open: '#6B7280', in_progress: '#378ADD', completed: '#1D9E75',
-};
 
 const statusLabels: Record<string, string> = {
   open: 'Open', in_progress: 'In Progress', completed: 'Done',
@@ -53,8 +50,7 @@ export default function PunchListPage() {
     },
     enabled: isAdmin !== undefined,
   });
-
-  const { data: punchItems, isLoading: itemsLoading, refetch } = useQuery({
+const { data: punchItems, isLoading: itemsLoading } = useQuery({
     queryKey: ['punch-list-items', selectedProject?.id],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -251,7 +247,7 @@ export default function PunchListPage() {
                         <select
                           value={item.status}
                           onChange={(e) => updateStatus({ id: item.id, status: e.target.value })}
-                          style={{ padding: '5px 10px', background: '#1F2937', border: '0.5px solid #374151', borderRadius: 8, color: statusColors[item.status], fontSize: 12, fontWeight: 600, cursor: 'pointer', outline: 'none' }}
+                          style={{ padding: '5px 10px', background: '#1F2937', border: '0.5px solid #374151', borderRadius: 8, color: item.status === 'completed' ? '#1D9E75' : item.status === 'in_progress' ? '#378ADD' : '#6B7280', fontSize: 12, fontWeight: 600, cursor: 'pointer', outline: 'none' }}
                         >
                           <option value="open">Open</option>
                           <option value="in_progress">In Progress</option>
