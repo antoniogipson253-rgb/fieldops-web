@@ -1,25 +1,28 @@
 import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { useIsAdmin } from '../lib/useIsAdmin';
-
-const allNavItems = [
-  { path: '/', label: 'Dashboard', adminOnly: false },
-  { path: '/projects', label: 'Projects', adminOnly: false },
-  { path: '/tasks', label: 'Tasks', adminOnly: false },
-  { path: '/calendar', label: 'Calendar', adminOnly: false },
-  { path: '/team', label: 'Team', adminOnly: false },
-  { path: '/reports', label: 'Reports', adminOnly: false },
-  { path: '/payroll', label: 'Payroll', adminOnly: true },
-  { path: '/files', label: 'Files', adminOnly: false },
-  { path: '/profile', label: 'Profile', adminOnly: false },
-];
+import { useIsAdmin, useUserRole } from '../lib/useIsAdmin';
 
 export default function Sidebar() {
   const navigate = useNavigate();
   const location = useLocation();
   const { data: isAdmin } = useIsAdmin();
+  const { data: userRole } = useUserRole();
+  const isPM = userRole === 'project_manager';
 
-  const navItems = allNavItems.filter((item) => !item.adminOnly || isAdmin);
+  const allNavItems = [
+    { path: '/', label: 'Dashboard', show: true },
+    { path: '/projects', label: 'Projects', show: true },
+    { path: '/tasks', label: 'Tasks', show: true },
+    { path: '/calendar', label: 'Calendar', show: true },
+    { path: '/team', label: 'Team', show: true },
+    { path: '/reports', label: 'Reports', show: true },
+    { path: '/punch-list', label: 'Punch List', show: !!(isAdmin || isPM) },
+    { path: '/payroll', label: 'Payroll', show: !!isAdmin },
+    { path: '/files', label: 'Files', show: true },
+    { path: '/profile', label: 'Profile', show: true },
+  ];
+
+  const navItems = allNavItems.filter((item) => item.show);
 
   return (
     <div style={{
