@@ -366,7 +366,7 @@ function PMDashboard({ currentUserId }: { currentUserId: string }) {
     queryKey: ['pm-dash-reports', projectIds],
     queryFn: async () => {
       if (projectIds.length === 0) return [];
-      const today = new Date().toISOString().split('T')[0];
+      
       const { data } = await supabase
         .from('daily_reports')
         .select('id, report_date, project:project_id(name), author:created_by(full_name)')
