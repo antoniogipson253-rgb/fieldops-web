@@ -20,6 +20,7 @@ export default function Sidebar() {
     { path: '/payroll', label: 'Payroll', show: !!isAdmin },
     { path: '/files', label: 'Files', show: true },
     { path: '/profile', label: 'Profile', show: true },
+    { path: '/incidents', label: 'Incidents', show: !!isAdmin },
   ];
 
   const navItems = allNavItems.filter((item) => item.show);
