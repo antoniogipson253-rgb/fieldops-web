@@ -19,20 +19,19 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
-    // Send invite via Supabase auth
     const { data, error } = await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
       data: {
         invited_by: invitedBy,
         company_name: companyName,
         role: role,
       },
-      redirectTo: 'https://app.fieldopspro.org/login',
+      redirectTo: 'https://fieldops-web-mocha.vercel.app/accept-invite',
     })
 
     if (error) throw error
 
-    // Send welcome email via Resend
     const resendKey = Deno.env.get('RESEND_API_KEY')
+
     await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
@@ -51,7 +50,7 @@ serve(async (req) => {
             <p style="color: #9CA3AF; font-size: 15px; line-height: 1.6; margin-bottom: 24px;">
               You have been invited to join <strong style="color: #F97316;">${companyName}</strong> on FieldOps as a <strong>${role}</strong>.
             </p>
-            <a href="https://app.fieldopspro.org/login" style="display: inline-block; padding: 14px 32px; background: #F97316; color: #0A0F1E; font-weight: 900; font-size: 15px; text-decoration: none; border-radius: 10px; letter-spacing: 2px;">
+            <a href="https://fieldops-web-mocha.vercel.app/accept-invite" style="display: inline-block; padding: 14px 32px; background: #F97316; color: #0A0F1E; font-weight: 900; font-size: 15px; text-decoration: none; border-radius: 10px; letter-spacing: 2px;">
               ACCEPT INVITE
             </a>
             <p style="color: #374151; font-size: 12px; margin-top: 32px;">
