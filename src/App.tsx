@@ -18,6 +18,7 @@ import Sidebar from './components/Sidebar';
 import PayrollPage from './pages/PayrollPage';
 import PunchListPage from './pages/PunchListPage';
 import IncidentsPage from './pages/IncidentsPage';
+import AcceptInvitePage from './pages/AcceptInvitePage';
 
 const PLANS = [
   {
@@ -325,6 +326,7 @@ export default function App() {
           <Route path="/profile" element={<AuthGuard session={session}><AppLayout><ProfilePage /></AppLayout></AuthGuard>} />
           <Route path="/punch-list" element={<AuthGuard session={session}><AppLayout><PunchListPage /></AppLayout></AuthGuard>} />
           <Route path="/incidents" element={<AuthGuard session={session}><AppLayout><IncidentsPage /></AppLayout></AuthGuard>} />
+          <Route path="/accept-invite" element={<AcceptInvitePage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
