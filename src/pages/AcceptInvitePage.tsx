@@ -32,23 +32,40 @@ export default function AcceptInvitePage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('No user found.');
 
-      const { data: memberData, error: memberError } = await supabase
-        .from('company_members')
+      // Look up invitation by email to get company_id and role
+      const { data: invite, error: inviteError } = await supabase
+        .from('invitations')
         .select('company_id, role')
-        .eq('user_id', user.id)
+        .eq('email', user.email!.toLowerCase())
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false })
+        .limit(1)
         .single();
 
-      if (memberError || !memberData) throw new Error('Could not find your company assignment.');
+      if (inviteError || !invite) throw new Error('Could not find your invitation.');
 
+      // Add to company_members
+      const { error: memberError } = await supabase
+        .from('company_members')
+        .insert({ company_id: invite.company_id, user_id: user.id, role: invite.role })
+        .single();
+
+      if (memberError && memberError.code !== '23505') throw memberError;
+
+      // Update profile
       const { error: profileError } = await supabase
         .from('profiles')
-        .update({
-          company_id: memberData.company_id,
-          role: memberData.role,
-        })
+        .update({ company_id: invite.company_id, role: invite.role })
         .eq('id', user.id);
 
       if (profileError) throw profileError;
+
+      // Mark invitation as accepted
+      await supabase
+        .from('invitations')
+        .update({ status: 'accepted' })
+        .eq('email', user.email!.toLowerCase())
+        .eq('status', 'pending');
 
       window.location.href = '/';
     } catch (e: any) {
