@@ -41,6 +41,10 @@ export default function ProjectDetailPage() {
   const [inviting, setInviting] = useState(false);
 
   const [viewTask, setViewTask] = useState<any>(null);
+  const [viewTaskPhotos, setViewTaskPhotos] = useState<any[]>([]);
+  const [viewingPhoto, setViewingPhoto] = useState<string | null>(null);
+  const [photosLoading, setPhotosLoading] = useState(false);
+
   const [selectedTask, setSelectedTask] = useState<any>(null);
   const [editTaskTitle, setEditTaskTitle] = useState('');
   const [editTaskDescription, setEditTaskDescription] = useState('');
@@ -139,6 +143,29 @@ export default function ProjectDetailPage() {
     setPastedText('');
     setParsedTasks([]);
     setManualTasks([{ title: '', description: '', priority: 'medium', dueDate: '' }]);
+  }
+
+  async function openViewTask(task: any) {
+    setViewTask(task);
+    setPhotosLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('task_photos')
+        .select('*')
+        .eq('task_id', task.id)
+        .order('created_at', { ascending: false });
+      if (!error) setViewTaskPhotos(data ?? []);
+    } catch (e) {
+      setViewTaskPhotos([]);
+    } finally {
+      setPhotosLoading(false);
+    }
+  }
+
+  function closeViewTask() {
+    setViewTask(null);
+    setViewTaskPhotos([]);
+    setViewingPhoto(null);
   }
 
   async function handleCreateFolder() {
@@ -333,7 +360,6 @@ export default function ProjectDetailPage() {
     finally { setImporting(false); }
   }
 
-  // Parse pasted text into grid rows for live preview
   const pastedRows = pastedText.trim()
     ? pastedText.trim().split('\n').filter(l => l.trim()).slice(0, 20).map(line => {
         const cols = line.split('\t').map(c => c.trim().replace(/^"|"$/g, ''));
@@ -353,9 +379,7 @@ export default function ProjectDetailPage() {
     fontSize: 14, outline: 'none', boxSizing: 'border-box',
   };
 
-  const cellStyle: React.CSSProperties = {
-    padding: 0, border: '1px solid #2D3748',
-  };
+  const cellStyle: React.CSSProperties = { padding: 0, border: '1px solid #2D3748' };
 
   const cellInputStyle: React.CSSProperties = {
     width: '100%', padding: '7px 10px', backgroundColor: 'transparent',
@@ -461,17 +485,22 @@ export default function ProjectDetailPage() {
 
       {/* Task View Modal */}
       {viewTask && (
-        <div style={modalOverlay} onClick={() => setViewTask(null)}>
-          <div style={modalBox} onClick={(e) => e.stopPropagation()}>
+        <div style={modalOverlay} onClick={closeViewTask}>
+          <div style={{ ...modalBox, maxWidth: 640 }} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
               <h3 style={{ margin: 0, fontSize: 20, fontWeight: 800, flex: 1, marginRight: 16 }}>{viewTask.title}</h3>
-              <button onClick={() => setViewTask(null)} style={{ backgroundColor: '#1F2937', border: 'none', borderRadius: 8, color: '#9CA3AF', fontSize: 16, cursor: 'pointer', padding: '4px 10px' }}>✕</button>
+              <button onClick={closeViewTask} style={{ backgroundColor: '#1F2937', border: 'none', borderRadius: 8, color: '#9CA3AF', fontSize: 16, cursor: 'pointer', padding: '4px 10px' }}>✕</button>
             </div>
-            {viewTask.description && <p style={{ color: '#9CA3AF', fontSize: 14, lineHeight: 1.6, margin: '0 0 20px 0' }}>{viewTask.description}</p>}
+
+            {viewTask.description && (
+              <p style={{ color: '#9CA3AF', fontSize: 14, lineHeight: 1.6, margin: '0 0 20px 0' }}>{viewTask.description}</p>
+            )}
+
             <div style={{ display: 'flex', gap: 10, marginBottom: 20, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 12, fontWeight: 700, color: statusColors[viewTask.status], backgroundColor: statusColors[viewTask.status] + '20', padding: '4px 12px', borderRadius: 20 }}>{statusLabels[viewTask.status]}</span>
               <span style={{ fontSize: 12, fontWeight: 700, color: priorityColors[viewTask.priority], backgroundColor: priorityColors[viewTask.priority] + '20', padding: '4px 12px', borderRadius: 20 }}>{viewTask.priority} priority</span>
             </div>
+
             <div style={{ backgroundColor: '#0D1321', borderRadius: 10, padding: 16, marginBottom: 20 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: 10, borderBottom: '1px solid #1F2937', marginBottom: 10 }}>
                 <span style={{ fontSize: 12, color: '#6B7280', fontWeight: 600 }}>ASSIGNED TO</span>
@@ -484,11 +513,60 @@ export default function ProjectDetailPage() {
                 </div>
               )}
             </div>
+
+            {/* Photos Section */}
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#6B7280', letterSpacing: 2, marginBottom: 12 }}>
+                PHOTOS {viewTaskPhotos.length > 0 ? `(${viewTaskPhotos.length})` : ''}
+              </div>
+              {photosLoading ? (
+                <div style={{ color: '#F97316', fontSize: 13 }}>Loading photos...</div>
+              ) : viewTaskPhotos.length > 0 ? (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+                  {viewTaskPhotos.map((photo: any) => (
+                    <div
+                      key={photo.id}
+                      onClick={() => setViewingPhoto(photo.url)}
+                      style={{ aspectRatio: '1', borderRadius: 8, overflow: 'hidden', cursor: 'pointer', backgroundColor: '#1F2937', border: '1px solid #374151' }}
+                    >
+                      <img
+                        src={photo.url}
+                        alt=""
+                        style={{ width: '100%', height: '100%', objectFit: 'cover', transition: 'opacity 0.2s' }}
+                        onMouseOver={(e) => (e.currentTarget.style.opacity = '0.8')}
+                        onMouseOut={(e) => (e.currentTarget.style.opacity = '1')}
+                      />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ padding: '16px 0', fontSize: 13, color: '#4B5563' }}>No photos attached to this task.</div>
+              )}
+            </div>
+
             <div style={{ display: 'flex', gap: 10 }}>
-              {canEdit && <button onClick={() => { setViewTask(null); openEditTask(viewTask); }} style={{ flex: 1, padding: '12px', backgroundColor: '#F97316', border: 'none', borderRadius: 10, color: '#0A0F1E', fontSize: 14, fontWeight: 800, cursor: 'pointer' }}>Edit Task</button>}
-              <button onClick={() => setViewTask(null)} style={{ padding: '12px 20px', backgroundColor: 'transparent', border: '1px solid #374151', borderRadius: 10, color: '#6B7280', fontSize: 14, cursor: 'pointer' }}>Close</button>
+              {canEdit && (
+                <button onClick={() => { closeViewTask(); openEditTask(viewTask); }} style={{ flex: 1, padding: '12px', backgroundColor: '#F97316', border: 'none', borderRadius: 10, color: '#0A0F1E', fontSize: 14, fontWeight: 800, cursor: 'pointer' }}>Edit Task</button>
+              )}
+              <button onClick={closeViewTask} style={{ padding: '12px 20px', backgroundColor: 'transparent', border: '1px solid #374151', borderRadius: 10, color: '#6B7280', fontSize: 14, cursor: 'pointer' }}>Close</button>
             </div>
           </div>
+
+          {/* Full screen photo lightbox */}
+          {viewingPhoto && (
+            <div
+              style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.95)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 2000 }}
+              onClick={() => setViewingPhoto(null)}
+            >
+              <button onClick={() => setViewingPhoto(null)} style={{ position: 'absolute', top: 24, right: 24, backgroundColor: '#1F2937', border: 'none', borderRadius: 20, color: '#FFFFFF', fontSize: 16, cursor: 'pointer', width: 40, height: 40 }}>✕</button>
+              <img
+                src={viewingPhoto}
+                alt=""
+                style={{ maxWidth: '90vw', maxHeight: '90vh', objectFit: 'contain', borderRadius: 8 }}
+                onClick={(e) => e.stopPropagation()}
+              />
+            </div>
+          )}
         </div>
       )}
 
@@ -560,7 +638,6 @@ export default function ProjectDetailPage() {
             </div>
           )}
 
-          {/* Mode Selection */}
           {!importMode && importStep === 'input' && (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <button onClick={() => setImportMode('manual')} style={{ padding: 20, backgroundColor: '#1F2937', border: '1px solid #374151', borderRadius: 12, cursor: 'pointer', textAlign: 'left' }}>
@@ -576,7 +653,6 @@ export default function ProjectDetailPage() {
             </div>
           )}
 
-          {/* ── MANUAL ENTRY ── */}
           {importMode === 'manual' && importStep === 'input' && (
             <>
               <button onClick={() => setImportMode(null)} style={{ backgroundColor: 'transparent', border: 'none', color: '#F97316', fontSize: 13, cursor: 'pointer', padding: 0, marginBottom: 14 }}>← Back</button>
@@ -633,39 +709,22 @@ export default function ProjectDetailPage() {
             </>
           )}
 
-          {/* ── PASTE FROM EXCEL ── */}
           {importMode === 'paste' && importStep === 'input' && (
             <>
               <button onClick={() => setImportMode(null)} style={{ backgroundColor: 'transparent', border: 'none', color: '#F97316', fontSize: 13, cursor: 'pointer', padding: 0, marginBottom: 14 }}>← Back</button>
               <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 10 }}>
                 Copy cells from Excel → click the table below → press <strong style={{ color: '#FFFFFF' }}>Ctrl+V</strong>
               </div>
-
-              {/* Excel-style paste table */}
               <div
                 style={{ overflowX: 'auto', borderRadius: 8, border: `2px solid ${pastedText ? '#22C55E' : '#374151'}`, cursor: 'text', outline: 'none', position: 'relative' }}
                 tabIndex={0}
-                onPaste={(e) => {
-                  e.preventDefault();
-                  const text = e.clipboardData.getData('text');
-                  setPastedText(text);
-                }}
-                onKeyDown={(e) => {
-                  if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
-                    // handled by onPaste
-                  }
-                }}
+                onPaste={(e) => { e.preventDefault(); const text = e.clipboardData.getData('text'); setPastedText(text); }}
               >
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 600 }}>
                   <thead>
                     <tr style={{ backgroundColor: '#1A2235' }}>
                       <th style={{ width: 36, padding: '9px 8px', textAlign: 'center', fontSize: 11, color: '#4B5563', borderRight: '1px solid #2D3748', borderBottom: '2px solid #374151' }}></th>
-                      {[
-                        { label: 'A — Task Name', required: true },
-                        { label: 'B — Description', required: false },
-                        { label: 'C — Priority', required: false },
-                        { label: 'D — Due Date (YYYY-MM-DD)', required: false },
-                      ].map((col, ci) => (
+                      {[{ label: 'A — Task Name', required: true }, { label: 'B — Description', required: false }, { label: 'C — Priority', required: false }, { label: 'D — Due Date (YYYY-MM-DD)', required: false }].map((col, ci) => (
                         <th key={ci} style={{ padding: '9px 12px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: col.required ? '#F97316' : '#9CA3AF', borderRight: ci < 3 ? '1px solid #2D3748' : 'none', borderBottom: '2px solid #374151', whiteSpace: 'nowrap' }}>
                           {col.label}{col.required && <span style={{ color: '#EF4444', marginLeft: 2 }}>*</span>}
                         </th>
@@ -677,7 +736,7 @@ export default function ProjectDetailPage() {
                       ? pastedRows.map((row, i) => (
                           <tr key={i} style={{ backgroundColor: i % 2 === 0 ? '#111827' : '#0D1321', borderBottom: '1px solid #1E2A3A' }}>
                             <td style={{ padding: '7px 8px', textAlign: 'center', fontSize: 11, color: '#4B5563', borderRight: '1px solid #1E2A3A', userSelect: 'none' }}>{i + 1}</td>
-                            <td style={{ padding: '7px 12px', fontSize: 13, color: row.title ? '#FFFFFF' : '#374151', borderRight: '1px solid #1E2A3A', fontStyle: row.title ? 'normal' : 'italic' }}>{row.title || ''}</td>
+                            <td style={{ padding: '7px 12px', fontSize: 13, color: row.title ? '#FFFFFF' : '#374151', borderRight: '1px solid #1E2A3A' }}>{row.title || ''}</td>
                             <td style={{ padding: '7px 12px', fontSize: 13, color: row.description ? '#D1D5DB' : '#374151', borderRight: '1px solid #1E2A3A' }}>{row.description || ''}</td>
                             <td style={{ padding: '7px 12px', fontSize: 13, color: row.priority === 'high' ? '#EF4444' : row.priority === 'low' ? '#6B7280' : row.priority ? '#F59E0B' : '#374151', borderRight: '1px solid #1E2A3A' }}>{row.priority || ''}</td>
                             <td style={{ padding: '7px 12px', fontSize: 13, color: row.dueDate ? '#D1D5DB' : '#374151' }}>{row.dueDate || ''}</td>
@@ -693,16 +752,8 @@ export default function ProjectDetailPage() {
                           </tr>
                         ))
                     }
-                    {pastedRows.length > 0 && pastedText.trim().split('\n').filter(l => l.trim()).length > 20 && (
-                      <tr>
-                        <td style={{ padding: '7px 8px', textAlign: 'center', fontSize: 11, color: '#374151', borderRight: '1px solid #1E2A3A' }}>...</td>
-                        <td colSpan={4} style={{ padding: '7px 12px', fontSize: 11, color: '#6B7280', fontStyle: 'italic' }}>+{pastedText.trim().split('\n').filter(l => l.trim()).length - 20} more rows</td>
-                      </tr>
-                    )}
                   </tbody>
                 </table>
-
-                {/* Click to focus overlay when empty */}
                 {!pastedText && (
                   <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
                     <div style={{ backgroundColor: '#1A2235CC', borderRadius: 8, padding: '10px 20px', fontSize: 13, color: '#9CA3AF', fontWeight: 600, textAlign: 'center' }}>
@@ -711,20 +762,14 @@ export default function ProjectDetailPage() {
                   </div>
                 )}
               </div>
-
               <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 10 }}>
                 {pastedText ? (
-                  <span style={{ fontSize: 12, color: '#22C55E', fontWeight: 600 }}>
-                    ✅ {pastedText.trim().split('\n').filter(l => l.trim()).length} rows detected
-                  </span>
+                  <span style={{ fontSize: 12, color: '#22C55E', fontWeight: 600 }}>✅ {pastedText.trim().split('\n').filter(l => l.trim()).length} rows detected</span>
                 ) : (
                   <span style={{ fontSize: 12, color: '#6B7280' }}>Click the table and paste with Ctrl+V</span>
                 )}
-                {pastedText && (
-                  <button onClick={() => setPastedText('')} style={{ padding: '4px 10px', backgroundColor: 'transparent', border: '1px solid #374151', borderRadius: 6, color: '#6B7280', fontSize: 11, cursor: 'pointer' }}>Clear</button>
-                )}
+                {pastedText && <button onClick={() => setPastedText('')} style={{ padding: '4px 10px', backgroundColor: 'transparent', border: '1px solid #374151', borderRadius: 6, color: '#6B7280', fontSize: 11, cursor: 'pointer' }}>Clear</button>}
               </div>
-
               <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
                 <button onClick={handlePastePreview} disabled={!pastedText.trim()} style={{ padding: '10px 24px', backgroundColor: pastedText.trim() ? '#F97316' : '#374151', border: 'none', borderRadius: 10, color: pastedText.trim() ? '#0A0F1E' : '#6B7280', fontSize: 14, fontWeight: 700, cursor: pastedText.trim() ? 'pointer' : 'not-allowed' }}>
                   Preview Tasks →
@@ -733,12 +778,11 @@ export default function ProjectDetailPage() {
             </>
           )}
 
-          {/* ── PREVIEW ── */}
           {importStep === 'preview' && (
             <>
               <div style={{ display: 'flex', gap: 24, marginBottom: 16 }}>
                 <div style={{ textAlign: 'center' }}><div style={{ fontSize: 28, fontWeight: 900, color: '#22C55E' }}>{validCount}</div><div style={{ fontSize: 12, color: '#6B7280' }}>Ready</div></div>
-                <div style={{ textAlign: 'center' }}><div style={{ fontSize: 28, fontWeight: 900, color: '#EF4444' }}>{parsedTasks.length - validCount}</div><div style={{ fontSize: 12, color: '#6B7280' }}>Skipped (no title)</div></div>
+                <div style={{ textAlign: 'center' }}><div style={{ fontSize: 28, fontWeight: 900, color: '#EF4444' }}>{parsedTasks.length - validCount}</div><div style={{ fontSize: 12, color: '#6B7280' }}>Skipped</div></div>
               </div>
               <div style={{ overflowX: 'auto', borderRadius: 8, border: '1px solid #374151', marginBottom: 16 }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -759,10 +803,7 @@ export default function ProjectDetailPage() {
                         </td>
                         <td style={{ padding: '7px 12px', fontSize: 12, color: '#9CA3AF', borderRight: '1px solid #1E2A3A' }}>{task.dueDate || '—'}</td>
                         <td style={{ padding: '7px 12px', fontSize: 11, fontWeight: 700 }}>
-                          {task.valid
-                            ? <span style={{ color: '#22C55E' }}>✅ Ready</span>
-                            : <span style={{ color: '#EF4444' }}>⏭ Skip</span>
-                          }
+                          {task.valid ? <span style={{ color: '#22C55E' }}>✅ Ready</span> : <span style={{ color: '#EF4444' }}>⏭ Skip</span>}
                         </td>
                       </tr>
                     ))}
@@ -778,7 +819,6 @@ export default function ProjectDetailPage() {
             </>
           )}
 
-          {/* ── DONE ── */}
           {importStep === 'done' && (
             <div style={{ textAlign: 'center', padding: '20px 0' }}>
               <div style={{ fontSize: 48, marginBottom: 12 }}>✅</div>
@@ -913,7 +953,7 @@ export default function ProjectDetailPage() {
                         <div style={{ display: 'flex', gap: 8 }}>
                           {!showArchivedTasks && (
                             <>
-                              <button onClick={() => setViewTask(task)} style={{ padding: '6px 14px', backgroundColor: '#1F2937', border: '1px solid #374151', borderRadius: 8, color: '#9CA3AF', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>View</button>
+                              <button onClick={() => openViewTask(task)} style={{ padding: '6px 14px', backgroundColor: '#1F2937', border: '1px solid #374151', borderRadius: 8, color: '#9CA3AF', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>View</button>
                               {canEdit && <button onClick={() => openEditTask(task)} style={{ padding: '6px 14px', backgroundColor: '#F9731620', border: '1px solid #F97316', borderRadius: 8, color: '#F97316', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Edit</button>}
                               {isAdmin && <button onClick={() => handleArchiveTask(task)} style={{ padding: '6px 14px', backgroundColor: 'transparent', border: '1px solid #6B7280', borderRadius: 8, color: '#6B7280', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Archive</button>}
                             </>
