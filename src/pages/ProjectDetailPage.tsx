@@ -21,6 +21,7 @@ export default function ProjectDetailPage() {
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [editingFolder, setEditingFolder] = useState<any>(null);
   const [editFolderName, setEditFolderName] = useState('');
+  const [taskSearch, setTaskSearch] = useState('');
 
   const [showImport, setShowImport] = useState(false);
   const [importMode, setImportMode] = useState<'paste' | 'manual' | null>(null);
@@ -130,6 +131,16 @@ export default function ProjectDetailPage() {
   const completedTasks = folders?.reduce((sum, f) => sum + (f.completed_count ?? 0), 0) ?? 0;
   const projectProgress = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
 
+  const filteredTasks = tasks?.filter((task: any) => {
+    if (!taskSearch.trim()) return true;
+    const q = taskSearch.toLowerCase();
+    return (
+      task.title?.toLowerCase().includes(q) ||
+      task.description?.toLowerCase().includes(q) ||
+      (task.assignee as any)?.full_name?.toLowerCase().includes(q)
+    );
+  });
+
   function getProgressColor(pct: number) {
     if (pct === 100) return '#22C55E';
     if (pct >= 50) return '#F97316';
@@ -146,27 +157,27 @@ export default function ProjectDetailPage() {
   }
 
   async function openViewTask(task: any) {
-  setViewTask(task);
-  setPhotosLoading(true);
-  try {
-    const { data, error } = await supabase
-      .from('task_photos')
-      .select('*')
-      .eq('task_id', task.id)
-      .order('created_at', { ascending: false });
-    if (!error && data) {
-      const photosWithUrls = data.map((photo: any) => ({
-        ...photo,
-        url: `${process.env.REACT_APP_SUPABASE_URL}/storage/v1/object/public/task-photos/${photo.storage_key}`,
-      }));
-      setViewTaskPhotos(photosWithUrls);
+    setViewTask(task);
+    setPhotosLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('task_photos')
+        .select('*')
+        .eq('task_id', task.id)
+        .order('created_at', { ascending: false });
+      if (!error && data) {
+        const photosWithUrls = data.map((photo: any) => ({
+          ...photo,
+          url: `${process.env.REACT_APP_SUPABASE_URL}/storage/v1/object/public/task-photos/${photo.storage_key}`,
+        }));
+        setViewTaskPhotos(photosWithUrls);
+      }
+    } catch (e) {
+      setViewTaskPhotos([]);
+    } finally {
+      setPhotosLoading(false);
     }
-  } catch (e) {
-    setViewTaskPhotos([]);
-  } finally {
-    setPhotosLoading(false);
   }
-}
 
   function closeViewTask() {
     setViewTask(null);
@@ -497,16 +508,13 @@ export default function ProjectDetailPage() {
               <h3 style={{ margin: 0, fontSize: 20, fontWeight: 800, flex: 1, marginRight: 16 }}>{viewTask.title}</h3>
               <button onClick={closeViewTask} style={{ backgroundColor: '#1F2937', border: 'none', borderRadius: 8, color: '#9CA3AF', fontSize: 16, cursor: 'pointer', padding: '4px 10px' }}>✕</button>
             </div>
-
             {viewTask.description && (
               <p style={{ color: '#9CA3AF', fontSize: 14, lineHeight: 1.6, margin: '0 0 20px 0' }}>{viewTask.description}</p>
             )}
-
             <div style={{ display: 'flex', gap: 10, marginBottom: 20, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 12, fontWeight: 700, color: statusColors[viewTask.status], backgroundColor: statusColors[viewTask.status] + '20', padding: '4px 12px', borderRadius: 20 }}>{statusLabels[viewTask.status]}</span>
               <span style={{ fontSize: 12, fontWeight: 700, color: priorityColors[viewTask.priority], backgroundColor: priorityColors[viewTask.priority] + '20', padding: '4px 12px', borderRadius: 20 }}>{viewTask.priority} priority</span>
             </div>
-
             <div style={{ backgroundColor: '#0D1321', borderRadius: 10, padding: 16, marginBottom: 20 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: 10, borderBottom: '1px solid #1F2937', marginBottom: 10 }}>
                 <span style={{ fontSize: 12, color: '#6B7280', fontWeight: 600 }}>ASSIGNED TO</span>
@@ -519,8 +527,6 @@ export default function ProjectDetailPage() {
                 </div>
               )}
             </div>
-
-            {/* Photos Section */}
             <div style={{ marginBottom: 20 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: '#6B7280', letterSpacing: 2, marginBottom: 12 }}>
                 PHOTOS {viewTaskPhotos.length > 0 ? `(${viewTaskPhotos.length})` : ''}
@@ -549,7 +555,6 @@ export default function ProjectDetailPage() {
                 <div style={{ padding: '16px 0', fontSize: 13, color: '#4B5563' }}>No photos attached to this task.</div>
               )}
             </div>
-
             <div style={{ display: 'flex', gap: 10 }}>
               {canEdit && (
                 <button onClick={() => { closeViewTask(); openEditTask(viewTask); }} style={{ flex: 1, padding: '12px', backgroundColor: '#F97316', border: 'none', borderRadius: 10, color: '#0A0F1E', fontSize: 14, fontWeight: 800, cursor: 'pointer' }}>Edit Task</button>
@@ -557,20 +562,13 @@ export default function ProjectDetailPage() {
               <button onClick={closeViewTask} style={{ padding: '12px 20px', backgroundColor: 'transparent', border: '1px solid #374151', borderRadius: 10, color: '#6B7280', fontSize: 14, cursor: 'pointer' }}>Close</button>
             </div>
           </div>
-
-          {/* Full screen photo lightbox */}
           {viewingPhoto && (
             <div
               style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.95)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 2000 }}
               onClick={() => setViewingPhoto(null)}
             >
               <button onClick={() => setViewingPhoto(null)} style={{ position: 'absolute', top: 24, right: 24, backgroundColor: '#1F2937', border: 'none', borderRadius: 20, color: '#FFFFFF', fontSize: 16, cursor: 'pointer', width: 40, height: 40 }}>✕</button>
-              <img
-                src={viewingPhoto}
-                alt=""
-                style={{ maxWidth: '90vw', maxHeight: '90vh', objectFit: 'contain', borderRadius: 8 }}
-                onClick={(e) => e.stopPropagation()}
-              />
+              <img src={viewingPhoto} alt="" style={{ maxWidth: '90vw', maxHeight: '90vh', objectFit: 'contain', borderRadius: 8 }} onClick={(e) => e.stopPropagation()} />
             </div>
           )}
         </div>
@@ -637,13 +635,11 @@ export default function ProjectDetailPage() {
             </h3>
             <button onClick={resetImport} style={{ backgroundColor: 'transparent', border: 'none', color: '#6B7280', fontSize: 18, cursor: 'pointer' }}>✕</button>
           </div>
-
           {!selectedFolder && (
             <div style={{ backgroundColor: '#F59E0B15', border: '1px solid #F59E0B40', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 13, color: '#F59E0B' }}>
               💡 Select a folder on the left to add tasks into a specific folder
             </div>
           )}
-
           {!importMode && importStep === 'input' && (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <button onClick={() => setImportMode('manual')} style={{ padding: 20, backgroundColor: '#1F2937', border: '1px solid #374151', borderRadius: 12, cursor: 'pointer', textAlign: 'left' }}>
@@ -658,7 +654,6 @@ export default function ProjectDetailPage() {
               </button>
             </div>
           )}
-
           {importMode === 'manual' && importStep === 'input' && (
             <>
               <button onClick={() => setImportMode(null)} style={{ backgroundColor: 'transparent', border: 'none', color: '#F97316', fontSize: 13, cursor: 'pointer', padding: 0, marginBottom: 14 }}>← Back</button>
@@ -714,7 +709,6 @@ export default function ProjectDetailPage() {
               </div>
             </>
           )}
-
           {importMode === 'paste' && importStep === 'input' && (
             <>
               <button onClick={() => setImportMode(null)} style={{ backgroundColor: 'transparent', border: 'none', color: '#F97316', fontSize: 13, cursor: 'pointer', padding: 0, marginBottom: 14 }}>← Back</button>
@@ -783,7 +777,6 @@ export default function ProjectDetailPage() {
               </div>
             </>
           )}
-
           {importStep === 'preview' && (
             <>
               <div style={{ display: 'flex', gap: 24, marginBottom: 16 }}>
@@ -824,7 +817,6 @@ export default function ProjectDetailPage() {
               </div>
             </>
           )}
-
           {importStep === 'done' && (
             <div style={{ textAlign: 'center', padding: '20px 0' }}>
               <div style={{ fontSize: 48, marginBottom: 12 }}>✅</div>
@@ -843,7 +835,6 @@ export default function ProjectDetailPage() {
             <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Folders</h2>
             {isAdmin && <button onClick={() => setShowCreateFolder(true)} style={{ padding: '6px 12px', backgroundColor: '#F97316', border: 'none', borderRadius: 8, color: '#0A0F1E', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>+ New</button>}
           </div>
-
           {showCreateFolder && (
             <div style={{ backgroundColor: '#111827', borderRadius: 10, padding: 14, border: '1px solid #F97316', marginBottom: 12 }}>
               <input value={newFolderName} onChange={(e) => setNewFolderName(e.target.value)} placeholder="Folder name..." onKeyDown={(e) => e.key === 'Enter' && handleCreateFolder()} style={{ ...inputStyle, marginBottom: 10 }} autoFocus />
@@ -853,7 +844,6 @@ export default function ProjectDetailPage() {
               </div>
             </div>
           )}
-
           {editingFolder && (
             <div style={{ backgroundColor: '#111827', borderRadius: 10, padding: 14, border: '1px solid #F97316', marginBottom: 12 }}>
               <input value={editFolderName} onChange={(e) => setEditFolderName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleRenameFolder()} style={{ ...inputStyle, marginBottom: 10 }} autoFocus />
@@ -863,11 +853,9 @@ export default function ProjectDetailPage() {
               </div>
             </div>
           )}
-
           <button onClick={() => setSelectedFolder(null)} style={{ width: '100%', padding: '12px 14px', backgroundColor: !selectedFolder ? '#F9731620' : '#111827', border: '1px solid', borderColor: !selectedFolder ? '#F97316' : '#1F2937', borderRadius: 10, color: !selectedFolder ? '#F97316' : '#9CA3AF', fontSize: 13, fontWeight: 600, cursor: 'pointer', textAlign: 'left', marginBottom: 8 }}>
             📋 All Tasks
           </button>
-
           {foldersLoading ? (
             <div style={{ color: '#F97316', padding: 12 }}>Loading...</div>
           ) : (
@@ -901,23 +889,31 @@ export default function ProjectDetailPage() {
 
         {/* Tasks Panel */}
         <div style={{ backgroundColor: '#111827', borderRadius: 14, border: '1px solid #1F2937', overflow: 'hidden' }}>
-          <div style={{ padding: '16px 24px', borderBottom: '1px solid #1F2937', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>
-              {selectedFolder ? `📁 ${(folders as any[])?.find((f: any) => f.id === selectedFolder)?.name ?? 'Folder'}` : '📋 All Tasks'}
-              {tasks ? ` (${tasks.length})` : ''}
-            </h2>
-            {isAdmin && (
-              <button onClick={() => setShowArchivedTasks(!showArchivedTasks)} style={{ padding: '8px 14px', backgroundColor: showArchivedTasks ? '#F97316' : 'transparent', border: '1px solid', borderColor: showArchivedTasks ? '#F97316' : '#374151', borderRadius: 8, color: showArchivedTasks ? '#0A0F1E' : '#6B7280', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-                {showArchivedTasks ? '← Active Tasks' : '📦 Archived'}
-              </button>
-            )}
+          <div style={{ padding: '16px 24px', borderBottom: '1px solid #1F2937' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>
+                {selectedFolder ? `📁 ${(folders as any[])?.find((f: any) => f.id === selectedFolder)?.name ?? 'Folder'}` : '📋 All Tasks'}
+                {filteredTasks ? ` (${filteredTasks.length})` : ''}
+              </h2>
+              {isAdmin && (
+                <button onClick={() => setShowArchivedTasks(!showArchivedTasks)} style={{ padding: '8px 14px', backgroundColor: showArchivedTasks ? '#F97316' : 'transparent', border: '1px solid', borderColor: showArchivedTasks ? '#F97316' : '#374151', borderRadius: 8, color: showArchivedTasks ? '#0A0F1E' : '#6B7280', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                  {showArchivedTasks ? '← Active Tasks' : '📦 Archived'}
+                </button>
+              )}
+            </div>
+            <input
+              type="text"
+              placeholder="Search tasks..."
+              value={taskSearch}
+              onChange={(e) => setTaskSearch(e.target.value)}
+              style={{ width: '100%', padding: '10px 14px', backgroundColor: '#0D1321', border: '1px solid #1F2937', borderRadius: 8, color: '#FFFFFF', fontSize: 14, outline: 'none', boxSizing: 'border-box' as const }}
+            />
           </div>
-
           {tasksLoading ? (
             <div style={{ padding: 24, color: '#F97316' }}>Loading tasks...</div>
-          ) : tasks?.length === 0 ? (
+          ) : filteredTasks?.length === 0 ? (
             <div style={{ padding: 40, textAlign: 'center', color: '#4B5563' }}>
-              {showArchivedTasks ? 'No archived tasks.' : canEdit ? 'No tasks yet. Click "+ Add Tasks" to get started.' : 'No tasks have been created yet.'}
+              {taskSearch ? `No tasks match "${taskSearch}"` : showArchivedTasks ? 'No archived tasks.' : canEdit ? 'No tasks yet. Click "+ Add Tasks" to get started.' : 'No tasks have been created yet.'}
             </div>
           ) : (
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -929,7 +925,7 @@ export default function ProjectDetailPage() {
                 </tr>
               </thead>
               <tbody>
-                {tasks?.map((task: any, i: number) => {
+                {filteredTasks?.map((task: any, i: number) => {
                   const isOverdue = task.due_date && new Date(task.due_date) < new Date() && task.status !== 'completed';
                   return (
                     <tr key={task.id} style={{ borderTop: '1px solid #1F2937', backgroundColor: i % 2 === 0 ? 'transparent' : '#0D132120' }}>
