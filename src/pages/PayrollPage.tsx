@@ -4,16 +4,33 @@ import { supabase } from '../lib/supabase';
 type PayrollSettings = {
   recipient_email: string;
   schedule_day: number;
+  schedule_hour: number;
+  schedule_minute: number;
   frequency: 'weekly' | 'biweekly' | 'manual';
   enabled: boolean;
 };
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
+const HOURS = Array.from({ length: 24 }, (_, i) => {
+  const suffix = i < 12 ? 'AM' : 'PM';
+  const hour = i === 0 ? 12 : i > 12 ? i - 12 : i;
+  return { value: i, label: `${hour}:00 ${suffix}` };
+});
+
+const MINUTES = [
+  { value: 0, label: ':00' },
+  { value: 15, label: ':15' },
+  { value: 30, label: ':30' },
+  { value: 45, label: ':45' },
+];
+
 export default function PayrollPage() {
   const [settings, setSettings] = useState<PayrollSettings>({
     recipient_email: '',
     schedule_day: 1,
+    schedule_hour: 7,
+    schedule_minute: 0,
     frequency: 'weekly',
     enabled: false,
   });
@@ -53,6 +70,8 @@ export default function PayrollPage() {
         setSettings({
           recipient_email: data.recipient_email ?? '',
           schedule_day: data.schedule_day ?? 1,
+          schedule_hour: data.schedule_hour ?? 7,
+          schedule_minute: data.schedule_minute ?? 0,
           frequency: data.frequency ?? 'weekly',
           enabled: data.enabled ?? false,
         });
@@ -74,6 +93,8 @@ export default function PayrollPage() {
           company_id: companyId,
           recipient_email: settings.recipient_email,
           schedule_day: settings.schedule_day,
+          schedule_hour: settings.schedule_hour,
+          schedule_minute: settings.schedule_minute,
           frequency: settings.frequency,
           enabled: settings.enabled,
           updated_at: new Date().toISOString(),
@@ -123,6 +144,15 @@ export default function PayrollPage() {
     }
   }
 
+  function formatScheduleTime() {
+    const h = settings.schedule_hour;
+    const m = settings.schedule_minute;
+    const suffix = h < 12 ? 'AM' : 'PM';
+    const hour = h === 0 ? 12 : h > 12 ? h - 12 : h;
+    const minute = m === 0 ? '00' : m.toString();
+    return `${hour}:${minute} ${suffix}`;
+  }
+
   if (loading) {
     return <div style={{ padding: 32, color: '#F97316' }}>Loading...</div>;
   }
@@ -140,14 +170,11 @@ export default function PayrollPage() {
       {/* Result banner */}
       {sendResult && (
         <div style={{
-          marginBottom: 24,
-          padding: '14px 20px',
-          borderRadius: 10,
+          marginBottom: 24, padding: '14px 20px', borderRadius: 10,
           backgroundColor: sendResult.success ? '#22C55E20' : '#EF444420',
           border: `1px solid ${sendResult.success ? '#22C55E' : '#EF4444'}`,
           color: sendResult.success ? '#22C55E' : '#EF4444',
-          fontSize: 14,
-          fontWeight: 600,
+          fontSize: 14, fontWeight: 600,
         }}>
           {sendResult.success ? '✓ ' : '✗ '}{sendResult.message}
         </div>
@@ -228,16 +255,11 @@ export default function PayrollPage() {
                 key={f}
                 onClick={() => setSettings({ ...settings, frequency: f })}
                 style={{
-                  padding: '10px 18px',
-                  borderRadius: 10,
-                  border: '1px solid',
+                  padding: '10px 18px', borderRadius: 10, border: '1px solid',
                   borderColor: settings.frequency === f ? '#F97316' : '#1F2937',
                   backgroundColor: settings.frequency === f ? '#F9731620' : '#0D1321',
                   color: settings.frequency === f ? '#F97316' : '#6B7280',
-                  fontWeight: 700,
-                  fontSize: 13,
-                  cursor: 'pointer',
-                  textTransform: 'capitalize',
+                  fontWeight: 700, fontSize: 13, cursor: 'pointer', textTransform: 'capitalize',
                 }}
               >
                 {f === 'biweekly' ? 'Bi-Weekly' : f.charAt(0).toUpperCase() + f.slice(1)}
@@ -259,8 +281,35 @@ export default function PayrollPage() {
                 <option key={i} value={i}>{day}</option>
               ))}
             </select>
+          </div>
+        )}
+
+        {/* Send Time */}
+        {settings.frequency !== 'manual' && (
+          <div style={{ marginBottom: 20 }}>
+            <label style={labelStyle}>SEND AT</label>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+              <select
+                value={settings.schedule_hour}
+                onChange={(e) => setSettings({ ...settings, schedule_hour: parseInt(e.target.value) })}
+                style={selectStyle}
+              >
+                {HOURS.map((h) => (
+                  <option key={h.value} value={h.value}>{h.label}</option>
+                ))}
+              </select>
+              <select
+                value={settings.schedule_minute}
+                onChange={(e) => setSettings({ ...settings, schedule_minute: parseInt(e.target.value) })}
+                style={{ ...selectStyle, minWidth: 80 }}
+              >
+                {MINUTES.map((m) => (
+                  <option key={m.value} value={m.value}>{m.label}</option>
+                ))}
+              </select>
+            </div>
             <p style={{ color: '#4B5563', fontSize: 12, marginTop: 6 }}>
-              Report will automatically send every {settings.frequency === 'biweekly' ? 'other' : ''} {DAYS[settings.schedule_day]}
+              Report will send every {settings.frequency === 'biweekly' ? 'other' : ''} {DAYS[settings.schedule_day]} at {formatScheduleTime()}
             </p>
           </div>
         )}
@@ -277,8 +326,8 @@ export default function PayrollPage() {
               }}
             >
               <div style={{
-                position: 'absolute',
-                top: 3, left: settings.enabled ? 25 : 3,
+                position: 'absolute', top: 3,
+                left: settings.enabled ? 25 : 3,
                 width: 20, height: 20, borderRadius: 10,
                 backgroundColor: '#FFFFFF', transition: 'left 0.2s',
               }} />
@@ -292,7 +341,12 @@ export default function PayrollPage() {
         <button
           onClick={handleSave}
           disabled={saving}
-          style={{ ...btnStyle, backgroundColor: '#1F2937', border: '1px solid #374151', opacity: saving ? 0.6 : 1, cursor: saving ? 'not-allowed' : 'pointer' }}
+          style={{
+            ...btnStyle, backgroundColor: '#1F2937',
+            border: '1px solid #374151',
+            opacity: saving ? 0.6 : 1,
+            cursor: saving ? 'not-allowed' : 'pointer',
+          }}
         >
           {saving ? 'Saving...' : 'Save Settings'}
         </button>
