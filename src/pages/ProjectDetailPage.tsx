@@ -146,21 +146,27 @@ export default function ProjectDetailPage() {
   }
 
   async function openViewTask(task: any) {
-    setViewTask(task);
-    setPhotosLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from('task_photos')
-        .select('*')
-        .eq('task_id', task.id)
-        .order('created_at', { ascending: false });
-      if (!error) setViewTaskPhotos(data ?? []);
-    } catch (e) {
-      setViewTaskPhotos([]);
-    } finally {
-      setPhotosLoading(false);
+  setViewTask(task);
+  setPhotosLoading(true);
+  try {
+    const { data, error } = await supabase
+      .from('task_photos')
+      .select('*')
+      .eq('task_id', task.id)
+      .order('created_at', { ascending: false });
+    if (!error && data) {
+      const photosWithUrls = data.map((photo: any) => ({
+        ...photo,
+        url: `${process.env.REACT_APP_SUPABASE_URL}/storage/v1/object/public/task-photos/${photo.storage_key}`,
+      }));
+      setViewTaskPhotos(photosWithUrls);
     }
+  } catch (e) {
+    setViewTaskPhotos([]);
+  } finally {
+    setPhotosLoading(false);
   }
+}
 
   function closeViewTask() {
     setViewTask(null);
