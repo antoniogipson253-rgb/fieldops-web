@@ -211,10 +211,6 @@ function AppLayout({ children }: { children: React.ReactNode }) {
   );
 }
 
-function AuthGuard({ session, children }: { session: Session | null; children: React.ReactNode }) {
-  if (!session) return <Navigate to="/login" replace />;
-  return <>{children}</>;
-}
 
 function ClientGuard({ session, children }: { session: Session | null; children: React.ReactNode }) {
   const [role, setRole] = useState<string | null>(null);
