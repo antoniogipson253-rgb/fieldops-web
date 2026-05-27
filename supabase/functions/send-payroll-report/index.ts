@@ -94,11 +94,7 @@ serve(async (req) => {
 
     const { data: entries, error } = await supabaseAdmin
       .from('time_entries')
-      .select(`
-        *,
-        profile:user_id (full_name),
-        project:project_id (name)
-      `)
+      .select('*, project:project_id (name)')
       .eq('company_id', companyId)
       .gte('clock_in', start.toISOString())
       .lte('clock_in', end.toISOString())
@@ -107,19 +103,30 @@ serve(async (req) => {
 
     if (error) throw error
 
+    const userIds = [...new Set((entries ?? []).map((e: any) => e.user_id))]
+    const { data: profiles } = await supabaseAdmin
+      .from('profiles')
+      .select('id, full_name')
+      .in('id', userIds)
+
+    const profileMap: Record<string, string> = {}
+    for (const p of profiles ?? []) {
+      profileMap[p.id] = p.full_name ?? 'Unknown'
+    }
+
     const rows = (entries ?? []).map((e: any) => ({
-      employee: e.profile?.full_name ?? 'Unknown',
+      employee: profileMap[e.user_id] ?? 'Unknown',
       date: new Date(e.clock_in).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }),
       clockIn: new Date(e.clock_in).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
       clockOut: e.clock_out ? new Date(e.clock_out).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : '—',
       hours: minutesToHours(e.total_minutes ?? 0),
-      project: e.project?.name ?? '—',
+      project: (e.project as any)?.name ?? '—',
       notes: e.notes ?? '',
     }))
 
     const summary: Record<string, number> = {}
     for (const e of entries ?? []) {
-      const name = (e as any).profile?.full_name ?? 'Unknown'
+      const name = profileMap[e.user_id] ?? 'Unknown'
       summary[name] = (summary[name] ?? 0) + ((e as any).total_minutes ?? 0)
     }
 

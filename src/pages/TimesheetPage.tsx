@@ -53,20 +53,35 @@ export default function TimesheetPage() {
     queryKey: ['web-timesheet', weekOffset, companyData?.id],
     queryFn: async () => {
       if (!companyData?.id) return [];
+
       const { data, error } = await supabase
         .from('time_entries')
-        .select(`
-          *,
-          profile:user_id (id, full_name),
-          project:project_id (name)
-        `)
+        .select('*, project:project_id (name)')
         .eq('company_id', companyData.id)
         .gte('clock_in', start.toISOString())
         .lte('clock_in', end.toISOString())
         .not('clock_out', 'is', null)
         .order('clock_in', { ascending: true });
+
       if (error) throw error;
-      return data ?? [];
+
+      const userIds = [...new Set((data ?? []).map((e: any) => e.user_id))];
+      if (userIds.length === 0) return [];
+
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, full_name')
+        .in('id', userIds);
+
+      const profileMap: Record<string, string> = {};
+      for (const p of profiles ?? []) {
+        profileMap[p.id] = p.full_name ?? 'Unknown';
+      }
+
+      return (data ?? []).map((e: any) => ({
+        ...e,
+        profile: { id: e.user_id, full_name: profileMap[e.user_id] ?? 'Unknown' },
+      }));
     },
     enabled: !!companyData?.id,
   });
@@ -85,11 +100,10 @@ export default function TimesheetPage() {
     enabled: !!companyData?.id,
   });
 
-  // Group entries by employee
   const byEmployee: Record<string, { name: string; entries: any[]; totalMinutes: number }> = {};
   for (const entry of entries ?? []) {
     const name = (entry as any).profile?.full_name ?? 'Unknown';
-    const userId = (entry as any).profile?.id ?? entry.user_id;
+    const userId = entry.user_id;
     if (!byEmployee[userId]) {
       byEmployee[userId] = { name, entries: [], totalMinutes: 0 };
     }
@@ -134,7 +148,6 @@ export default function TimesheetPage() {
 
   return (
     <div style={{ padding: 32, color: '#FFFFFF', maxWidth: 960 }}>
-      {/* Header */}
       <div style={{ marginBottom: 32 }}>
         <h1 style={{ fontSize: 28, fontWeight: 800, margin: 0, marginBottom: 4 }}>Timesheet Viewer</h1>
         <p style={{ color: '#6B7280', fontSize: 14, margin: 0 }}>
@@ -142,7 +155,6 @@ export default function TimesheetPage() {
         </p>
       </div>
 
-      {/* Controls */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <button
@@ -171,14 +183,12 @@ export default function TimesheetPage() {
         </button>
       </div>
 
-      {/* Result banner */}
       {sendResult && (
         <div style={{ marginBottom: 20, padding: '12px 20px', borderRadius: 10, backgroundColor: sendResult.success ? '#22C55E20' : '#EF444420', border: `1px solid ${sendResult.success ? '#22C55E' : '#EF4444'}`, color: sendResult.success ? '#22C55E' : '#EF4444', fontSize: 14, fontWeight: 600 }}>
           {sendResult.success ? '✓ ' : '✗ '}{sendResult.message}
         </div>
       )}
 
-      {/* Summary Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 24 }}>
         <div style={{ backgroundColor: '#111827', borderRadius: 12, padding: 20, border: '1px solid #1F2937', borderLeftWidth: 3, borderLeftColor: '#F97316' }}>
           <div style={{ fontSize: 11, color: '#6B7280', fontWeight: 700, letterSpacing: 2, marginBottom: 8 }}>TOTAL HOURS</div>
@@ -194,7 +204,6 @@ export default function TimesheetPage() {
         </div>
       </div>
 
-      {/* Timesheet Table */}
       {isLoading ? (
         <div style={{ color: '#F97316', padding: 24 }}>Loading...</div>
       ) : Object.keys(byEmployee).length === 0 ? (
@@ -211,7 +220,6 @@ export default function TimesheetPage() {
             const overtimeHours = Math.max(0, minutesToHours(employee.totalMinutes) - 40);
             return (
               <div key={userId} style={{ backgroundColor: '#111827', borderRadius: 14, border: '1px solid #1F2937', overflow: 'hidden' }}>
-                {/* Employee header */}
                 <button
                   onClick={() => setExpandedEmployee(isExpanded ? null : userId)}
                   style={{ width: '100%', padding: '16px 20px', backgroundColor: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#FFFFFF' }}
@@ -238,7 +246,6 @@ export default function TimesheetPage() {
                   </div>
                 </button>
 
-                {/* Expanded entries */}
                 {isExpanded && (
                   <div style={{ borderTop: '1px solid #1F2937' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
