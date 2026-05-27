@@ -53,6 +53,11 @@ export default function TeamPage() {
   const [clientInviteProject, setClientInviteProject] = useState('');
   const [clientInviting, setClientInviting] = useState(false);
   const [clientMessage, setClientMessage] = useState('');
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+
+  useState(() => {
+    supabase.auth.getUser().then(({ data }) => setCurrentUserId(data.user?.id ?? null));
+  });
 
   const { data: companyMembers, isLoading } = useQuery({
     queryKey: ['web-company-members'],
@@ -208,6 +213,29 @@ export default function TeamPage() {
       alert(e.message);
     } finally {
       setUpdatingRole(null);
+    }
+  }
+
+  async function handleRemoveMember(userId: string, memberName: string) {
+    const confirmed = window.confirm(`Remove ${memberName || 'this member'} from your team? They will lose access immediately.`);
+    if (!confirmed) return;
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      const { data: memberData } = await supabase
+        .from('company_members')
+        .select('company_id')
+        .eq('user_id', user!.id)
+        .single();
+      const { error } = await supabase
+        .from('company_members')
+        .delete()
+        .eq('user_id', userId)
+        .eq('company_id', memberData!.company_id);
+      if (error) throw error;
+      queryClient.invalidateQueries({ queryKey: ['web-company-members'] });
+      setMessage('Member removed from your team.');
+    } catch (e: any) {
+      alert('Error removing member: ' + e.message);
     }
   }
 
@@ -396,9 +424,22 @@ export default function TeamPage() {
                   )}
                 </div>
                 {isAdmin && (
-                  <button onClick={() => { setEditingMember(member.user_id); setSelectedRole(role); }} style={{ padding: '7px 14px', background: '#1F2937', border: '0.5px solid #374151', borderRadius: 8, color: '#9CA3AF', fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                    Change Role
-                  </button>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button
+                      onClick={() => { setEditingMember(member.user_id); setSelectedRole(role); }}
+                      style={{ padding: '7px 14px', background: '#1F2937', border: '0.5px solid #374151', borderRadius: 8, color: '#9CA3AF', fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                    >
+                      Change Role
+                    </button>
+                    {member.user_id !== currentUserId && (
+                      <button
+                        onClick={() => handleRemoveMember(member.user_id, profile?.full_name)}
+                        style={{ padding: '7px 14px', background: 'transparent', border: '0.5px solid #EF4444', borderRadius: 8, color: '#EF4444', fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
             );

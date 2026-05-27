@@ -18,6 +18,7 @@ export default function Sidebar() {
     { path: '/reports', label: 'Reports', show: true },
     { path: '/punch-list', label: 'Punch List', show: !!(isAdmin || isPM) },
     { path: '/payroll', label: 'Payroll', show: !!isAdmin },
+    { path: '/timesheet', label: 'Timesheet', show: !!isAdmin },
     { path: '/files', label: 'Files', show: true },
     { path: '/profile', label: 'Profile', show: true },
     { path: '/incidents', label: 'Incidents', show: !!isAdmin },

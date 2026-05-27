@@ -20,6 +20,7 @@ import PunchListPage from './pages/PunchListPage';
 import IncidentsPage from './pages/IncidentsPage';
 import AcceptInvitePage from './pages/AcceptInvitePage';
 import ClientPortalPage from './pages/ClientPortalPage';
+import TimesheetPage from './pages/TimesheetPage';
 
 const PLANS = [
   {
@@ -280,6 +281,7 @@ export default function App() {
           <Route path="/profile" element={<ClientGuard session={session}><AppLayout><ProfilePage /></AppLayout></ClientGuard>} />
           <Route path="/punch-list" element={<ClientGuard session={session}><AppLayout><PunchListPage /></AppLayout></ClientGuard>} />
           <Route path="/incidents" element={<ClientGuard session={session}><AppLayout><IncidentsPage /></AppLayout></ClientGuard>} />
+          <Route path="/timesheet" element={<ClientGuard session={session}><AppLayout><TimesheetPage /></AppLayout></ClientGuard>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
