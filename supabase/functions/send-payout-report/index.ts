@@ -22,6 +22,16 @@ function minutesToHours(minutes: number) {
   return Math.round((minutes / 60) * 100) / 100
 }
 
+function toBase64(str: string): string {
+  const encoder = new TextEncoder()
+  const bytes = encoder.encode(str)
+  let binary = ''
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i])
+  }
+  return btoa(binary)
+}
+
 function buildExcelXml(rows: any[], weekLabel: string, companyName: string) {
   const headerRow = `
     <Row>
@@ -84,7 +94,6 @@ serve(async (req) => {
     const { start, end } = getWeekRange(weekOffset)
     const weekLabel = `${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
 
-    // Get company name
     const { data: company } = await supabaseAdmin
       .from('companies')
       .select('name')
@@ -93,14 +102,9 @@ serve(async (req) => {
 
     const companyName = company?.name ?? 'FieldOps'
 
-    // Get time entries for that week
     const { data: entries, error } = await supabaseAdmin
       .from('time_entries')
-      .select(`
-        *,
-        profile:user_id (full_name),
-        project:project_id (name)
-      `)
+      .select('*, project:project_id (name)')
       .eq('company_id', companyId)
       .gte('clock_in', start.toISOString())
       .lte('clock_in', end.toISOString())
@@ -109,32 +113,43 @@ serve(async (req) => {
 
     if (error) throw error
 
+    const userIds = [...new Set((entries ?? []).map((e: any) => e.user_id))]
+    const { data: profiles } = await supabaseAdmin
+      .from('profiles')
+      .select('id, full_name')
+      .in('id', userIds.length > 0 ? userIds : ['00000000-0000-0000-0000-000000000000'])
+
+    const profileMap: Record<string, string> = {}
+    for (const p of profiles ?? []) {
+      profileMap[p.id] = p.full_name ?? 'Unknown'
+    }
+
     const rows = (entries ?? []).map((e: any) => ({
-      employee: e.profile?.full_name ?? 'Unknown',
+      employee: profileMap[e.user_id] ?? 'Unknown',
       date: new Date(e.clock_in).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }),
       clockIn: new Date(e.clock_in).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
       clockOut: e.clock_out ? new Date(e.clock_out).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : '—',
       hours: minutesToHours(e.total_minutes ?? 0),
-      project: e.project?.name ?? '—',
+      project: (e.project as any)?.name ?? '—',
       notes: e.notes ?? '',
     }))
 
-    // Calculate summary per employee
     const summary: Record<string, number> = {}
     for (const e of entries ?? []) {
-      const name = (e as any).profile?.full_name ?? 'Unknown'
+      const name = profileMap[e.user_id] ?? 'Unknown'
       summary[name] = (summary[name] ?? 0) + ((e as any).total_minutes ?? 0)
     }
 
     const excelXml = buildExcelXml(rows, weekLabel, companyName)
-    const base64Excel = btoa(unescape(encodeURIComponent(excelXml)))
+    const base64Excel = toBase64(excelXml)
 
     const summaryHtml = Object.entries(summary)
       .map(([name, mins]) => `<tr><td style="padding:8px 16px;border-bottom:1px solid #1F2937;">${name}</td><td style="padding:8px 16px;border-bottom:1px solid #1F2937;text-align:right;">${minutesToHours(mins)}h</td></tr>`)
       .join('')
 
     const resendKey = Deno.env.get('RESEND_API_KEY')
-    await fetch('https://api.resend.com/emails', {
+
+    const emailRes = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${resendKey}`,
@@ -173,11 +188,17 @@ serve(async (req) => {
       }),
     })
 
+    const emailResult = await emailRes.json()
+    console.log('Resend response:', JSON.stringify(emailResult))
+
+    if (!emailRes.ok) throw new Error(emailResult.message ?? 'Email failed')
+
     return new Response(
       JSON.stringify({ success: true, week: weekLabel, entries: rows.length }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
   } catch (error: any) {
+    console.error('Error:', error.message)
     return new Response(
       JSON.stringify({ success: false, error: error.message }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
