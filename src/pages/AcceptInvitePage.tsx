@@ -32,10 +32,9 @@ export default function AcceptInvitePage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('No user found.');
 
-      // Look up invitation by email to get company_id and role
       const { data: invite, error: inviteError } = await supabase
         .from('invitations')
-        .select('company_id, role')
+        .select('company_id, role, project_id')
         .eq('email', user.email!.toLowerCase())
         .eq('status', 'pending')
         .order('created_at', { ascending: false })
@@ -44,23 +43,34 @@ export default function AcceptInvitePage() {
 
       if (inviteError || !invite) throw new Error('Could not find your invitation.');
 
-      // Add to company_members
-      const { error: memberError } = await supabase
-        .from('company_members')
-        .insert({ company_id: invite.company_id, user_id: user.id, role: invite.role })
-        .single();
+      if (invite.role === 'client') {
+        await supabase
+          .from('profiles')
+          .update({ role: 'client' })
+          .eq('id', user.id);
 
-      if (memberError && memberError.code !== '23505') throw memberError;
+        if (invite.project_id && invite.company_id) {
+          await supabase
+            .from('client_projects')
+            .insert({
+              client_id: user.id,
+              project_id: invite.project_id,
+              company_id: invite.company_id,
+            });
+        }
+      } else {
+        const { error: memberError } = await supabase
+          .from('company_members')
+          .insert({ company_id: invite.company_id, user_id: user.id, role: invite.role });
 
-      // Update profile
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .update({ company_id: invite.company_id, role: invite.role })
-        .eq('id', user.id);
+        if (memberError && memberError.code !== '23505') throw memberError;
 
-      if (profileError) throw profileError;
+        await supabase
+          .from('profiles')
+          .update({ company_id: invite.company_id, role: invite.role })
+          .eq('id', user.id);
+      }
 
-      // Mark invitation as accepted
       await supabase
         .from('invitations')
         .update({ status: 'accepted' })
@@ -102,7 +112,7 @@ export default function AcceptInvitePage() {
             type="password"
             value={password}
             onChange={e => setPassword(e.target.value)}
-            style={{ width: '100%', padding: '12px 14px', backgroundColor: '#0A0F1E', border: '1px solid #1F2937', borderRadius: 6, color: '#FFFFFF', fontSize: 14, boxSizing: 'border-box' as const }}
+            style={{ width: '100%', padding: '12px 14px', backgroundColor: '#0A0F1E', border: '1px solid #1F2937', borderRadius: 6, color: '#FFFFFF', fontSize: 14, boxSizing: 'border-box' as const, outline: 'none' }}
           />
         </div>
         <div style={{ marginBottom: 24 }}>
@@ -114,7 +124,7 @@ export default function AcceptInvitePage() {
             value={confirm}
             onChange={e => setConfirm(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleSubmit()}
-            style={{ width: '100%', padding: '12px 14px', backgroundColor: '#0A0F1E', border: '1px solid #1F2937', borderRadius: 6, color: '#FFFFFF', fontSize: 14, boxSizing: 'border-box' as const }}
+            style={{ width: '100%', padding: '12px 14px', backgroundColor: '#0A0F1E', border: '1px solid #1F2937', borderRadius: 6, color: '#FFFFFF', fontSize: 14, boxSizing: 'border-box' as const, outline: 'none' }}
           />
         </div>
         {error && (

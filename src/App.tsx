@@ -19,6 +19,7 @@ import PayrollPage from './pages/PayrollPage';
 import PunchListPage from './pages/PunchListPage';
 import IncidentsPage from './pages/IncidentsPage';
 import AcceptInvitePage from './pages/AcceptInvitePage';
+import ClientPortalPage from './pages/ClientPortalPage';
 
 const PLANS = [
   {
@@ -79,26 +80,20 @@ function TrialGuard({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     async function checkTrial() {
       const { data: { user } } = await supabase.auth.getUser();
-      console.log('TrialGuard user:', user?.email);
       if (!user) return;
       const { data, error } = await supabase
         .from('profiles')
-        .select('trial_end, is_subscribed')
+        .select('trial_end, is_subscribed, role')
         .eq('id', user.id)
         .single();
-      if (error || !data) {
-        console.log('TrialGuard error or no data:', error);
-        return;
-      }
-      console.log('TrialGuard data:', data);
+      if (error || !data) return;
       if (data.is_subscribed === true) return;
+      if (data.role === 'client') return;
       const now = new Date();
       const trialEnd = new Date(data.trial_end);
       const daysLeft = Math.ceil((trialEnd.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-console.log('daysLeft:', daysLeft, 'trialEnd:', trialEnd, 'now:', now);
-if (daysLeft <= 0) {
-  console.log('Setting trial expired to true');
-  setTrialExpired(true);
+      if (daysLeft <= 0) {
+        setTrialExpired(true);
       } else {
         setTrialDaysLeft(daysLeft);
       }
@@ -118,10 +113,7 @@ if (daysLeft <= 0) {
         `${process.env.REACT_APP_SUPABASE_URL}/functions/v1/create-checkout`,
         {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session?.access_token}`,
-          },
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
           body: JSON.stringify({ priceId }),
         }
       );
@@ -136,50 +128,18 @@ if (daysLeft <= 0) {
 
   if (trialExpired) {
     return (
-      <div style={{
-        position: 'fixed',
-        top: 0, left: 0, right: 0, bottom: 0,
-        backgroundColor: '#0D1117',
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'flex-start',
-        padding: '48px 24px',
-        zIndex: 9999,
-        overflowY: 'auto',
-      }}>
+      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#0D1117', display: 'flex', justifyContent: 'center', alignItems: 'flex-start', padding: '48px 24px', zIndex: 9999, overflowY: 'auto' }}>
         <div style={{ width: '100%', maxWidth: 1100 }}>
           <div style={{ textAlign: 'center', marginBottom: 56 }}>
             <div style={{ fontSize: 13, fontWeight: 700, color: '#F97316', letterSpacing: 4, marginBottom: 16, textTransform: 'uppercase' as const }}>FieldOps Pro</div>
             <h1 style={{ fontSize: 42, fontWeight: 900, color: '#FFFFFF', margin: '0 0 12px 0', letterSpacing: 1, textTransform: 'uppercase' as const }}>Simple, Transparent Pricing</h1>
             <p style={{ color: '#6B7280', fontSize: 16, margin: 0 }}>Your free trial has ended. Choose the plan that fits your business. Cancel anytime.</p>
           </div>
-
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 20, marginBottom: 32 }}>
             {PLANS.map((plan) => (
-              <div key={plan.id} style={{
-                backgroundColor: '#111827',
-                borderRadius: 8,
-                padding: '32px 28px',
-                border: plan.popular ? '2px solid #F97316' : '1px solid #1F2937',
-                position: 'relative',
-                display: 'flex',
-                flexDirection: 'column',
-              }}>
+              <div key={plan.id} style={{ backgroundColor: '#111827', borderRadius: 8, padding: '32px 28px', border: plan.popular ? '2px solid #F97316' : '1px solid #1F2937', position: 'relative', display: 'flex', flexDirection: 'column' }}>
                 {plan.popular && (
-                  <div style={{
-                    position: 'absolute',
-                    top: -14,
-                    left: '50%',
-                    transform: 'translateX(-50%)',
-                    backgroundColor: '#F97316',
-                    color: '#FFFFFF',
-                    fontSize: 11,
-                    fontWeight: 800,
-                    padding: '4px 16px',
-                    borderRadius: 20,
-                    letterSpacing: 2,
-                    whiteSpace: 'nowrap' as const,
-                  }}>
+                  <div style={{ position: 'absolute', top: -14, left: '50%', transform: 'translateX(-50%)', backgroundColor: '#F97316', color: '#FFFFFF', fontSize: 11, fontWeight: 800, padding: '4px 16px', borderRadius: 20, letterSpacing: 2, whiteSpace: 'nowrap' as const }}>
                     MOST POPULAR
                   </div>
                 )}
@@ -208,20 +168,7 @@ if (daysLeft <= 0) {
                 <button
                   onClick={() => handleUpgrade(plan.priceId, plan.id)}
                   disabled={checkoutLoading === plan.id}
-                  style={{
-                    width: '100%',
-                    padding: '14px',
-                    backgroundColor: plan.popular ? '#F97316' : 'transparent',
-                    border: `1px solid ${plan.popular ? '#F97316' : '#374151'}`,
-                    borderRadius: 6,
-                    color: '#FFFFFF',
-                    fontSize: 13,
-                    fontWeight: 800,
-                    letterSpacing: 2,
-                    cursor: checkoutLoading === plan.id ? 'not-allowed' : 'pointer',
-                    opacity: checkoutLoading === plan.id ? 0.7 : 1,
-                    textTransform: 'uppercase' as const,
-                  }}
+                  style={{ width: '100%', padding: '14px', backgroundColor: plan.popular ? '#F97316' : 'transparent', border: `1px solid ${plan.popular ? '#F97316' : '#374151'}`, borderRadius: 6, color: '#FFFFFF', fontSize: 13, fontWeight: 800, letterSpacing: 2, cursor: checkoutLoading === plan.id ? 'not-allowed' : 'pointer', opacity: checkoutLoading === plan.id ? 0.7 : 1, textTransform: 'uppercase' as const }}
                 >
                   {checkoutLoading === plan.id ? 'Loading...' : plan.priceId ? 'Choose Plan' : 'Contact Sales'}
                 </button>
@@ -237,18 +184,7 @@ if (daysLeft <= 0) {
   return (
     <>
       {trialDaysLeft !== null && trialDaysLeft <= 7 && (
-        <div style={{
-          backgroundColor: '#F9731620',
-          border: '1px solid #F97316',
-          borderRadius: 0,
-          padding: '10px 24px',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          position: 'sticky',
-          top: 0,
-          zIndex: 100,
-        }}>
+        <div style={{ backgroundColor: '#F9731620', border: '1px solid #F97316', borderRadius: 0, padding: '10px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, zIndex: 100 }}>
           <span style={{ color: '#F97316', fontSize: 13, fontWeight: 700 }}>
             Your free trial expires in {trialDaysLeft} day{trialDaysLeft !== 1 ? 's' : ''}
           </span>
@@ -280,6 +216,30 @@ function AuthGuard({ session, children }: { session: Session | null; children: R
   return <>{children}</>;
 }
 
+function ClientGuard({ session, children }: { session: Session | null; children: React.ReactNode }) {
+  const [role, setRole] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function checkRole() {
+      if (!session) { setLoading(false); return; }
+      const { data } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', session.user.id)
+        .single();
+      setRole(data?.role ?? null);
+      setLoading(false);
+    }
+    checkRole();
+  }, [session]);
+
+  if (!session) return <Navigate to="/login" replace />;
+  if (loading) return null;
+  if (role === 'client') return <Navigate to="/client-portal" replace />;
+  return <>{children}</>;
+}
+
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
@@ -298,11 +258,7 @@ export default function App() {
 
   if (loading) {
     return (
-      <div style={{
-        display: 'flex', justifyContent: 'center', alignItems: 'center',
-        minHeight: '100vh', backgroundColor: '#0A0F1E',
-        color: '#F97316', fontSize: 24, fontWeight: 'bold', letterSpacing: 4,
-      }}>
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', backgroundColor: '#0A0F1E', color: '#F97316', fontSize: 24, fontWeight: 'bold', letterSpacing: 4 }}>
         FIELDOPS
       </div>
     );
@@ -313,20 +269,21 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={session ? <Navigate to="/" replace /> : <LoginPage />} />
-          <Route path="/" element={<AuthGuard session={session}><AppLayout><DashboardPage /></AppLayout></AuthGuard>} />
-          <Route path="/projects" element={<AuthGuard session={session}><AppLayout><ProjectsPage /></AppLayout></AuthGuard>} />
-          <Route path="/projects/:id" element={<AuthGuard session={session}><AppLayout><ProjectDetailPage /></AppLayout></AuthGuard>} />
-          <Route path="/projects/:id/chat" element={<AuthGuard session={session}><AppLayout><ChatPage /></AppLayout></AuthGuard>} />
-          <Route path="/tasks" element={<AuthGuard session={session}><AppLayout><TasksPage /></AppLayout></AuthGuard>} />
-          <Route path="/calendar" element={<AuthGuard session={session}><AppLayout><CalendarPage /></AppLayout></AuthGuard>} />
-          <Route path="/team" element={<AuthGuard session={session}><AppLayout><TeamPage /></AppLayout></AuthGuard>} />
-          <Route path="/reports" element={<AuthGuard session={session}><AppLayout><ReportsPage /></AppLayout></AuthGuard>} />
-          <Route path="/files" element={<AuthGuard session={session}><AppLayout><FilesPage /></AppLayout></AuthGuard>} />
-          <Route path="/payroll" element={<AuthGuard session={session}><AppLayout><PayrollPage /></AppLayout></AuthGuard>} />
-          <Route path="/profile" element={<AuthGuard session={session}><AppLayout><ProfilePage /></AppLayout></AuthGuard>} />
-          <Route path="/punch-list" element={<AuthGuard session={session}><AppLayout><PunchListPage /></AppLayout></AuthGuard>} />
-          <Route path="/incidents" element={<AuthGuard session={session}><AppLayout><IncidentsPage /></AppLayout></AuthGuard>} />
           <Route path="/accept-invite" element={<AcceptInvitePage />} />
+          <Route path="/client-portal" element={session ? <ClientPortalPage /> : <Navigate to="/login" replace />} />
+          <Route path="/" element={<ClientGuard session={session}><AppLayout><DashboardPage /></AppLayout></ClientGuard>} />
+          <Route path="/projects" element={<ClientGuard session={session}><AppLayout><ProjectsPage /></AppLayout></ClientGuard>} />
+          <Route path="/projects/:id" element={<ClientGuard session={session}><AppLayout><ProjectDetailPage /></AppLayout></ClientGuard>} />
+          <Route path="/projects/:id/chat" element={<ClientGuard session={session}><AppLayout><ChatPage /></AppLayout></ClientGuard>} />
+          <Route path="/tasks" element={<ClientGuard session={session}><AppLayout><TasksPage /></AppLayout></ClientGuard>} />
+          <Route path="/calendar" element={<ClientGuard session={session}><AppLayout><CalendarPage /></AppLayout></ClientGuard>} />
+          <Route path="/team" element={<ClientGuard session={session}><AppLayout><TeamPage /></AppLayout></ClientGuard>} />
+          <Route path="/reports" element={<ClientGuard session={session}><AppLayout><ReportsPage /></AppLayout></ClientGuard>} />
+          <Route path="/files" element={<ClientGuard session={session}><AppLayout><FilesPage /></AppLayout></ClientGuard>} />
+          <Route path="/payroll" element={<ClientGuard session={session}><AppLayout><PayrollPage /></AppLayout></ClientGuard>} />
+          <Route path="/profile" element={<ClientGuard session={session}><AppLayout><ProfilePage /></AppLayout></ClientGuard>} />
+          <Route path="/punch-list" element={<ClientGuard session={session}><AppLayout><PunchListPage /></AppLayout></ClientGuard>} />
+          <Route path="/incidents" element={<ClientGuard session={session}><AppLayout><IncidentsPage /></AppLayout></ClientGuard>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>

@@ -48,6 +48,11 @@ export default function TeamPage() {
   const [updatingRole, setUpdatingRole] = useState<string | null>(null);
   const [editingMember, setEditingMember] = useState<string | null>(null);
   const [selectedRole, setSelectedRole] = useState<Role>('worker');
+  const [showClientInvite, setShowClientInvite] = useState(false);
+  const [clientInviteEmail, setClientInviteEmail] = useState('');
+  const [clientInviteProject, setClientInviteProject] = useState('');
+  const [clientInviting, setClientInviting] = useState(false);
+  const [clientMessage, setClientMessage] = useState('');
 
   const { data: companyMembers, isLoading } = useQuery({
     queryKey: ['web-company-members'],
@@ -82,6 +87,19 @@ export default function TeamPage() {
         .single();
       return (data as any)?.company ?? null;
     },
+  });
+
+  const { data: projects } = useQuery({
+    queryKey: ['web-projects-for-client'],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('projects')
+        .select('id, name')
+        .eq('archived', false)
+        .order('name', { ascending: true });
+      return data ?? [];
+    },
+    enabled: !!isAdmin,
   });
 
   const totalMembers = companyMembers?.length ?? 0;
@@ -129,6 +147,46 @@ export default function TeamPage() {
     }
   }
 
+  async function handleClientInvite() {
+    if (!clientInviteEmail.trim() || !clientInviteProject) {
+      setClientMessage('Error: Please enter an email and select a project.');
+      return;
+    }
+    setClientInviting(true);
+    setClientMessage('');
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
+      const response = await fetch(
+        `${process.env.REACT_APP_SUPABASE_URL}/functions/v1/send-invite`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+          body: JSON.stringify({
+            email: clientInviteEmail.toLowerCase().trim(),
+            invitedBy: user!.id,
+            companyName: company?.name ?? 'your team',
+            role: 'client',
+            projectId: clientInviteProject,
+            companyId: company?.id,
+          }),
+        }
+      );
+      const result = await response.json();
+      if (!result.success) {
+        setClientMessage('Error: ' + result.error);
+      } else {
+        setClientMessage('Client invite sent to ' + clientInviteEmail);
+        setClientInviteEmail('');
+        setClientInviteProject('');
+      }
+    } catch (e: any) {
+      setClientMessage('Error: ' + e.message);
+    } finally {
+      setClientInviting(false);
+    }
+  }
+
   async function handleSaveRole(userId: string) {
     setUpdatingRole(userId);
     try {
@@ -167,20 +225,21 @@ export default function TeamPage() {
           </p>
         </div>
         {isAdmin && (
-          <button
-            onClick={() => setShowInvite(!showInvite)}
-            disabled={seatsRemaining <= 0}
-            style={{
-              padding: '10px 20px',
-              backgroundColor: seatsRemaining <= 0 ? '#1F2937' : '#F97316',
-              border: 'none', borderRadius: 10,
-              color: seatsRemaining <= 0 ? '#4B5563' : '#0A0F1E',
-              fontSize: 13, fontWeight: 700,
-              cursor: seatsRemaining <= 0 ? 'not-allowed' : 'pointer',
-            }}
-          >
-            {seatsRemaining <= 0 ? 'Team Full' : '+ Invite Member'}
-          </button>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button
+              onClick={() => { setShowClientInvite(!showClientInvite); setShowInvite(false); }}
+              style={{ padding: '10px 20px', backgroundColor: 'transparent', border: '1px solid #378ADD', borderRadius: 10, color: '#378ADD', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}
+            >
+              + Invite Client
+            </button>
+            <button
+              onClick={() => { setShowInvite(!showInvite); setShowClientInvite(false); }}
+              disabled={seatsRemaining <= 0}
+              style={{ padding: '10px 20px', backgroundColor: seatsRemaining <= 0 ? '#1F2937' : '#F97316', border: 'none', borderRadius: 10, color: seatsRemaining <= 0 ? '#4B5563' : '#0A0F1E', fontSize: 13, fontWeight: 700, cursor: seatsRemaining <= 0 ? 'not-allowed' : 'pointer' }}
+            >
+              {seatsRemaining <= 0 ? 'Team Full' : '+ Invite Member'}
+            </button>
+          </div>
         )}
       </div>
 
@@ -206,7 +265,7 @@ export default function TeamPage() {
         </div>
       )}
 
-      {/* Invite panel */}
+      {/* Invite Member Panel */}
       {showInvite && isAdmin && (
         <div style={{ background: '#111827', border: '0.5px solid #F97316', borderRadius: 14, padding: 24, marginBottom: 20 }}>
           <h3 style={{ margin: '0 0 4px', fontSize: 15, fontWeight: 700 }}>Invite Team Member</h3>
@@ -237,7 +296,58 @@ export default function TeamPage() {
         </div>
       )}
 
-      {/* Role change modal — admin only */}
+      {/* Invite Client Panel */}
+      {showClientInvite && isAdmin && (
+        <div style={{ background: '#111827', border: '0.5px solid #378ADD', borderRadius: 14, padding: 24, marginBottom: 20 }}>
+          <h3 style={{ margin: '0 0 4px', fontSize: 15, fontWeight: 700 }}>Invite Client</h3>
+          <p style={{ color: '#6B7280', fontSize: 13, margin: '0 0 16px' }}>
+            Clients get read-only access to project progress, photos, and daily reports.
+          </p>
+          {clientMessage && (
+            <div style={{ padding: '10px 14px', background: clientMessage.startsWith('Error') ? '#EF444420' : '#22C55E20', border: `1px solid ${clientMessage.startsWith('Error') ? '#EF4444' : '#22C55E'}`, borderRadius: 8, fontSize: 13, marginBottom: 14, color: clientMessage.startsWith('Error') ? '#EF4444' : '#22C55E' }}>
+              {clientMessage}
+            </div>
+          )}
+          <div style={{ marginBottom: 12 }}>
+            <label style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', letterSpacing: 2, display: 'block', marginBottom: 6 }}>SELECT PROJECT</label>
+            <select
+              value={clientInviteProject}
+              onChange={(e) => setClientInviteProject(e.target.value)}
+              style={{ width: '100%', padding: '10px 14px', background: '#1F2937', border: '1px solid #374151', borderRadius: 8, color: clientInviteProject ? '#FFFFFF' : '#6B7280', fontSize: 14, outline: 'none', cursor: 'pointer' }}
+            >
+              <option value="">Select a project...</option>
+              {projects?.map((p: any) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          </div>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <input
+              type="email"
+              value={clientInviteEmail}
+              onChange={(e) => setClientInviteEmail(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleClientInvite()}
+              placeholder="client@company.com"
+              style={{ flex: 1, padding: '10px 14px', background: '#1F2937', border: '1px solid #374151', borderRadius: 8, color: '#FFFFFF', fontSize: 14, outline: 'none' }}
+            />
+            <button
+              onClick={handleClientInvite}
+              disabled={clientInviting}
+              style={{ padding: '10px 24px', background: clientInviting ? '#374151' : '#378ADD', border: 'none', borderRadius: 8, color: clientInviting ? '#6B7280' : '#FFFFFF', fontSize: 13, fontWeight: 700, cursor: clientInviting ? 'not-allowed' : 'pointer' }}
+            >
+              {clientInviting ? 'Sending...' : 'Send Invite'}
+            </button>
+            <button
+              onClick={() => { setShowClientInvite(false); setClientMessage(''); }}
+              style={{ padding: '10px 16px', background: 'transparent', border: '1px solid #374151', borderRadius: 8, color: '#6B7280', fontSize: 13, cursor: 'pointer' }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Role change modal */}
       {editingMember && isAdmin && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
           <div style={{ background: '#111827', borderRadius: 16, padding: 32, width: '100%', maxWidth: 440, border: '0.5px solid #1F2937' }}>
@@ -276,7 +386,6 @@ export default function TeamPage() {
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>{name}</div>
-                  {/* Only admins see the role badge */}
                   {isAdmin && (
                     <span style={{ fontSize: 11, fontWeight: 700, color: roleColors[role] ?? '#6B7280', background: (roleColors[role] ?? '#6B7280') + '20', padding: '2px 10px', borderRadius: 20 }}>
                       {roleLabels[role] ?? role}
