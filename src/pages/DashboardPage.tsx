@@ -2,12 +2,9 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { useIsAdmin, useCurrentUser, useUserRole } from '../lib/useIsAdmin';
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
 function formatTime(dateStr: string) {
   return new Date(dateStr).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
 }
-
 
 function initials(name: string) {
   return name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2);
@@ -22,8 +19,6 @@ function timeAgo(dateStr: string) {
 }
 
 const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
-
-// ── Shared styles ─────────────────────────────────────────────────────────────
 
 const card: React.CSSProperties = {
   background: '#111827',
@@ -76,8 +71,6 @@ const statusLabel: Record<string, string> = {
   open: 'Open', in_progress: 'In Progress', completed: 'Done',
 };
 
-// ── Admin Dashboard ───────────────────────────────────────────────────────────
-
 function AdminDashboard({ currentUserId }: { currentUserId: string }) {
   const { data: stats } = useQuery({
     queryKey: ['admin-dash-stats'],
@@ -86,14 +79,41 @@ function AdminDashboard({ currentUserId }: { currentUserId: string }) {
       const { data: profile } = await supabase.from('profiles').select('company_id').eq('id', user!.id).single();
       const companyId = profile?.company_id;
 
-      const [projects, tasks, members, clockedIn, flagged, weekHours] = await Promise.all([
+      const [projects, tasks, members, clockedInRes, flaggedRes, weekHours] = await Promise.all([
         supabase.from('projects').select('id, status').eq('archived', false),
         supabase.from('tasks').select('id, status').eq('archived', false),
         supabase.from('profiles').select('id').eq('company_id', companyId),
-        supabase.from('time_entries').select('id, user_id, clock_in, project:project_id(name), profiles!user_id(full_name)').is('clock_out', null),
-        supabase.from('time_entries').select('id, user_id, flag_reason, clock_in, profiles!user_id(full_name), project:project_id(name)').eq('flagged', true).gte('clock_in', new Date(Date.now() - 7 * 86400000).toISOString()).order('clock_in', { ascending: false }),
+        supabase.from('time_entries').select('id, user_id, clock_in, project:project_id(name)').is('clock_out', null),
+        supabase.from('time_entries').select('id, user_id, flag_reason, clock_in, project:project_id(name)').eq('flagged', true).gte('clock_in', new Date(Date.now() - 7 * 86400000).toISOString()).order('clock_in', { ascending: false }),
         supabase.from('time_entries').select('total_minutes').eq('company_id', companyId).gte('clock_in', new Date(Date.now() - 7 * 86400000).toISOString()).not('clock_out', 'is', null),
       ]);
+
+      const allUserIds = [
+        ...new Set([
+          ...(clockedInRes.data ?? []).map((e: any) => e.user_id),
+          ...(flaggedRes.data ?? []).map((e: any) => e.user_id),
+        ])
+      ];
+
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, full_name')
+        .in('id', allUserIds.length > 0 ? allUserIds : ['00000000-0000-0000-0000-000000000000']);
+
+      const profileMap: Record<string, string> = {};
+      for (const p of profiles ?? []) {
+        profileMap[p.id] = p.full_name ?? 'Unknown';
+      }
+
+      const clockedIn = (clockedInRes.data ?? []).map((e: any) => ({
+        ...e,
+        profiles: { full_name: profileMap[e.user_id] ?? 'Unknown' },
+      }));
+
+      const flagged = (flaggedRes.data ?? []).map((e: any) => ({
+        ...e,
+        profiles: { full_name: profileMap[e.user_id] ?? 'Unknown' },
+      }));
 
       const totalWeekHours = (weekHours.data ?? []).reduce((s: number, e: any) => s + (e.total_minutes ?? 0), 0) / 60;
 
@@ -103,8 +123,8 @@ function AdminDashboard({ currentUserId }: { currentUserId: string }) {
         openTasks: (tasks.data ?? []).filter((t: any) => t.status === 'open').length,
         totalTasks: (tasks.data ?? []).length,
         memberCount: (members.data ?? []).length,
-        clockedIn: clockedIn.data ?? [],
-        flagged: flagged.data ?? [],
+        clockedIn,
+        flagged,
         weekHours: Math.round(totalWeekHours * 10) / 10,
       };
     },
@@ -157,12 +177,46 @@ function AdminDashboard({ currentUserId }: { currentUserId: string }) {
   const { data: activity } = useQuery({
     queryKey: ['admin-dash-activity'],
     queryFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('company_id')
+        .eq('id', user!.id)
+        .single();
+
+      if (!profile?.company_id) return [];
+
+      const { data: members } = await supabase
+        .from('company_members')
+        .select('user_id')
+        .eq('company_id', profile.company_id);
+
+      const memberIds = (members ?? []).map((m: any) => m.user_id);
+      if (memberIds.length === 0) return [];
+
       const { data } = await supabase
-        .from('time_entries')
-        .select('id, clock_in, clock_out, profiles!user_id(full_name), project:project_id(name)')
-        .order('clock_in', { ascending: false })
-        .limit(5);
-      return data ?? [];
+        .from('notifications')
+        .select('*')
+        .in('user_id', memberIds)
+        .order('created_at', { ascending: false })
+        .limit(10);
+
+      if (!data || data.length === 0) return [];
+
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, full_name')
+        .in('id', memberIds);
+
+      const profileMap: Record<string, string> = {};
+      for (const p of profiles ?? []) {
+        profileMap[p.id] = p.full_name ?? 'Unknown';
+      }
+
+      return data.map((n: any) => ({
+        ...n,
+        senderName: profileMap[n.user_id] ?? 'Someone',
+      }));
     },
   });
 
@@ -170,7 +224,6 @@ function AdminDashboard({ currentUserId }: { currentUserId: string }) {
 
   return (
     <div style={{ padding: 32, color: '#FFFFFF' }}>
-      {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
         <div>
           <h1 style={{ fontSize: 26, fontWeight: 700, margin: '0 0 4px' }}>Dashboard</h1>
@@ -179,7 +232,6 @@ function AdminDashboard({ currentUserId }: { currentUserId: string }) {
         <div style={{ fontSize: 12, color: '#6B7280', background: '#111827', border: '0.5px solid #1F2937', borderRadius: 8, padding: '6px 12px' }}>{today}</div>
       </div>
 
-      {/* Stat cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, marginBottom: 20 }}>
         <div style={statCard('#378ADD')}>
           <p style={{ fontSize: 12, color: '#6B7280', margin: '0 0 6px' }}>Active projects</p>
@@ -208,10 +260,8 @@ function AdminDashboard({ currentUserId }: { currentUserId: string }) {
         </div>
       </div>
 
-      {/* Two column */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 16 }}>
         <div>
-          {/* Project progress */}
           <div style={card}>
             <p style={cardTitle}>Project progress</p>
             {(projects ?? []).length === 0 && <p style={{ color: '#4B5563', fontSize: 13 }}>No active projects.</p>}
@@ -230,7 +280,6 @@ function AdminDashboard({ currentUserId }: { currentUserId: string }) {
             })}
           </div>
 
-          {/* Tasks due this week */}
           <div style={card}>
             <p style={cardTitle}>Tasks due this week</p>
             {(dueTasks ?? []).length === 0 && <p style={{ color: '#4B5563', fontSize: 13 }}>No tasks due this week.</p>}
@@ -246,7 +295,6 @@ function AdminDashboard({ currentUserId }: { currentUserId: string }) {
             ))}
           </div>
 
-          {/* Flagged clock-ins */}
           {(stats?.flagged ?? []).length > 0 && (
             <div style={card}>
               <p style={cardTitle}>Flagged clock-ins this week</p>
@@ -261,7 +309,6 @@ function AdminDashboard({ currentUserId }: { currentUserId: string }) {
         </div>
 
         <div>
-          {/* Clocked in now */}
           <div style={card}>
             <p style={cardTitle}>Clocked in now</p>
             {(stats?.clockedIn ?? []).length === 0 && <p style={{ color: '#4B5563', fontSize: 13 }}>Nobody clocked in yet.</p>}
@@ -279,18 +326,41 @@ function AdminDashboard({ currentUserId }: { currentUserId: string }) {
             ))}
           </div>
 
-          {/* Recent activity */}
           <div style={card}>
-            <p style={cardTitle}>Recent activity</p>
-            {(activity ?? []).length === 0 && <p style={{ color: '#4B5563', fontSize: 13 }}>No recent activity.</p>}
-            {(activity ?? []).map((e: any, i: number) => (
-              <div key={e.id} style={{ display: 'flex', gap: 10, padding: '9px 0', borderBottom: '0.5px solid #1F2937', alignItems: 'flex-start' }}>
-                <div style={{ width: 7, height: 7, borderRadius: 4, background: e.clock_out ? '#639922' : '#1D9E75', marginTop: 5, flexShrink: 0 }} />
-                <div>
-                  <div style={{ fontSize: 13, lineHeight: 1.5 }}>
-                    {(e.profiles as any)?.full_name} {e.clock_out ? 'clocked out' : 'clocked in'}{(e.project as any)?.name ? ` · ${(e.project as any).name}` : ''}
-                  </div>
-                  <div style={{ fontSize: 11, color: '#4B5563', marginTop: 2 }}>{timeAgo(e.clock_out ?? e.clock_in)}</div>
+            <p style={cardTitle}>Recent Activity</p>
+            {(activity ?? []).length === 0 && (
+              <p style={{ color: '#4B5563', fontSize: 13 }}>No recent activity.</p>
+            )}
+            {(activity ?? []).map((n: any) => (
+              <div
+                key={n.id}
+                onClick={() => {
+                  if (n.project_id) {
+                    window.location.href = `/projects/${n.project_id}`;
+                  }
+                }}
+                style={{
+                  display: 'flex', gap: 10, padding: '9px 0',
+                  borderBottom: '0.5px solid #1F2937', alignItems: 'flex-start',
+                  cursor: n.project_id ? 'pointer' : 'default',
+                  borderRadius: 6,
+                }}
+                onMouseOver={(e) => {
+                  if (n.project_id) (e.currentTarget as HTMLDivElement).style.background = '#1F293740';
+                }}
+                onMouseOut={(e) => {
+                  (e.currentTarget as HTMLDivElement).style.background = 'transparent';
+                }}
+              >
+                <div style={{
+                  width: 7, height: 7, borderRadius: 4, marginTop: 5, flexShrink: 0,
+                  background: n.title?.includes('Comment') ? '#378ADD' :
+                    n.title?.includes('Status') ? '#F97316' :
+                    n.title?.includes('Report') ? '#1D9E75' : '#6B7280',
+                }} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, lineHeight: 1.5, color: '#FFFFFF' }}>{n.body}</div>
+                  <div style={{ fontSize: 11, color: '#4B5563', marginTop: 2 }}>{timeAgo(n.created_at)}</div>
                 </div>
               </div>
             ))}
@@ -300,8 +370,6 @@ function AdminDashboard({ currentUserId }: { currentUserId: string }) {
     </div>
   );
 }
-
-// ── PM Dashboard ──────────────────────────────────────────────────────────────
 
 function PMDashboard({ currentUserId }: { currentUserId: string }) {
   const { data: pmProjects } = useQuery({
@@ -354,10 +422,27 @@ function PMDashboard({ currentUserId }: { currentUserId: string }) {
       if (projectIds.length === 0) return [];
       const { data } = await supabase
         .from('time_entries')
-        .select('id, clock_in, user_id, project:project_id(name), profiles!user_id(full_name)')
+        .select('id, clock_in, user_id, project:project_id(name)')
         .is('clock_out', null)
         .in('project_id', projectIds);
-      return data ?? [];
+
+      if (!data || data.length === 0) return [];
+
+      const userIds = [...new Set(data.map((e: any) => e.user_id))];
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, full_name')
+        .in('id', userIds);
+
+      const profileMap: Record<string, string> = {};
+      for (const p of profiles ?? []) {
+        profileMap[p.id] = p.full_name ?? 'Unknown';
+      }
+
+      return data.map((e: any) => ({
+        ...e,
+        profiles: { full_name: profileMap[e.user_id] ?? 'Unknown' },
+      }));
     },
     enabled: projectIds.length > 0,
   });
@@ -366,7 +451,6 @@ function PMDashboard({ currentUserId }: { currentUserId: string }) {
     queryKey: ['pm-dash-reports', projectIds],
     queryFn: async () => {
       if (projectIds.length === 0) return [];
-      
       const { data } = await supabase
         .from('daily_reports')
         .select('id, report_date, project:project_id(name), author:created_by(full_name)')
@@ -488,8 +572,6 @@ function PMDashboard({ currentUserId }: { currentUserId: string }) {
   );
 }
 
-// ── Worker Dashboard ──────────────────────────────────────────────────────────
-
 function WorkerDashboard({ currentUserId }: { currentUserId: string }) {
   const { data: clockStatus } = useQuery({
     queryKey: ['worker-clock-status', currentUserId],
@@ -545,7 +627,6 @@ function WorkerDashboard({ currentUserId }: { currentUserId: string }) {
     .reduce((s: number, e: any) => s + (e.total_minutes ?? 0), 0);
   const todayHours = Math.round((todayMinutes / 60) * 10) / 10;
 
-  // Build daily bar chart data
   const days = Array.from({ length: 7 }, (_, i) => {
     const d = new Date();
     d.setDate(d.getDate() - ((d.getDay() + 6) % 7) + i);
@@ -577,7 +658,6 @@ function WorkerDashboard({ currentUserId }: { currentUserId: string }) {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
-        {/* Clock status */}
         <div style={{ background: isClockedIn ? '#0F2D1F' : '#111827', border: `0.5px solid ${isClockedIn ? '#1D9E75' : '#1F2937'}`, borderRadius: 14, padding: 20 }}>
           <p style={{ fontSize: 13, fontWeight: 600, color: isClockedIn ? '#1D9E75' : '#6B7280', margin: '0 0 4px' }}>
             {isClockedIn ? 'Clocked in' : 'Clocked out'}
@@ -590,7 +670,6 @@ function WorkerDashboard({ currentUserId }: { currentUserId: string }) {
           </div>
         </div>
 
-        {/* Hours */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
           <div style={statCard('#378ADD')}>
             <p style={{ fontSize: 12, color: '#6B7280', margin: '0 0 6px' }}>Today</p>
@@ -612,7 +691,6 @@ function WorkerDashboard({ currentUserId }: { currentUserId: string }) {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-        {/* My tasks */}
         <div style={card}>
           <p style={cardTitle}>My tasks</p>
           {(myTasks ?? []).length === 0 && <p style={{ color: '#4B5563', fontSize: 13 }}>No tasks assigned to you.</p>}
@@ -636,7 +714,6 @@ function WorkerDashboard({ currentUserId }: { currentUserId: string }) {
           ))}
         </div>
 
-        {/* Weekly hours bar chart */}
         <div style={card}>
           <p style={cardTitle}>My hours this week</p>
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: 80, marginBottom: 8 }}>
@@ -666,8 +743,6 @@ function WorkerDashboard({ currentUserId }: { currentUserId: string }) {
     </div>
   );
 }
-
-// ── Main export ───────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
   const { data: isAdmin } = useIsAdmin();

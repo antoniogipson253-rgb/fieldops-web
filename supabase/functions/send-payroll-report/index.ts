@@ -22,6 +22,16 @@ function minutesToHours(minutes: number) {
   return Math.round((minutes / 60) * 100) / 100
 }
 
+function toBase64(str: string): string {
+  const encoder = new TextEncoder()
+  const bytes = encoder.encode(str)
+  let binary = ''
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i])
+  }
+  return btoa(binary)
+}
+
 function buildExcelXml(rows: any[], weekLabel: string, companyName: string) {
   const headerRow = `
     <Row>
@@ -76,6 +86,10 @@ serve(async (req) => {
   try {
     const { recipientEmail, companyId, weekOffset = -1 } = await req.json()
 
+    console.log('Starting payroll report for company:', companyId)
+    console.log('Recipient:', recipientEmail)
+    console.log('RESEND_API_KEY exists:', !!Deno.env.get('RESEND_API_KEY'))
+
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -103,11 +117,13 @@ serve(async (req) => {
 
     if (error) throw error
 
+    console.log('Entries found:', entries?.length ?? 0)
+
     const userIds = [...new Set((entries ?? []).map((e: any) => e.user_id))]
     const { data: profiles } = await supabaseAdmin
       .from('profiles')
       .select('id, full_name')
-      .in('id', userIds)
+      .in('id', userIds.length > 0 ? userIds : ['00000000-0000-0000-0000-000000000000'])
 
     const profileMap: Record<string, string> = {}
     for (const p of profiles ?? []) {
@@ -131,21 +147,22 @@ serve(async (req) => {
     }
 
     const excelXml = buildExcelXml(rows, weekLabel, companyName)
-    const base64Excel = btoa(unescape(encodeURIComponent(excelXml)))
+    const base64Excel = toBase64(excelXml)
 
     const summaryHtml = Object.entries(summary)
       .map(([name, mins]) => `<tr><td style="padding:8px 16px;border-bottom:1px solid #1F2937;">${name}</td><td style="padding:8px 16px;border-bottom:1px solid #1F2937;text-align:right;">${minutesToHours(mins)}h</td></tr>`)
       .join('')
 
-    const resendKey = Deno.env.get('RESEND_API_KEY')
-    await fetch('https://api.resend.com/emails', {
+    console.log('Sending email via Resend...')
+
+    const emailRes = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${resendKey}`,
+        'Authorization': `Bearer ${Deno.env.get('RESEND_API_KEY')}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: 'FieldOps <fieldops.pro1@gmail.com>',
+        from: 'FieldOps <noreply@fieldopspro.org>',
         to: recipientEmail,
         subject: `${companyName} — Timesheet ${weekLabel}`,
         html: `
@@ -177,11 +194,18 @@ serve(async (req) => {
       }),
     })
 
+    const emailResult = await emailRes.json()
+    console.log('Resend status:', emailRes.status)
+    console.log('Resend result:', JSON.stringify(emailResult))
+
+    if (!emailRes.ok) throw new Error(JSON.stringify(emailResult))
+
     return new Response(
       JSON.stringify({ success: true, week: weekLabel, entries: rows.length }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
   } catch (error: any) {
+    console.error('Error:', error.message)
     return new Response(
       JSON.stringify({ success: false, error: error.message }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
