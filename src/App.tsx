@@ -203,11 +203,17 @@ function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: '#0A0F1E' }}>
       <Sidebar />
-      <main style={{ flex: 1, overflowY: 'auto' }}>
+      <main style={{ flex: 1, overflowY: 'auto', paddingBottom: 'env(safe-area-inset-bottom)' }}
+        className="app-main">
         <TrialGuard>
           {children}
         </TrialGuard>
       </main>
+      <style>{`
+        @media (max-width: 767px) {
+          .app-main { padding-bottom: calc(64px + env(safe-area-inset-bottom)) !important; }
+        }
+      `}</style>
     </div>
   );
 }
