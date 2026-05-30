@@ -150,7 +150,8 @@ function ProjectMap({ projects, projectProgress }: { projects: any[]; projectPro
         mapInstanceRef.current = null;
       }
     };
-  }, [mappedProjects.length]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [mappedProjects.length]);
 
   if (mappedProjects.length === 0) return null;
 
