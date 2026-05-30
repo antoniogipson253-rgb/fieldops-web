@@ -33,6 +33,8 @@ export default function TasksPage() {
       queryClient.invalidateQueries({ queryKey: ['web-all-tasks'] });
       queryClient.invalidateQueries({ queryKey: ['web-calendar-tasks'] });
       queryClient.invalidateQueries({ queryKey: ['web-folders'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-dash-progress'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-dash-stats'] });
     },
   });
 
@@ -60,7 +62,6 @@ export default function TasksPage() {
         <p style={{ color: '#6B7280', fontSize: 14, margin: 0 }}>All tasks across all projects</p>
       </div>
 
-      {/* Filters */}
       <div style={{ display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
         <input
           type="text"
@@ -85,7 +86,6 @@ export default function TasksPage() {
         </div>
       </div>
 
-      {/* Tasks Table */}
       {isLoading ? (
         <div style={{ color: '#F97316' }}>Loading...</div>
       ) : (

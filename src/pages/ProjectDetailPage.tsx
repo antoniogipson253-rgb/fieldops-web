@@ -55,6 +55,12 @@ export default function ProjectDetailPage() {
   const [editTaskAssignee, setEditTaskAssignee] = useState('');
   const [savingTask, setSavingTask] = useState(false);
 
+  const invalidateDashboard = () => {
+    queryClient.invalidateQueries({ queryKey: ['admin-dash-progress'] });
+    queryClient.invalidateQueries({ queryKey: ['admin-dash-stats'] });
+    queryClient.invalidateQueries({ queryKey: ['pm-dash-progress'] });
+  };
+
   const { data: project } = useQuery({
     queryKey: ['web-project', id],
     queryFn: async () => {
@@ -124,6 +130,7 @@ export default function ProjectDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['web-folders', id] });
       queryClient.invalidateQueries({ queryKey: ['web-calendar-tasks'] });
       queryClient.invalidateQueries({ queryKey: ['web-all-tasks'] });
+      invalidateDashboard();
     },
   });
 
@@ -273,6 +280,7 @@ export default function ProjectDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['web-folders', id] });
       queryClient.invalidateQueries({ queryKey: ['web-calendar-tasks'] });
       queryClient.invalidateQueries({ queryKey: ['web-all-tasks'] });
+      invalidateDashboard();
       setSelectedTask(null);
     } catch (e: any) { alert(e.message); }
     finally { setSavingTask(false); }
@@ -286,6 +294,7 @@ export default function ProjectDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['web-folders', id] });
       queryClient.invalidateQueries({ queryKey: ['web-calendar-tasks'] });
       queryClient.invalidateQueries({ queryKey: ['web-all-tasks'] });
+      invalidateDashboard();
     } catch (e: any) { alert(e.message); }
   }
 
@@ -297,6 +306,7 @@ export default function ProjectDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['web-folders', id] });
       queryClient.invalidateQueries({ queryKey: ['web-calendar-tasks'] });
       queryClient.invalidateQueries({ queryKey: ['web-all-tasks'] });
+      invalidateDashboard();
     } catch (e: any) { alert(e.message); }
   }
 
@@ -309,6 +319,7 @@ export default function ProjectDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['web-folders', id] });
       queryClient.invalidateQueries({ queryKey: ['web-calendar-tasks'] });
       queryClient.invalidateQueries({ queryKey: ['web-all-tasks'] });
+      invalidateDashboard();
     } catch (e: any) { alert(e.message); }
   }
 
@@ -330,6 +341,7 @@ export default function ProjectDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['web-folder-tasks', id] });
       queryClient.invalidateQueries({ queryKey: ['web-folders', id] });
       queryClient.invalidateQueries({ queryKey: ['web-calendar-tasks'] });
+      invalidateDashboard();
       setParsedTasks(validTasks.map(t => ({ ...t, valid: true })));
       setImportStep('done');
     } catch (e: any) { alert(e.message); }
@@ -372,6 +384,7 @@ export default function ProjectDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['web-folder-tasks', id] });
       queryClient.invalidateQueries({ queryKey: ['web-folders', id] });
       queryClient.invalidateQueries({ queryKey: ['web-calendar-tasks'] });
+      invalidateDashboard();
       setImportStep('done');
     } catch (e: any) { alert(e.message); }
     finally { setImporting(false); }
@@ -422,7 +435,6 @@ export default function ProjectDetailPage() {
         ← Back to Projects
       </button>
 
-      {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, gap: 16, flexWrap: 'wrap' }}>
         <div>
           <h1 style={{ fontSize: 28, fontWeight: 800, margin: 0, marginBottom: 4 }}>{project?.name}</h1>
@@ -536,18 +548,8 @@ export default function ProjectDetailPage() {
               ) : viewTaskPhotos.length > 0 ? (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
                   {viewTaskPhotos.map((photo: any) => (
-                    <div
-                      key={photo.id}
-                      onClick={() => setViewingPhoto(photo.url)}
-                      style={{ aspectRatio: '1', borderRadius: 8, overflow: 'hidden', cursor: 'pointer', backgroundColor: '#1F2937', border: '1px solid #374151' }}
-                    >
-                      <img
-                        src={photo.url}
-                        alt=""
-                        style={{ width: '100%', height: '100%', objectFit: 'cover', transition: 'opacity 0.2s' }}
-                        onMouseOver={(e) => (e.currentTarget.style.opacity = '0.8')}
-                        onMouseOut={(e) => (e.currentTarget.style.opacity = '1')}
-                      />
+                    <div key={photo.id} onClick={() => setViewingPhoto(photo.url)} style={{ aspectRatio: '1', borderRadius: 8, overflow: 'hidden', cursor: 'pointer', backgroundColor: '#1F2937', border: '1px solid #374151' }}>
+                      <img src={photo.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', transition: 'opacity 0.2s' }} onMouseOver={(e) => (e.currentTarget.style.opacity = '0.8')} onMouseOut={(e) => (e.currentTarget.style.opacity = '1')} />
                     </div>
                   ))}
                 </div>
@@ -563,10 +565,7 @@ export default function ProjectDetailPage() {
             </div>
           </div>
           {viewingPhoto && (
-            <div
-              style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.95)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 2000 }}
-              onClick={() => setViewingPhoto(null)}
-            >
+            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.95)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 2000 }} onClick={() => setViewingPhoto(null)}>
               <button onClick={() => setViewingPhoto(null)} style={{ position: 'absolute', top: 24, right: 24, backgroundColor: '#1F2937', border: 'none', borderRadius: 20, color: '#FFFFFF', fontSize: 16, cursor: 'pointer', width: 40, height: 40 }}>✕</button>
               <img src={viewingPhoto} alt="" style={{ maxWidth: '90vw', maxHeight: '90vh', objectFit: 'contain', borderRadius: 8 }} onClick={(e) => e.stopPropagation()} />
             </div>
@@ -715,11 +714,7 @@ export default function ProjectDetailPage() {
               <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 10 }}>
                 Copy cells from Excel → click the table below → press <strong style={{ color: '#FFFFFF' }}>Ctrl+V</strong>
               </div>
-              <div
-                style={{ overflowX: 'auto', borderRadius: 8, border: `2px solid ${pastedText ? '#22C55E' : '#374151'}`, cursor: 'text', outline: 'none', position: 'relative' }}
-                tabIndex={0}
-                onPaste={(e) => { e.preventDefault(); const text = e.clipboardData.getData('text'); setPastedText(text); }}
-              >
+              <div style={{ overflowX: 'auto', borderRadius: 8, border: `2px solid ${pastedText ? '#22C55E' : '#374151'}`, cursor: 'text', outline: 'none', position: 'relative' }} tabIndex={0} onPaste={(e) => { e.preventDefault(); const text = e.clipboardData.getData('text'); setPastedText(text); }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 600 }}>
                   <thead>
                     <tr style={{ backgroundColor: '#1A2235' }}>
@@ -901,13 +896,7 @@ export default function ProjectDetailPage() {
                 </button>
               )}
             </div>
-            <input
-              type="text"
-              placeholder="Search tasks..."
-              value={taskSearch}
-              onChange={(e) => setTaskSearch(e.target.value)}
-              style={{ width: '100%', padding: '10px 14px', backgroundColor: '#0D1321', border: '1px solid #1F2937', borderRadius: 8, color: '#FFFFFF', fontSize: 14, outline: 'none', boxSizing: 'border-box' as const }}
-            />
+            <input type="text" placeholder="Search tasks..." value={taskSearch} onChange={(e) => setTaskSearch(e.target.value)} style={{ width: '100%', padding: '10px 14px', backgroundColor: '#0D1321', border: '1px solid #1F2937', borderRadius: 8, color: '#FFFFFF', fontSize: 14, outline: 'none', boxSizing: 'border-box' as const }} />
           </div>
           {tasksLoading ? (
             <div style={{ padding: 24, color: '#F97316' }}>Loading tasks...</div>
