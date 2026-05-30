@@ -32,7 +32,6 @@ export default function Sidebar() {
   const bottomItems = navItems.filter((item) => BOTTOM_NAV_PATHS.includes(item.path));
   const moreItems = navItems.filter((item) => !BOTTOM_NAV_PATHS.includes(item.path));
 
-  const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
 
   return (
     <>
