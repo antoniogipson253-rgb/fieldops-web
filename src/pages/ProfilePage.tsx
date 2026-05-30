@@ -5,10 +5,20 @@ import { supabase } from '../lib/supabase';
 export default function ProfilePage() {
   const queryClient = useQueryClient();
   const [fullName, setFullName] = useState('');
-  const [phone, setPhone] = useState('');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
+
+  // change email
+  const [newEmail, setNewEmail] = useState('');
+  const [savingEmail, setSavingEmail] = useState(false);
+  const [emailMsg, setEmailMsg] = useState('');
+
+  // change password
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [savingPassword, setSavingPassword] = useState(false);
+  const [passwordMsg, setPasswordMsg] = useState('');
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -46,7 +56,6 @@ export default function ProfilePage() {
   useEffect(() => {
     if (profile) {
       setFullName(profile.full_name ?? '');
-      setPhone(profile.phone ?? '');
     }
   }, [profile]);
 
@@ -56,7 +65,7 @@ export default function ProfilePage() {
     try {
       const { error } = await supabase
         .from('profiles')
-        .update({ full_name: fullName.trim(), phone: phone.trim() || null })
+        .update({ full_name: fullName.trim() })
         .eq('id', currentUser!.id);
       if (error) throw error;
       queryClient.invalidateQueries({ queryKey: ['web-profile'] });
@@ -69,10 +78,78 @@ export default function ProfilePage() {
     }
   }
 
+  async function handleChangeEmail() {
+    if (!newEmail.trim()) return;
+    setSavingEmail(true);
+    setEmailMsg('');
+    try {
+      const { error } = await supabase.auth.updateUser({ email: newEmail.trim() });
+      if (error) throw error;
+      setEmailMsg('Confirmation sent to your new email. Check your inbox.');
+      setNewEmail('');
+    } catch (e: any) {
+      setEmailMsg(e.message);
+    } finally {
+      setSavingEmail(false);
+    }
+  }
+
+  async function handleChangePassword() {
+    if (!newPassword || newPassword !== confirmPassword) {
+      setPasswordMsg('Passwords do not match.');
+      return;
+    }
+    if (newPassword.length < 6) {
+      setPasswordMsg('Password must be at least 6 characters.');
+      return;
+    }
+    setSavingPassword(true);
+    setPasswordMsg('');
+    try {
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) throw error;
+      setPasswordMsg('Password updated successfully.');
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (e: any) {
+      setPasswordMsg(e.message);
+    } finally {
+      setSavingPassword(false);
+    }
+  }
 
   const initials = fullName
     ? fullName.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2)
     : '??';
+
+  const inputStyle: React.CSSProperties = {
+    width: '100%',
+    padding: '12px 14px',
+    backgroundColor: '#1F2937',
+    border: '1px solid #374151',
+    borderRadius: 10,
+    color: '#FFFFFF',
+    fontSize: 15,
+    outline: 'none',
+    boxSizing: 'border-box',
+  };
+
+  const labelStyle: React.CSSProperties = {
+    display: 'block',
+    fontSize: 11,
+    fontWeight: 700,
+    color: '#6B7280',
+    letterSpacing: 2,
+    marginBottom: 8,
+  };
+
+  const cardStyle: React.CSSProperties = {
+    backgroundColor: '#111827',
+    borderRadius: 14,
+    padding: 24,
+    border: '1px solid #1F2937',
+    marginBottom: 20,
+  };
 
   return (
     <div style={{ padding: 32, color: '#FFFFFF', maxWidth: 600 }}>
@@ -88,16 +165,10 @@ export default function ProfilePage() {
           {/* Avatar */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginBottom: 32 }}>
             <div style={{
-              width: 72,
-              height: 72,
-              borderRadius: 36,
-              backgroundColor: '#1F2937',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: 24,
-              fontWeight: 800,
-              color: '#F97316',
+              width: 72, height: 72, borderRadius: 36,
+              backgroundColor: '#1F2937', display: 'flex',
+              alignItems: 'center', justifyContent: 'center',
+              fontSize: 24, fontWeight: 800, color: '#F97316',
               border: '2px solid #F97316',
             }}>
               {initials}
@@ -106,60 +177,34 @@ export default function ProfilePage() {
               <div style={{ fontSize: 18, fontWeight: 700 }}>{fullName || 'Your Name'}</div>
               <div style={{ fontSize: 13, color: '#6B7280', marginTop: 2 }}>{currentUser?.email}</div>
               {company && (
-                <div style={{
-                  marginTop: 6,
-                  fontSize: 12,
-                  color: '#F97316',
-                  backgroundColor: '#F9731620',
-                  padding: '2px 10px',
-                  borderRadius: 20,
-                  display: 'inline-block',
-                  fontWeight: 600,
-                }}>
+                <div style={{ marginTop: 6, fontSize: 12, color: '#F97316', backgroundColor: '#F9731620', padding: '2px 10px', borderRadius: 20, display: 'inline-block', fontWeight: 600 }}>
                   🏢 {company.name}
                 </div>
               )}
             </div>
           </div>
 
-          {/* Form */}
-          <div style={{ backgroundColor: '#111827', borderRadius: 14, padding: 24, border: '1px solid #1F2937', marginBottom: 20 }}>
+          {/* Edit Name */}
+          <div style={cardStyle}>
             <h3 style={{ margin: '0 0 20px 0', fontSize: 16, fontWeight: 700 }}>Edit Profile</h3>
-
             <div style={{ marginBottom: 16 }}>
-              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#6B7280', letterSpacing: 2, marginBottom: 8 }}>FULL NAME</label>
+              <label style={labelStyle}>FULL NAME</label>
               <input
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
                 placeholder="Your full name"
-                style={{ width: '100%', padding: '12px 14px', backgroundColor: '#1F2937', border: '1px solid #374151', borderRadius: 10, color: '#FFFFFF', fontSize: 15, outline: 'none', boxSizing: 'border-box' }}
+                style={inputStyle}
               />
             </div>
-
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#6B7280', letterSpacing: 2, marginBottom: 8 }}>PHONE (OPTIONAL)</label>
-              <input
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="+1 (555) 000-0000"
-                style={{ width: '100%', padding: '12px 14px', backgroundColor: '#1F2937', border: '1px solid #374151', borderRadius: 10, color: '#FFFFFF', fontSize: 15, outline: 'none', boxSizing: 'border-box' }}
-              />
-            </div>
-
-
             <button
               onClick={handleSave}
               disabled={saving}
               style={{
-                width: '100%',
-                padding: '13px',
+                width: '100%', padding: '13px',
                 backgroundColor: saved ? '#22C55E' : saving ? '#374151' : '#F97316',
-                border: 'none',
-                borderRadius: 10,
+                border: 'none', borderRadius: 10,
                 color: saved || !saving ? '#0A0F1E' : '#6B7280',
-                fontSize: 14,
-                fontWeight: 900,
-                letterSpacing: 2,
+                fontSize: 14, fontWeight: 900, letterSpacing: 2,
                 cursor: saving ? 'not-allowed' : 'pointer',
               }}
             >
@@ -167,8 +212,92 @@ export default function ProfilePage() {
             </button>
           </div>
 
+          {/* Change Email */}
+          <div style={cardStyle}>
+            <h3 style={{ margin: '0 0 6px 0', fontSize: 16, fontWeight: 700 }}>Change Email</h3>
+            <p style={{ color: '#6B7280', fontSize: 13, margin: '0 0 16px 0' }}>
+              Current: <span style={{ color: '#9CA3AF' }}>{currentUser?.email}</span>
+            </p>
+            <div style={{ marginBottom: 16 }}>
+              <label style={labelStyle}>NEW EMAIL</label>
+              <input
+                type="email"
+                value={newEmail}
+                onChange={(e) => setNewEmail(e.target.value)}
+                placeholder="new@email.com"
+                style={inputStyle}
+              />
+            </div>
+            {emailMsg && (
+              <p style={{ fontSize: 13, color: emailMsg.includes('sent') ? '#22C55E' : '#EF4444', margin: '0 0 12px 0' }}>
+                {emailMsg}
+              </p>
+            )}
+            <button
+              onClick={handleChangeEmail}
+              disabled={savingEmail || !newEmail.trim()}
+              style={{
+                width: '100%', padding: '13px',
+                backgroundColor: savingEmail || !newEmail.trim() ? '#374151' : '#F97316',
+                border: 'none', borderRadius: 10,
+                color: savingEmail || !newEmail.trim() ? '#6B7280' : '#0A0F1E',
+                fontSize: 14, fontWeight: 900, letterSpacing: 2,
+                cursor: savingEmail || !newEmail.trim() ? 'not-allowed' : 'pointer',
+              }}
+            >
+              {savingEmail ? 'SENDING...' : 'UPDATE EMAIL'}
+            </button>
+          </div>
+
+          {/* Change Password */}
+          <div style={cardStyle}>
+            <h3 style={{ margin: '0 0 6px 0', fontSize: 16, fontWeight: 700 }}>Change Password</h3>
+            <p style={{ color: '#6B7280', fontSize: 13, margin: '0 0 16px 0' }}>
+              Choose a strong password at least 6 characters long.
+            </p>
+            <div style={{ marginBottom: 16 }}>
+              <label style={labelStyle}>NEW PASSWORD</label>
+              <input
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="••••••••"
+                style={inputStyle}
+              />
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label style={labelStyle}>CONFIRM PASSWORD</label>
+              <input
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="••••••••"
+                style={inputStyle}
+              />
+            </div>
+            {passwordMsg && (
+              <p style={{ fontSize: 13, color: passwordMsg.includes('successfully') ? '#22C55E' : '#EF4444', margin: '0 0 12px 0' }}>
+                {passwordMsg}
+              </p>
+            )}
+            <button
+              onClick={handleChangePassword}
+              disabled={savingPassword || !newPassword || !confirmPassword}
+              style={{
+                width: '100%', padding: '13px',
+                backgroundColor: savingPassword || !newPassword || !confirmPassword ? '#374151' : '#F97316',
+                border: 'none', borderRadius: 10,
+                color: savingPassword || !newPassword || !confirmPassword ? '#6B7280' : '#0A0F1E',
+                fontSize: 14, fontWeight: 900, letterSpacing: 2,
+                cursor: savingPassword || !newPassword || !confirmPassword ? 'not-allowed' : 'pointer',
+              }}
+            >
+              {savingPassword ? 'UPDATING...' : 'UPDATE PASSWORD'}
+            </button>
+          </div>
+
           {/* Company */}
-          <div style={{ backgroundColor: '#111827', borderRadius: 14, padding: 24, border: '1px solid #1F2937', marginBottom: 20 }}>
+          <div style={cardStyle}>
             <h3 style={{ margin: '0 0 12px 0', fontSize: 16, fontWeight: 700 }}>Company</h3>
             {company ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -186,7 +315,7 @@ export default function ProfilePage() {
           </div>
 
           {/* Sign Out */}
-          <div style={{ backgroundColor: '#111827', borderRadius: 14, padding: 24, border: '1px solid #1F2937' }}>
+          <div style={cardStyle}>
             <h3 style={{ margin: '0 0 8px 0', fontSize: 16, fontWeight: 700 }}>Sign Out</h3>
             <p style={{ color: '#6B7280', fontSize: 13, margin: '0 0 16px 0' }}>
               You will be returned to the login screen.
