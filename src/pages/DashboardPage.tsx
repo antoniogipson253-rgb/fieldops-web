@@ -151,7 +151,7 @@ function ProjectMap({ projects, projectProgress }: { projects: any[]; projectPro
       }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [mappedProjects.length]);
+  }, [mappedProjects.length]);
 
   if (mappedProjects.length === 0) return null;
 
@@ -231,6 +231,7 @@ function AdminDashboard({ currentUserId }: { currentUserId: string }) {
         weekHours: Math.round(totalWeekHours * 10) / 10,
       };
     },
+    staleTime: 0,
   });
 
   const { data: projects } = useQuery({
@@ -244,10 +245,13 @@ function AdminDashboard({ currentUserId }: { currentUserId: string }) {
         .limit(10);
       return data ?? [];
     },
+    staleTime: 0,
   });
 
+  const projectIdsKey = (projects ?? []).map((p: any) => p.id).join(',');
+
   const { data: projectProgress } = useQuery({
-    queryKey: ['admin-dash-progress', projects],
+    queryKey: ['admin-dash-progress', projectIdsKey],
     queryFn: async () => {
       if (!projects || projects.length === 0) return {};
       const result: Record<string, number> = {};
@@ -260,6 +264,7 @@ function AdminDashboard({ currentUserId }: { currentUserId: string }) {
       return result;
     },
     enabled: !!projects && projects.length > 0,
+    staleTime: 0,
   });
 
   const { data: dueTasks } = useQuery({
@@ -276,6 +281,7 @@ function AdminDashboard({ currentUserId }: { currentUserId: string }) {
         .limit(5);
       return data ?? [];
     },
+    staleTime: 0,
   });
 
   const { data: activity } = useQuery({
@@ -322,6 +328,7 @@ function AdminDashboard({ currentUserId }: { currentUserId: string }) {
         senderName: profileMap[n.user_id] ?? 'Someone',
       }));
     },
+    staleTime: 0,
   });
 
   const barColors = ['#378ADD', '#EF9F27', '#1D9E75', '#E24B4A', '#8B5CF6'];
@@ -367,7 +374,6 @@ function AdminDashboard({ currentUserId }: { currentUserId: string }) {
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 16 }}>
         <div>
-          {/* Project progress + map */}
           <div style={card}>
             <p style={cardTitle}>Project progress</p>
             {(projects ?? []).length === 0 && <p style={{ color: '#4B5563', fontSize: 13 }}>No active projects.</p>}
@@ -375,11 +381,11 @@ function AdminDashboard({ currentUserId }: { currentUserId: string }) {
               const pct = projectProgress?.[p.id] ?? 0;
               return (
                 <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-                  <span style={{ fontSize: 13, fontWeight: 500, flex: 1 }}>{p.name}</span>
-                  <div style={{ flex: 2, height: 5, background: '#1F2937', borderRadius: 3, overflow: 'hidden' }}>
-                    <div style={{ height: '100%', width: `${pct}%`, background: barColors[i % barColors.length], borderRadius: 3 }} />
+                  <span style={{ fontSize: 13, fontWeight: 500, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
+                  <div style={{ flex: 2, height: 5, background: '#1F2937', borderRadius: 3, overflow: 'hidden', minWidth: 80 }}>
+                    <div style={{ height: '100%', width: `${pct}%`, background: barColors[i % barColors.length], borderRadius: 3, transition: 'width 0.4s ease' }} />
                   </div>
-                  <span style={{ fontSize: 12, color: '#6B7280', minWidth: 32, textAlign: 'right' }}>{pct}%</span>
+                  <span style={{ fontSize: 12, color: '#6B7280', minWidth: 36, textAlign: 'right' }}>{pct}%</span>
                 </div>
               );
             })}
@@ -490,12 +496,14 @@ function PMDashboard({ currentUserId }: { currentUserId: string }) {
         .eq('user_id', currentUserId);
       return (data ?? []).map((d: any) => d.project).filter(Boolean);
     },
+    staleTime: 0,
   });
 
   const projectIds = (pmProjects ?? []).map((p: any) => p.id);
+  const projectIdsKey = projectIds.join(',');
 
   const { data: projectProgress } = useQuery({
-    queryKey: ['pm-dash-progress', projectIds],
+    queryKey: ['pm-dash-progress', projectIdsKey],
     queryFn: async () => {
       const result: Record<string, { total: number; completed: number }> = {};
       for (const id of projectIds) {
@@ -506,10 +514,11 @@ function PMDashboard({ currentUserId }: { currentUserId: string }) {
       return result;
     },
     enabled: projectIds.length > 0,
+    staleTime: 0,
   });
 
   const { data: tasks } = useQuery({
-    queryKey: ['pm-dash-tasks', projectIds],
+    queryKey: ['pm-dash-tasks', projectIdsKey],
     queryFn: async () => {
       if (projectIds.length === 0) return [];
       const { data } = await supabase
@@ -523,10 +532,11 @@ function PMDashboard({ currentUserId }: { currentUserId: string }) {
       return data ?? [];
     },
     enabled: projectIds.length > 0,
+    staleTime: 0,
   });
 
   const { data: crew } = useQuery({
-    queryKey: ['pm-dash-crew', projectIds],
+    queryKey: ['pm-dash-crew', projectIdsKey],
     queryFn: async () => {
       if (projectIds.length === 0) return [];
       const { data } = await supabase
@@ -554,10 +564,11 @@ function PMDashboard({ currentUserId }: { currentUserId: string }) {
       }));
     },
     enabled: projectIds.length > 0,
+    staleTime: 0,
   });
 
   const { data: reports } = useQuery({
-    queryKey: ['pm-dash-reports', projectIds],
+    queryKey: ['pm-dash-reports', projectIdsKey],
     queryFn: async () => {
       if (projectIds.length === 0) return [];
       const { data } = await supabase
@@ -569,6 +580,7 @@ function PMDashboard({ currentUserId }: { currentUserId: string }) {
       return data ?? [];
     },
     enabled: projectIds.length > 0,
+    staleTime: 0,
   });
 
   const barColors = ['#378ADD', '#EF9F27', '#1D9E75', '#E24B4A'];
@@ -618,11 +630,11 @@ function PMDashboard({ currentUserId }: { currentUserId: string }) {
               const pct = prog && prog.total > 0 ? Math.round((prog.completed / prog.total) * 100) : 0;
               return (
                 <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-                  <span style={{ fontSize: 13, fontWeight: 500, flex: 1 }}>{p.name}</span>
-                  <div style={{ flex: 2, height: 5, background: '#1F2937', borderRadius: 3, overflow: 'hidden' }}>
-                    <div style={{ height: '100%', width: `${pct}%`, background: barColors[i % barColors.length], borderRadius: 3 }} />
+                  <span style={{ fontSize: 13, fontWeight: 500, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
+                  <div style={{ flex: 2, height: 5, background: '#1F2937', borderRadius: 3, overflow: 'hidden', minWidth: 80 }}>
+                    <div style={{ height: '100%', width: `${pct}%`, background: barColors[i % barColors.length], borderRadius: 3, transition: 'width 0.4s ease' }} />
                   </div>
-                  <span style={{ fontSize: 12, color: '#6B7280', minWidth: 32, textAlign: 'right' }}>{pct}%</span>
+                  <span style={{ fontSize: 12, color: '#6B7280', minWidth: 36, textAlign: 'right' }}>{pct}%</span>
                 </div>
               );
             })}
@@ -693,6 +705,7 @@ function WorkerDashboard({ currentUserId }: { currentUserId: string }) {
         .maybeSingle();
       return data;
     },
+    staleTime: 0,
   });
 
   const { data: weekEntries } = useQuery({
@@ -709,6 +722,7 @@ function WorkerDashboard({ currentUserId }: { currentUserId: string }) {
         .not('clock_out', 'is', null);
       return data ?? [];
     },
+    staleTime: 0,
   });
 
   const { data: myTasks } = useQuery({
@@ -723,6 +737,7 @@ function WorkerDashboard({ currentUserId }: { currentUserId: string }) {
         .limit(8);
       return data ?? [];
     },
+    staleTime: 0,
   });
 
   const weekMinutes = (weekEntries ?? []).reduce((s, e: any) => s + (e.total_minutes ?? 0), 0);
