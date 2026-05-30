@@ -256,9 +256,12 @@ function AdminDashboard({ currentUserId }: { currentUserId: string }) {
       if (!projects || projects.length === 0) return {};
       const result: Record<string, number> = {};
       for (const p of projects) {
-        const { data } = await supabase.from('tasks').select('status').eq('project_id', p.id).eq('archived', false);
+        const { data } = await supabase
+          .from('tasks')
+          .select('status, archived')
+          .eq('project_id', p.id);
         const tasks = data ?? [];
-        const completed = tasks.filter((t: any) => t.status === 'completed').length;
+        const completed = tasks.filter((t: any) => t.status === 'completed' || t.archived).length;
         result[p.id] = tasks.length > 0 ? Math.round((completed / tasks.length) * 100) : 0;
       }
       return result;
@@ -390,10 +393,7 @@ function AdminDashboard({ currentUserId }: { currentUserId: string }) {
               );
             })}
             {mappedProjects.length > 0 && (
-              <ProjectMap
-                projects={projects ?? []}
-                projectProgress={projectProgress ?? {}}
-              />
+              <ProjectMap projects={projects ?? []} projectProgress={projectProgress ?? {}} />
             )}
             {mappedProjects.length === 0 && (projects ?? []).length > 0 && (
               <div style={{ marginTop: 12, padding: '10px 14px', background: '#0D1321', borderRadius: 8, border: '1px solid #1F2937' }}>
@@ -459,20 +459,11 @@ function AdminDashboard({ currentUserId }: { currentUserId: string }) {
               <div
                 key={n.id}
                 onClick={() => { if (n.project_id) window.location.href = `/projects/${n.project_id}`; }}
-                style={{
-                  display: 'flex', gap: 10, padding: '9px 0',
-                  borderBottom: '0.5px solid #1F2937', alignItems: 'flex-start',
-                  cursor: n.project_id ? 'pointer' : 'default', borderRadius: 6,
-                }}
+                style={{ display: 'flex', gap: 10, padding: '9px 0', borderBottom: '0.5px solid #1F2937', alignItems: 'flex-start', cursor: n.project_id ? 'pointer' : 'default', borderRadius: 6 }}
                 onMouseOver={(e) => { if (n.project_id) (e.currentTarget as HTMLDivElement).style.background = '#1F293740'; }}
                 onMouseOut={(e) => { (e.currentTarget as HTMLDivElement).style.background = 'transparent'; }}
               >
-                <div style={{
-                  width: 7, height: 7, borderRadius: 4, marginTop: 5, flexShrink: 0,
-                  background: n.title?.includes('Comment') ? '#378ADD' :
-                    n.title?.includes('Status') ? '#F97316' :
-                    n.title?.includes('Report') ? '#1D9E75' : '#6B7280',
-                }} />
+                <div style={{ width: 7, height: 7, borderRadius: 4, marginTop: 5, flexShrink: 0, background: n.title?.includes('Comment') ? '#378ADD' : n.title?.includes('Status') ? '#F97316' : n.title?.includes('Report') ? '#1D9E75' : '#6B7280' }} />
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 13, lineHeight: 1.5, color: '#FFFFFF' }}>{n.body}</div>
                   <div style={{ fontSize: 11, color: '#4B5563', marginTop: 2 }}>{timeAgo(n.created_at)}</div>
@@ -507,9 +498,13 @@ function PMDashboard({ currentUserId }: { currentUserId: string }) {
     queryFn: async () => {
       const result: Record<string, { total: number; completed: number }> = {};
       for (const id of projectIds) {
-        const { data } = await supabase.from('tasks').select('status').eq('project_id', id).eq('archived', false);
+        const { data } = await supabase
+          .from('tasks')
+          .select('status, archived')
+          .eq('project_id', id);
         const tasks = data ?? [];
-        result[id] = { total: tasks.length, completed: tasks.filter((t: any) => t.status === 'completed').length };
+        const completed = tasks.filter((t: any) => t.status === 'completed' || t.archived).length;
+        result[id] = { total: tasks.length, completed };
       }
       return result;
     },
@@ -789,9 +784,7 @@ function WorkerDashboard({ currentUserId }: { currentUserId: string }) {
           <p style={{ fontSize: 12, color: isClockedIn ? '#5DCAA5' : '#4B5563', margin: '0 0 16px' }}>
             {isClockedIn ? `Since ${formatTime(clockStatus.clock_in)}` : 'Tap Time Clock to clock in'}
           </p>
-          <div style={{ fontSize: 11, color: '#4B5563', marginTop: 4 }}>
-            Use the Time Clock page to clock in/out
-          </div>
+          <div style={{ fontSize: 11, color: '#4B5563', marginTop: 4 }}>Use the Time Clock page to clock in/out</div>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
@@ -820,13 +813,7 @@ function WorkerDashboard({ currentUserId }: { currentUserId: string }) {
           {(myTasks ?? []).length === 0 && <p style={{ color: '#4B5563', fontSize: 13 }}>No tasks assigned to you.</p>}
           {(myTasks ?? []).map((t: any) => (
             <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', borderBottom: '0.5px solid #1F2937' }}>
-              <div style={{
-                width: 16, height: 16, borderRadius: 4,
-                border: t.status === 'completed' ? 'none' : '1.5px solid #374151',
-                background: t.status === 'completed' ? '#1D9E75' : 'transparent',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                flexShrink: 0,
-              }}>
+              <div style={{ width: 16, height: 16, borderRadius: 4, border: t.status === 'completed' ? 'none' : '1.5px solid #374151', background: t.status === 'completed' ? '#1D9E75' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 {t.status === 'completed' && <span style={{ color: '#fff', fontSize: 10 }}>✓</span>}
               </div>
               <div style={{ flex: 1 }}>
@@ -846,13 +833,7 @@ function WorkerDashboard({ currentUserId }: { currentUserId: string }) {
               return (
                 <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
                   <span style={{ fontSize: 10, color: '#6B7280' }}>{h > 0 ? h : ''}</span>
-                  <div style={{
-                    width: '100%',
-                    height: h > 0 ? `${Math.round((h / maxHours) * 60)}px` : '4px',
-                    background: isToday ? '#F97316' : h > 0 ? '#378ADD' : '#1F2937',
-                    borderRadius: '3px 3px 0 0',
-                    minHeight: 4,
-                  }} />
+                  <div style={{ width: '100%', height: h > 0 ? `${Math.round((h / maxHours) * 60)}px` : '4px', background: isToday ? '#F97316' : h > 0 ? '#378ADD' : '#1F2937', borderRadius: '3px 3px 0 0', minHeight: 4 }} />
                 </div>
               );
             })}
