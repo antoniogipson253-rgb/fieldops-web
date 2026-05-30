@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useIsAdmin, useCurrentUser, useUserRole } from '../lib/useIsAdmin';
 
@@ -71,6 +72,107 @@ const statusLabel: Record<string, string> = {
   open: 'Open', in_progress: 'In Progress', completed: 'Done',
 };
 
+const statusColors: Record<string, string> = {
+  active: '#22C55E',
+  on_hold: '#F97316',
+  completed: '#6B7280',
+};
+
+function ProjectMap({ projects, projectProgress }: { projects: any[]; projectProgress: Record<string, number> }) {
+  const mapRef = useRef<any>(null);
+  const mapInstanceRef = useRef<any>(null);
+
+  const mappedProjects = projects.filter((p: any) => p.latitude && p.longitude);
+
+  useEffect(() => {
+    if (!mapRef.current || mapInstanceRef.current) return;
+    if (mappedProjects.length === 0) return;
+
+    import('leaflet').then((L) => {
+      delete (L.Icon.Default.prototype as any)._getIconUrl;
+      L.Icon.Default.mergeOptions({
+        iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
+        iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
+        shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+      });
+
+      const map = L.map(mapRef.current!).setView(
+        [mappedProjects[0].latitude, mappedProjects[0].longitude],
+        10
+      );
+
+      mapInstanceRef.current = map;
+
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors',
+      }).addTo(map);
+
+      mappedProjects.forEach((p: any) => {
+        const color = statusColors[p.status] ?? '#6B7280';
+        const icon = L.divIcon({
+          className: '',
+          html: `<div style="width:24px;height:24px;border-radius:50%;background:${color};border:3px solid #FFFFFF;box-shadow:0 2px 6px rgba(0,0,0,0.4);"></div>`,
+          iconSize: [24, 24],
+          iconAnchor: [12, 12],
+          popupAnchor: [0, -16],
+        });
+
+        const pct = projectProgress[p.id] ?? 0;
+        const popup = L.popup({ maxWidth: 220 }).setContent(`
+          <div style="font-family:sans-serif;padding:4px;">
+            <div style="font-size:14px;font-weight:700;margin-bottom:6px;">${p.name}</div>
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
+              <div style="width:8px;height:8px;border-radius:50%;background:${color};"></div>
+              <span style="font-size:12px;color:#666;">${p.status?.replace('_', ' ')}</span>
+            </div>
+            <div style="font-size:12px;color:#666;margin-bottom:4px;">Progress: ${pct}%</div>
+            <div style="height:5px;background:#E5E7EB;border-radius:3px;overflow:hidden;margin-bottom:10px;">
+              <div style="height:100%;width:${pct}%;background:${color};border-radius:3px;"></div>
+            </div>
+            <a href="/projects/${p.id}" style="display:block;text-align:center;padding:6px 12px;background:#F97316;color:#FFFFFF;border-radius:6px;font-size:12px;font-weight:700;text-decoration:none;">
+              View Project →
+            </a>
+          </div>
+        `);
+
+        L.marker([p.latitude, p.longitude], { icon }).bindPopup(popup).addTo(map);
+      });
+
+      if (mappedProjects.length > 1) {
+        const bounds = L.latLngBounds(mappedProjects.map((p: any) => [p.latitude, p.longitude]));
+        map.fitBounds(bounds, { padding: [40, 40] });
+      }
+    });
+
+    return () => {
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.remove();
+        mapInstanceRef.current = null;
+      }
+    };
+  }, [mappedProjects.length]);
+
+  if (mappedProjects.length === 0) return null;
+
+  return (
+    <>
+      <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+      <div
+        ref={mapRef}
+        style={{ height: 300, borderRadius: 10, overflow: 'hidden', border: '1px solid #1F2937', marginTop: 14 }}
+      />
+      <div style={{ display: 'flex', gap: 16, marginTop: 10 }}>
+        {Object.entries(statusColors).map(([status, color]) => (
+          <div key={status} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div style={{ width: 8, height: 8, borderRadius: '50%', background: color }} />
+            <span style={{ fontSize: 11, color: '#6B7280' }}>{status.replace('_', ' ')}</span>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
 function AdminDashboard({ currentUserId }: { currentUserId: string }) {
   const { data: stats } = useQuery({
     queryKey: ['admin-dash-stats'],
@@ -135,10 +237,10 @@ function AdminDashboard({ currentUserId }: { currentUserId: string }) {
     queryFn: async () => {
       const { data } = await supabase
         .from('projects')
-        .select('id, name, status')
+        .select('id, name, status, latitude, longitude, address')
         .eq('archived', false)
         .eq('status', 'active')
-        .limit(5);
+        .limit(10);
       return data ?? [];
     },
   });
@@ -147,11 +249,12 @@ function AdminDashboard({ currentUserId }: { currentUserId: string }) {
     queryKey: ['admin-dash-progress', projects],
     queryFn: async () => {
       if (!projects || projects.length === 0) return {};
-      const result: Record<string, { total: number; completed: number }> = {};
+      const result: Record<string, number> = {};
       for (const p of projects) {
         const { data } = await supabase.from('tasks').select('status').eq('project_id', p.id).eq('archived', false);
         const tasks = data ?? [];
-        result[p.id] = { total: tasks.length, completed: tasks.filter((t: any) => t.status === 'completed').length };
+        const completed = tasks.filter((t: any) => t.status === 'completed').length;
+        result[p.id] = tasks.length > 0 ? Math.round((completed / tasks.length) * 100) : 0;
       }
       return result;
     },
@@ -221,6 +324,7 @@ function AdminDashboard({ currentUserId }: { currentUserId: string }) {
   });
 
   const barColors = ['#378ADD', '#EF9F27', '#1D9E75', '#E24B4A', '#8B5CF6'];
+  const mappedProjects = (projects ?? []).filter((p: any) => p.latitude && p.longitude);
 
   return (
     <div style={{ padding: 32, color: '#FFFFFF' }}>
@@ -262,12 +366,12 @@ function AdminDashboard({ currentUserId }: { currentUserId: string }) {
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 16 }}>
         <div>
+          {/* Project progress + map */}
           <div style={card}>
             <p style={cardTitle}>Project progress</p>
             {(projects ?? []).length === 0 && <p style={{ color: '#4B5563', fontSize: 13 }}>No active projects.</p>}
             {(projects ?? []).map((p: any, i: number) => {
-              const prog = projectProgress?.[p.id];
-              const pct = prog && prog.total > 0 ? Math.round((prog.completed / prog.total) * 100) : 0;
+              const pct = projectProgress?.[p.id] ?? 0;
               return (
                 <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
                   <span style={{ fontSize: 13, fontWeight: 500, flex: 1 }}>{p.name}</span>
@@ -278,6 +382,19 @@ function AdminDashboard({ currentUserId }: { currentUserId: string }) {
                 </div>
               );
             })}
+            {mappedProjects.length > 0 && (
+              <ProjectMap
+                projects={projects ?? []}
+                projectProgress={projectProgress ?? {}}
+              />
+            )}
+            {mappedProjects.length === 0 && (projects ?? []).length > 0 && (
+              <div style={{ marginTop: 12, padding: '10px 14px', background: '#0D1321', borderRadius: 8, border: '1px solid #1F2937' }}>
+                <p style={{ fontSize: 12, color: '#4B5563', margin: 0 }}>
+                  No job site coordinates set yet. Open the mobile app and set coordinates on your projects to see them on the map.
+                </p>
+              </div>
+            )}
           </div>
 
           <div style={card}>
@@ -334,23 +451,14 @@ function AdminDashboard({ currentUserId }: { currentUserId: string }) {
             {(activity ?? []).map((n: any) => (
               <div
                 key={n.id}
-                onClick={() => {
-                  if (n.project_id) {
-                    window.location.href = `/projects/${n.project_id}`;
-                  }
-                }}
+                onClick={() => { if (n.project_id) window.location.href = `/projects/${n.project_id}`; }}
                 style={{
                   display: 'flex', gap: 10, padding: '9px 0',
                   borderBottom: '0.5px solid #1F2937', alignItems: 'flex-start',
-                  cursor: n.project_id ? 'pointer' : 'default',
-                  borderRadius: 6,
+                  cursor: n.project_id ? 'pointer' : 'default', borderRadius: 6,
                 }}
-                onMouseOver={(e) => {
-                  if (n.project_id) (e.currentTarget as HTMLDivElement).style.background = '#1F293740';
-                }}
-                onMouseOut={(e) => {
-                  (e.currentTarget as HTMLDivElement).style.background = 'transparent';
-                }}
+                onMouseOver={(e) => { if (n.project_id) (e.currentTarget as HTMLDivElement).style.background = '#1F293740'; }}
+                onMouseOut={(e) => { (e.currentTarget as HTMLDivElement).style.background = 'transparent'; }}
               >
                 <div style={{
                   width: 7, height: 7, borderRadius: 4, marginTop: 5, flexShrink: 0,
