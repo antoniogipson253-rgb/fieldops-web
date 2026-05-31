@@ -125,10 +125,6 @@ function ProjectMap({ projects, projectProgress }: { projects: any[]; projectPro
               <div style="width:8px;height:8px;border-radius:50%;background:${color};"></div>
               <span style="font-size:12px;color:#666;">${p.status?.replace('_', ' ')}</span>
             </div>
-            <div style="font-size:12px;color:#666;margin-bottom:4px;">Progress: ${pct}%</div>
-            <div style="height:5px;background:#E5E7EB;border-radius:3px;overflow:hidden;margin-bottom:10px;">
-              <div style="height:100%;width:${pct}%;background:${color};border-radius:3px;"></div>
-            </div>
             <a href="/projects/${p.id}" style="display:block;text-align:center;padding:6px 12px;background:#F97316;color:#FFFFFF;border-radius:6px;font-size:12px;font-weight:700;text-decoration:none;">
               View Project →
             </a>

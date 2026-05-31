@@ -59,12 +59,25 @@ export default function AcceptInvitePage() {
             });
         }
       } else {
+        // Add to company members
         const { error: memberError } = await supabase
           .from('company_members')
           .insert({ company_id: invite.company_id, user_id: user.id, role: invite.role });
 
         if (memberError && memberError.code !== '23505') throw memberError;
 
+        // Add to project members if invited to a specific project
+        if (invite.project_id) {
+          const { error: projectMemberError } = await supabase
+            .from('project_members')
+            .insert({ project_id: invite.project_id, user_id: user.id, role: 'member' });
+
+          if (projectMemberError && projectMemberError.code !== '23505') {
+            console.error('Failed to add to project_members:', projectMemberError);
+          }
+        }
+
+        // Update profile
         await supabase
           .from('profiles')
           .update({ company_id: invite.company_id, role: invite.role })
