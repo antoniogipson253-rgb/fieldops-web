@@ -163,6 +163,52 @@ export default function ProjectDetailPage() {
     setManualTasks([{ title: '', description: '', priority: 'medium', dueDate: '' }]);
   }
 
+  async function handleExportToExcel() {
+    try {
+      const { data, error } = await supabase
+        .from('tasks')
+        .select('*, assignee:assigned_to(full_name), folder:folder_id(name)')
+        .eq('project_id', id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      const allTasks = data ?? [];
+      const exportFolderName = selectedFolder
+        ? folders?.find((f: any) => f.id === selectedFolder)?.name ?? 'All Tasks'
+        : 'All Tasks';
+
+      const headers = ['Title', 'Description', 'Status', 'Priority', 'Assigned To', 'Folder', 'Due Date', 'Created Date', 'Archived'];
+      const rows = allTasks
+        .filter((t: any) => !selectedFolder || t.folder_id === selectedFolder)
+        .map((t: any) => [
+          t.title ?? '',
+          t.description ?? '',
+          t.status ?? '',
+          t.priority ?? '',
+          (t.assignee as any)?.full_name ?? 'Unassigned',
+          (t.folder as any)?.name ?? 'No Folder',
+          t.due_date ? new Date(t.due_date).toLocaleDateString() : '',
+          t.created_at ? new Date(t.created_at).toLocaleDateString() : '',
+          t.archived ? 'Yes' : 'No',
+        ]);
+
+      const csvContent = [headers, ...rows]
+        .map(row => row.map((cell: any) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+        .join('\n');
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${project?.name ?? 'tasks'} - ${exportFolderName} - ${new Date().toLocaleDateString()}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      alert(e.message);
+    }
+  }
+
   async function openViewTask(task: any) {
     setViewTask(task);
     setPhotosLoading(true);
@@ -449,6 +495,7 @@ export default function ProjectDetailPage() {
           {canEdit && <button onClick={() => { setEditName(project?.name ?? ''); setEditDescription(project?.description ?? ''); setEditStatus(project?.status ?? 'active'); setShowEditProject(true); }} style={{ padding: '10px 16px', backgroundColor: '#111827', border: '1px solid #374151', borderRadius: 10, color: '#9CA3AF', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>✏️ Edit</button>}
           {isAdmin && <button onClick={() => setShowInvite(!showInvite)} style={{ padding: '10px 16px', backgroundColor: '#111827', border: '1px solid #374151', borderRadius: 10, color: '#9CA3AF', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>👥 Invite</button>}
           <button onClick={() => navigate(`/projects/${id}/chat`)} style={{ padding: '10px 16px', backgroundColor: '#111827', border: '1px solid #374151', borderRadius: 10, color: '#9CA3AF', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>💬 Chat</button>
+          <button onClick={handleExportToExcel} style={{ padding: '10px 16px', backgroundColor: '#111827', border: '1px solid #374151', borderRadius: 10, color: '#9CA3AF', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>📥 Export</button>
           {canEdit && <button onClick={() => { resetImport(); setShowImport(true); }} style={{ padding: '10px 20px', backgroundColor: '#F97316', border: 'none', borderRadius: 10, color: '#0A0F1E', fontSize: 14, fontWeight: 800, cursor: 'pointer' }}>+ Add Tasks</button>}
         </div>
       </div>
