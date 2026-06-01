@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useIsAdmin, useIsProjectOwner, useIsProjectManager } from '../lib/useIsAdmin';
+import * as XLSX from 'xlsx';
 
 export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -169,7 +170,7 @@ export default function ProjectDetailPage() {
         .from('tasks')
         .select('*, assignee:assigned_to(full_name), folder:folder_id(name)')
         .eq('project_id', id)
-        .order('created_at', { ascending: false });
+        .order('folder_id', { ascending: true });
 
       if (error) throw error;
 
@@ -178,38 +179,42 @@ export default function ProjectDetailPage() {
         ? folders?.find((f: any) => f.id === selectedFolder)?.name ?? 'All Tasks'
         : 'All Tasks';
 
-      const headers = ['Title', 'Description', 'Status', 'Priority', 'Assigned To', 'Folder', 'Due Date', 'Created Date', 'Archived'];
-      const rows = allTasks
-        .filter((t: any) => !selectedFolder || t.folder_id === selectedFolder)
-        .map((t: any) => [
-          t.title ?? '',
-          t.description ?? '',
-          t.status ?? '',
-          t.priority ?? '',
-          (t.assignee as any)?.full_name ?? 'Unassigned',
-          (t.folder as any)?.name ?? 'No Folder',
-          t.due_date ? new Date(t.due_date).toLocaleDateString() : '',
-          t.created_at ? new Date(t.created_at).toLocaleDateString() : '',
-          t.archived ? 'Yes' : 'No',
-        ]);
+      const filteredForExport = allTasks.filter((t: any) =>
+        !selectedFolder || t.folder_id === selectedFolder
+      );
 
-      const csvContent = [headers, ...rows]
-        .map(row => row.map((cell: any) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
-        .join('\n');
+      const rows = filteredForExport.map((t: any) => ({
+        'Title': t.title ?? '',
+        'Description': t.description ?? '',
+        'Status': t.status === 'in_progress' ? 'In Progress' : t.status === 'completed' ? 'Done' : 'Open',
+        'Priority': t.priority ?? '',
+        'Assigned To': (t.assignee as any)?.full_name ?? 'Unassigned',
+        'Folder': (t.folder as any)?.name ?? 'No Folder',
+        'Due Date': t.due_date ? new Date(t.due_date).toLocaleDateString() : '',
+        'Created Date': t.created_at ? new Date(t.created_at).toLocaleDateString() : '',
+        'Archived': t.archived ? 'Yes' : 'No',
+      }));
 
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${project?.name ?? 'tasks'} - ${exportFolderName}.csv`;
-      link.click();
-      URL.revokeObjectURL(url);
+      const worksheet = XLSX.utils.json_to_sheet(rows);
 
-      // Open a new Google Sheet after download starts
-      setTimeout(() => {
-        window.open('https://sheets.new', '_blank');
-      }, 1000);
+      // Column widths
+      worksheet['!cols'] = [
+        { wch: 40 }, // Title
+        { wch: 50 }, // Description
+        { wch: 14 }, // Status
+        { wch: 12 }, // Priority
+        { wch: 22 }, // Assigned To
+        { wch: 22 }, // Folder
+        { wch: 14 }, // Due Date
+        { wch: 14 }, // Created Date
+        { wch: 10 }, // Archived
+      ];
 
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, exportFolderName.slice(0, 31));
+
+      const fileName = `${project?.name ?? 'tasks'} - ${exportFolderName}.xlsx`;
+      XLSX.writeFile(workbook, fileName);
     } catch (e: any) {
       alert(e.message);
     }
