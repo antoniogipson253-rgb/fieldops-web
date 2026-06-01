@@ -201,9 +201,15 @@ export default function ProjectDetailPage() {
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `${project?.name ?? 'tasks'} - ${exportFolderName} - ${new Date().toLocaleDateString()}.csv`;
+      link.download = `${project?.name ?? 'tasks'} - ${exportFolderName}.csv`;
       link.click();
       URL.revokeObjectURL(url);
+
+      // Open a new Google Sheet after download starts
+      setTimeout(() => {
+        window.open('https://sheets.new', '_blank');
+      }, 1000);
+
     } catch (e: any) {
       alert(e.message);
     }
