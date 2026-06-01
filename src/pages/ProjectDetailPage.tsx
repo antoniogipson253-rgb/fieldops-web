@@ -43,6 +43,11 @@ export default function ProjectDetailPage() {
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviting, setInviting] = useState(false);
 
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [exportFolderFilter, setExportFolderFilter] = useState<string>('all');
+  const [exportStatusFilter, setExportStatusFilter] = useState<string>('all');
+  const [exportIncludeArchived, setExportIncludeArchived] = useState(false);
+
   const [viewTask, setViewTask] = useState<any>(null);
   const [viewTaskPhotos, setViewTaskPhotos] = useState<any[]>([]);
   const [viewingPhoto, setViewingPhoto] = useState<string | null>(null);
@@ -165,7 +170,7 @@ export default function ProjectDetailPage() {
     setManualTasks([{ title: '', description: '', priority: 'medium', dueDate: '' }]);
   }
 
-  async function handleExportToExcel() {
+  async function handleExportPDF() {
     try {
       const { data, error } = await supabase
         .from('tasks')
@@ -175,14 +180,30 @@ export default function ProjectDetailPage() {
 
       if (error) throw error;
 
-      const allTasks = data ?? [];
-      const exportFolderName = selectedFolder
-        ? folders?.find((f: any) => f.id === selectedFolder)?.name ?? 'All Tasks'
-        : 'All Tasks';
+      let allTasks = data ?? [];
 
-      const filteredForExport = allTasks.filter((t: any) =>
-        !selectedFolder || t.folder_id === selectedFolder
-      );
+      // Apply folder filter
+      if (exportFolderFilter !== 'all') {
+        allTasks = allTasks.filter((t: any) => t.folder_id === exportFolderFilter);
+      }
+
+      // Apply status filter
+      if (exportStatusFilter !== 'all') {
+        allTasks = allTasks.filter((t: any) => t.status === exportStatusFilter);
+      }
+
+      // Apply archived filter
+      if (!exportIncludeArchived) {
+        allTasks = allTasks.filter((t: any) => !t.archived);
+      }
+
+      const folderLabel = exportFolderFilter === 'all'
+        ? 'All Folders'
+        : folders?.find((f: any) => f.id === exportFolderFilter)?.name ?? 'Folder';
+
+      const statusLabel = exportStatusFilter === 'all' ? 'All Statuses'
+        : exportStatusFilter === 'in_progress' ? 'In Progress'
+        : exportStatusFilter === 'completed' ? 'Done' : 'Open';
 
       const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
 
@@ -194,15 +215,15 @@ export default function ProjectDetailPage() {
       doc.setFont('helvetica', 'bold');
       doc.text('FIELDOPS PRO', 14, 12);
       doc.setFontSize(10);
-      doc.text(`${project?.name ?? 'Project'} — ${exportFolderName}`, 90, 12);
+      doc.text(`${project?.name ?? 'Project'} — ${folderLabel} — ${statusLabel}`, 80, 12);
       doc.setFontSize(9);
       doc.text(`Exported: ${new Date().toLocaleDateString()}`, 230, 12);
 
       // Stats row
-      const total = filteredForExport.length;
-      const done = filteredForExport.filter((t: any) => t.status === 'completed' || t.archived).length;
-      const inProgress = filteredForExport.filter((t: any) => t.status === 'in_progress').length;
-      const open = filteredForExport.filter((t: any) => t.status === 'open').length;
+      const total = allTasks.length;
+      const done = allTasks.filter((t: any) => t.status === 'completed' || t.archived).length;
+      const inProgress = allTasks.filter((t: any) => t.status === 'in_progress').length;
+      const open = allTasks.filter((t: any) => t.status === 'open').length;
 
       doc.setFillColor(17, 24, 39);
       doc.rect(0, 18, 297, 14, 'F');
@@ -217,8 +238,7 @@ export default function ProjectDetailPage() {
       doc.setTextColor(107, 114, 128);
       doc.text(`OPEN: ${open}`, 130, 27);
 
-      // Table rows
-      const rows = filteredForExport.map((t: any) => [
+      const rows = allTasks.map((t: any) => [
         t.title ?? '',
         t.description ? (t.description.length > 45 ? t.description.slice(0, 45) + '...' : t.description) : '',
         t.status === 'in_progress' ? 'In Progress' : t.status === 'completed' ? 'Done' : 'Open',
@@ -248,9 +268,7 @@ export default function ProjectDetailPage() {
           fontStyle: 'bold',
           fontSize: 8,
         },
-        alternateRowStyles: {
-          fillColor: [13, 19, 33],
-        },
+        alternateRowStyles: { fillColor: [13, 19, 33] },
         columnStyles: {
           0: { cellWidth: 55 },
           1: { cellWidth: 60 },
@@ -277,7 +295,8 @@ export default function ProjectDetailPage() {
         },
       });
 
-      doc.save(`${project?.name ?? 'tasks'} - ${exportFolderName}.pdf`);
+      doc.save(`${project?.name ?? 'tasks'} - ${folderLabel} - ${statusLabel}.pdf`);
+      setShowExportModal(false);
     } catch (e: any) {
       alert(e.message);
     }
@@ -569,7 +588,7 @@ export default function ProjectDetailPage() {
           {canEdit && <button onClick={() => { setEditName(project?.name ?? ''); setEditDescription(project?.description ?? ''); setEditStatus(project?.status ?? 'active'); setShowEditProject(true); }} style={{ padding: '10px 16px', backgroundColor: '#111827', border: '1px solid #374151', borderRadius: 10, color: '#9CA3AF', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>✏️ Edit</button>}
           {isAdmin && <button onClick={() => setShowInvite(!showInvite)} style={{ padding: '10px 16px', backgroundColor: '#111827', border: '1px solid #374151', borderRadius: 10, color: '#9CA3AF', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>👥 Invite</button>}
           <button onClick={() => navigate(`/projects/${id}/chat`)} style={{ padding: '10px 16px', backgroundColor: '#111827', border: '1px solid #374151', borderRadius: 10, color: '#9CA3AF', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>💬 Chat</button>
-          <button onClick={handleExportToExcel} style={{ padding: '10px 16px', backgroundColor: '#111827', border: '1px solid #374151', borderRadius: 10, color: '#9CA3AF', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>📥 Export</button>
+          <button onClick={() => { setExportFolderFilter(selectedFolder ?? 'all'); setExportStatusFilter('all'); setExportIncludeArchived(false); setShowExportModal(true); }} style={{ padding: '10px 16px', backgroundColor: '#111827', border: '1px solid #374151', borderRadius: 10, color: '#9CA3AF', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>📥 Export PDF</button>
           {canEdit && <button onClick={() => { resetImport(); setShowImport(true); }} style={{ padding: '10px 20px', backgroundColor: '#F97316', border: 'none', borderRadius: 10, color: '#0A0F1E', fontSize: 14, fontWeight: 800, cursor: 'pointer' }}>+ Add Tasks</button>}
         </div>
       </div>
@@ -585,6 +604,77 @@ export default function ProjectDetailPage() {
         </div>
         <span style={{ fontSize: 12, color: '#6B7280' }}>{completedTasks} of {totalTasks} tasks completed across {folders?.length ?? 0} folder{folders?.length !== 1 ? 's' : ''}</span>
       </div>
+
+      {/* Export Modal */}
+      {showExportModal && (
+        <div style={modalOverlay} onClick={() => setShowExportModal(false)}>
+          <div style={{ ...modalBox, maxWidth: 460 }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+              <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>📥 Export to PDF</h3>
+              <button onClick={() => setShowExportModal(false)} style={{ backgroundColor: '#1F2937', border: 'none', borderRadius: 8, color: '#9CA3AF', fontSize: 16, cursor: 'pointer', padding: '4px 10px' }}>✕</button>
+            </div>
+
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#6B7280', letterSpacing: 2, marginBottom: 8 }}>FOLDER</label>
+              <select
+                value={exportFolderFilter}
+                onChange={(e) => setExportFolderFilter(e.target.value)}
+                style={{ ...inputStyle, cursor: 'pointer' }}
+              >
+                <option value="all">All Folders</option>
+                {folders?.map((f: any) => (
+                  <option key={f.id} value={f.id}>{f.name} ({f.task_count} tasks)</option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#6B7280', letterSpacing: 2, marginBottom: 8 }}>STATUS</label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                {[
+                  { value: 'all', label: 'All Statuses' },
+                  { value: 'open', label: 'Open' },
+                  { value: 'in_progress', label: 'In Progress' },
+                  { value: 'completed', label: 'Done' },
+                ].map((opt) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => setExportStatusFilter(opt.value)}
+                    style={{
+                      padding: '10px 14px', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                      backgroundColor: exportStatusFilter === opt.value ? '#F9731620' : '#1F2937',
+                      border: `1px solid ${exportStatusFilter === opt.value ? '#F97316' : '#374151'}`,
+                      color: exportStatusFilter === opt.value ? '#F97316' : '#9CA3AF',
+                    }}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 28 }}>
+              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#6B7280', letterSpacing: 2, marginBottom: 8 }}>OPTIONS</label>
+              <button
+                onClick={() => setExportIncludeArchived(!exportIncludeArchived)}
+                style={{
+                  padding: '10px 16px', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                  backgroundColor: exportIncludeArchived ? '#F9731620' : '#1F2937',
+                  border: `1px solid ${exportIncludeArchived ? '#F97316' : '#374151'}`,
+                  color: exportIncludeArchived ? '#F97316' : '#9CA3AF',
+                }}
+              >
+                {exportIncludeArchived ? '✓' : '○'} Include Archived Tasks
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={() => setShowExportModal(false)} style={{ flex: 1, padding: '12px', backgroundColor: 'transparent', border: '1px solid #374151', borderRadius: 10, color: '#6B7280', fontSize: 14, cursor: 'pointer' }}>Cancel</button>
+              <button onClick={handleExportPDF} style={{ flex: 2, padding: '12px', backgroundColor: '#F97316', border: 'none', borderRadius: 10, color: '#0A0F1E', fontSize: 14, fontWeight: 800, cursor: 'pointer' }}>📥 Download PDF</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Edit Project Panel */}
       {showEditProject && canEdit && (
@@ -641,9 +731,7 @@ export default function ProjectDetailPage() {
               <h3 style={{ margin: 0, fontSize: 20, fontWeight: 800, flex: 1, marginRight: 16 }}>{viewTask.title}</h3>
               <button onClick={closeViewTask} style={{ backgroundColor: '#1F2937', border: 'none', borderRadius: 8, color: '#9CA3AF', fontSize: 16, cursor: 'pointer', padding: '4px 10px' }}>✕</button>
             </div>
-            {viewTask.description && (
-              <p style={{ color: '#9CA3AF', fontSize: 14, lineHeight: 1.6, margin: '0 0 20px 0' }}>{viewTask.description}</p>
-            )}
+            {viewTask.description && <p style={{ color: '#9CA3AF', fontSize: 14, lineHeight: 1.6, margin: '0 0 20px 0' }}>{viewTask.description}</p>}
             <div style={{ display: 'flex', gap: 10, marginBottom: 20, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 12, fontWeight: 700, color: statusColors[viewTask.status], backgroundColor: statusColors[viewTask.status] + '20', padding: '4px 12px', borderRadius: 20 }}>{statusLabels[viewTask.status]}</span>
               <span style={{ fontSize: 12, fontWeight: 700, color: priorityColors[viewTask.priority], backgroundColor: priorityColors[viewTask.priority] + '20', padding: '4px 12px', borderRadius: 20 }}>{viewTask.priority} priority</span>
@@ -661,16 +749,14 @@ export default function ProjectDetailPage() {
               )}
             </div>
             <div style={{ marginBottom: 20 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: '#6B7280', letterSpacing: 2, marginBottom: 12 }}>
-                PHOTOS {viewTaskPhotos.length > 0 ? `(${viewTaskPhotos.length})` : ''}
-              </div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#6B7280', letterSpacing: 2, marginBottom: 12 }}>PHOTOS {viewTaskPhotos.length > 0 ? `(${viewTaskPhotos.length})` : ''}</div>
               {photosLoading ? (
                 <div style={{ color: '#F97316', fontSize: 13 }}>Loading photos...</div>
               ) : viewTaskPhotos.length > 0 ? (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
                   {viewTaskPhotos.map((photo: any) => (
                     <div key={photo.id} onClick={() => setViewingPhoto(photo.url)} style={{ aspectRatio: '1', borderRadius: 8, overflow: 'hidden', cursor: 'pointer', backgroundColor: '#1F2937', border: '1px solid #374151' }}>
-                      <img src={photo.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', transition: 'opacity 0.2s' }} onMouseOver={(e) => (e.currentTarget.style.opacity = '0.8')} onMouseOut={(e) => (e.currentTarget.style.opacity = '1')} />
+                      <img src={photo.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                     </div>
                   ))}
                 </div>
@@ -679,9 +765,7 @@ export default function ProjectDetailPage() {
               )}
             </div>
             <div style={{ display: 'flex', gap: 10 }}>
-              {canEdit && (
-                <button onClick={() => { closeViewTask(); openEditTask(viewTask); }} style={{ flex: 1, padding: '12px', backgroundColor: '#F97316', border: 'none', borderRadius: 10, color: '#0A0F1E', fontSize: 14, fontWeight: 800, cursor: 'pointer' }}>Edit Task</button>
-              )}
+              {canEdit && <button onClick={() => { closeViewTask(); openEditTask(viewTask); }} style={{ flex: 1, padding: '12px', backgroundColor: '#F97316', border: 'none', borderRadius: 10, color: '#0A0F1E', fontSize: 14, fontWeight: 800, cursor: 'pointer' }}>Edit Task</button>}
               <button onClick={closeViewTask} style={{ padding: '12px 20px', backgroundColor: 'transparent', border: '1px solid #374151', borderRadius: 10, color: '#6B7280', fontSize: 14, cursor: 'pointer' }}>Close</button>
             </div>
           </div>
@@ -711,9 +795,7 @@ export default function ProjectDetailPage() {
               <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#6B7280', letterSpacing: 2, marginBottom: 6 }}>ASSIGN TO</label>
               <select value={editTaskAssignee} onChange={(e) => setEditTaskAssignee(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
                 <option value="">Unassigned</option>
-                {teamMembers?.map((m) => (
-                  <option key={m.user_id} value={m.user_id}>{(m.profile as any)?.full_name ?? 'Unknown'}</option>
-                ))}
+                {teamMembers?.map((m) => <option key={m.user_id} value={m.user_id}>{(m.profile as any)?.full_name ?? 'Unknown'}</option>)}
               </select>
             </div>
             <div style={{ marginBottom: 14 }}>
@@ -794,12 +876,8 @@ export default function ProjectDetailPage() {
                     {manualTasks.map((task, i) => (
                       <tr key={i} style={{ backgroundColor: i % 2 === 0 ? '#111827' : '#0D1321', borderBottom: '1px solid #1E2A3A' }}>
                         <td style={{ padding: '5px 8px', textAlign: 'center', fontSize: 11, color: '#374151', borderRight: '1px solid #1E2A3A', userSelect: 'none' }}>{i + 1}</td>
-                        <td style={cellStyle}>
-                          <input value={task.title} onChange={(e) => { const u = [...manualTasks]; u[i].title = e.target.value; setManualTasks(u); }} placeholder="Enter task name..." style={{ ...cellInputStyle, color: task.title ? '#FFFFFF' : '#4B5563', minWidth: 200 }} />
-                        </td>
-                        <td style={{ ...cellStyle, borderLeft: '1px solid #1E2A3A' }}>
-                          <input value={task.description} onChange={(e) => { const u = [...manualTasks]; u[i].description = e.target.value; setManualTasks(u); }} placeholder="Optional..." style={{ ...cellInputStyle, color: task.description ? '#D1D5DB' : '#4B5563', minWidth: 150 }} />
-                        </td>
+                        <td style={cellStyle}><input value={task.title} onChange={(e) => { const u = [...manualTasks]; u[i].title = e.target.value; setManualTasks(u); }} placeholder="Enter task name..." style={{ ...cellInputStyle, color: task.title ? '#FFFFFF' : '#4B5563', minWidth: 200 }} /></td>
+                        <td style={{ ...cellStyle, borderLeft: '1px solid #1E2A3A' }}><input value={task.description} onChange={(e) => { const u = [...manualTasks]; u[i].description = e.target.value; setManualTasks(u); }} placeholder="Optional..." style={{ ...cellInputStyle, color: task.description ? '#D1D5DB' : '#4B5563', minWidth: 150 }} /></td>
                         <td style={{ ...cellStyle, borderLeft: '1px solid #1E2A3A', minWidth: 110 }}>
                           <select value={task.priority} onChange={(e) => { const u = [...manualTasks]; u[i].priority = e.target.value; setManualTasks(u); }} style={{ ...cellInputStyle, cursor: 'pointer', color: task.priority === 'high' ? '#EF4444' : task.priority === 'low' ? '#6B7280' : '#F59E0B' }}>
                             <option value="low">low</option>
@@ -807,13 +885,9 @@ export default function ProjectDetailPage() {
                             <option value="high">high</option>
                           </select>
                         </td>
-                        <td style={{ ...cellStyle, borderLeft: '1px solid #1E2A3A' }}>
-                          <input type="date" value={task.dueDate} onChange={(e) => { const u = [...manualTasks]; u[i].dueDate = e.target.value; setManualTasks(u); }} style={{ ...cellInputStyle, color: task.dueDate ? '#D1D5DB' : '#4B5563', minWidth: 130 }} />
-                        </td>
+                        <td style={{ ...cellStyle, borderLeft: '1px solid #1E2A3A' }}><input type="date" value={task.dueDate} onChange={(e) => { const u = [...manualTasks]; u[i].dueDate = e.target.value; setManualTasks(u); }} style={{ ...cellInputStyle, color: task.dueDate ? '#D1D5DB' : '#4B5563', minWidth: 130 }} /></td>
                         <td style={{ padding: '4px 6px', borderLeft: '1px solid #1E2A3A' }}>
-                          {manualTasks.length > 1 && (
-                            <button onClick={() => setManualTasks(manualTasks.filter((_, idx) => idx !== i))} style={{ background: 'none', border: 'none', color: '#EF4444', cursor: 'pointer', fontSize: 14, padding: '2px 4px' }}>✕</button>
-                          )}
+                          {manualTasks.length > 1 && <button onClick={() => setManualTasks(manualTasks.filter((_, idx) => idx !== i))} style={{ background: 'none', border: 'none', color: '#EF4444', cursor: 'pointer', fontSize: 14, padding: '2px 4px' }}>✕</button>}
                         </td>
                       </tr>
                     ))}
@@ -832,9 +906,7 @@ export default function ProjectDetailPage() {
           {importMode === 'paste' && importStep === 'input' && (
             <>
               <button onClick={() => setImportMode(null)} style={{ backgroundColor: 'transparent', border: 'none', color: '#F97316', fontSize: 13, cursor: 'pointer', padding: 0, marginBottom: 14 }}>← Back</button>
-              <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 10 }}>
-                Copy cells from Excel → click the table below → press <strong style={{ color: '#FFFFFF' }}>Ctrl+V</strong>
-              </div>
+              <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 10 }}>Copy cells from Excel → click the table below → press <strong style={{ color: '#FFFFFF' }}>Ctrl+V</strong></div>
               <div style={{ overflowX: 'auto', borderRadius: 8, border: `2px solid ${pastedText ? '#22C55E' : '#374151'}`, cursor: 'text', outline: 'none', position: 'relative' }} tabIndex={0} onPaste={(e) => { e.preventDefault(); const text = e.clipboardData.getData('text'); setPastedText(text); }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 600 }}>
                   <thead>
@@ -879,17 +951,11 @@ export default function ProjectDetailPage() {
                 )}
               </div>
               <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 10 }}>
-                {pastedText ? (
-                  <span style={{ fontSize: 12, color: '#22C55E', fontWeight: 600 }}>✅ {pastedText.trim().split('\n').filter(l => l.trim()).length} rows detected</span>
-                ) : (
-                  <span style={{ fontSize: 12, color: '#6B7280' }}>Click the table and paste with Ctrl+V</span>
-                )}
+                {pastedText ? <span style={{ fontSize: 12, color: '#22C55E', fontWeight: 600 }}>✅ {pastedText.trim().split('\n').filter(l => l.trim()).length} rows detected</span> : <span style={{ fontSize: 12, color: '#6B7280' }}>Click the table and paste with Ctrl+V</span>}
                 {pastedText && <button onClick={() => setPastedText('')} style={{ padding: '4px 10px', backgroundColor: 'transparent', border: '1px solid #374151', borderRadius: 6, color: '#6B7280', fontSize: 11, cursor: 'pointer' }}>Clear</button>}
               </div>
               <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
-                <button onClick={handlePastePreview} disabled={!pastedText.trim()} style={{ padding: '10px 24px', backgroundColor: pastedText.trim() ? '#F97316' : '#374151', border: 'none', borderRadius: 10, color: pastedText.trim() ? '#0A0F1E' : '#6B7280', fontSize: 14, fontWeight: 700, cursor: pastedText.trim() ? 'pointer' : 'not-allowed' }}>
-                  Preview Tasks →
-                </button>
+                <button onClick={handlePastePreview} disabled={!pastedText.trim()} style={{ padding: '10px 24px', backgroundColor: pastedText.trim() ? '#F97316' : '#374151', border: 'none', borderRadius: 10, color: pastedText.trim() ? '#0A0F1E' : '#6B7280', fontSize: 14, fontWeight: 700, cursor: pastedText.trim() ? 'pointer' : 'not-allowed' }}>Preview Tasks →</button>
               </div>
             </>
           )}
@@ -913,13 +979,9 @@ export default function ProjectDetailPage() {
                       <tr key={i} style={{ backgroundColor: task.valid ? (i % 2 === 0 ? '#111827' : '#0D1321') : '#2D1515', borderBottom: '1px solid #1E2A3A' }}>
                         <td style={{ padding: '7px 12px', fontSize: 13, color: task.valid ? '#FFFFFF' : '#6B7280', borderRight: '1px solid #1E2A3A' }}>{task.title || '(empty)'}</td>
                         <td style={{ padding: '7px 12px', fontSize: 12, color: '#9CA3AF', borderRight: '1px solid #1E2A3A' }}>{task.description || '—'}</td>
-                        <td style={{ padding: '7px 12px', fontSize: 12, borderRight: '1px solid #1E2A3A' }}>
-                          <span style={{ color: task.priority === 'high' ? '#EF4444' : task.priority === 'low' ? '#6B7280' : '#F59E0B', fontWeight: 700 }}>{task.priority}</span>
-                        </td>
+                        <td style={{ padding: '7px 12px', fontSize: 12, borderRight: '1px solid #1E2A3A' }}><span style={{ color: task.priority === 'high' ? '#EF4444' : task.priority === 'low' ? '#6B7280' : '#F59E0B', fontWeight: 700 }}>{task.priority}</span></td>
                         <td style={{ padding: '7px 12px', fontSize: 12, color: '#9CA3AF', borderRight: '1px solid #1E2A3A' }}>{task.dueDate || '—'}</td>
-                        <td style={{ padding: '7px 12px', fontSize: 11, fontWeight: 700 }}>
-                          {task.valid ? <span style={{ color: '#22C55E' }}>✅ Ready</span> : <span style={{ color: '#EF4444' }}>⏭ Skip</span>}
-                        </td>
+                        <td style={{ padding: '7px 12px', fontSize: 11, fontWeight: 700 }}>{task.valid ? <span style={{ color: '#22C55E' }}>✅ Ready</span> : <span style={{ color: '#EF4444' }}>⏭ Skip</span>}</td>
                       </tr>
                     ))}
                   </tbody>
