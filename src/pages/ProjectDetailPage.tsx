@@ -3,7 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useIsAdmin, useIsProjectOwner, useIsProjectManager } from '../lib/useIsAdmin';
-import * as XLSX from 'xlsx';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -183,39 +184,100 @@ export default function ProjectDetailPage() {
         !selectedFolder || t.folder_id === selectedFolder
       );
 
-      const rows = filteredForExport.map((t: any) => ({
-        'Title': t.title ?? '',
-        'Description': t.description ?? '',
-        'Status': t.status === 'in_progress' ? 'In Progress' : t.status === 'completed' ? 'Done' : 'Open',
-        'Priority': t.priority ?? '',
-        'Assigned To': (t.assignee as any)?.full_name ?? 'Unassigned',
-        'Folder': (t.folder as any)?.name ?? 'No Folder',
-        'Due Date': t.due_date ? new Date(t.due_date).toLocaleDateString() : '',
-        'Created Date': t.created_at ? new Date(t.created_at).toLocaleDateString() : '',
-        'Archived': t.archived ? 'Yes' : 'No',
-      }));
+      const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
 
-      const worksheet = XLSX.utils.json_to_sheet(rows);
+      // Orange header bar
+      doc.setFillColor(249, 115, 22);
+      doc.rect(0, 0, 297, 18, 'F');
+      doc.setTextColor(10, 15, 30);
+      doc.setFontSize(13);
+      doc.setFont('helvetica', 'bold');
+      doc.text('FIELDOPS PRO', 14, 12);
+      doc.setFontSize(10);
+      doc.text(`${project?.name ?? 'Project'} — ${exportFolderName}`, 90, 12);
+      doc.setFontSize(9);
+      doc.text(`Exported: ${new Date().toLocaleDateString()}`, 230, 12);
 
-      // Column widths
-      worksheet['!cols'] = [
-        { wch: 40 }, // Title
-        { wch: 50 }, // Description
-        { wch: 14 }, // Status
-        { wch: 12 }, // Priority
-        { wch: 22 }, // Assigned To
-        { wch: 22 }, // Folder
-        { wch: 14 }, // Due Date
-        { wch: 14 }, // Created Date
-        { wch: 10 }, // Archived
-      ];
+      // Stats row
+      const total = filteredForExport.length;
+      const done = filteredForExport.filter((t: any) => t.status === 'completed' || t.archived).length;
+      const inProgress = filteredForExport.filter((t: any) => t.status === 'in_progress').length;
+      const open = filteredForExport.filter((t: any) => t.status === 'open').length;
 
-      const workbook = XLSX.utils.book_new();
-      const safeSheetName = exportFolderName.replace(/[:\\/?*[\]]/g, '').slice(0, 31);
-XLSX.utils.book_append_sheet(workbook, worksheet, safeSheetName);
+      doc.setFillColor(17, 24, 39);
+      doc.rect(0, 18, 297, 14, 'F');
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(156, 163, 175);
+      doc.text(`TOTAL: ${total}`, 14, 27);
+      doc.setTextColor(34, 197, 94);
+      doc.text(`DONE: ${done}`, 50, 27);
+      doc.setTextColor(249, 115, 22);
+      doc.text(`IN PROGRESS: ${inProgress}`, 80, 27);
+      doc.setTextColor(107, 114, 128);
+      doc.text(`OPEN: ${open}`, 130, 27);
 
-      const fileName = `${project?.name ?? 'tasks'} - ${exportFolderName}.xlsx`;
-      XLSX.writeFile(workbook, fileName);
+      // Table rows
+      const rows = filteredForExport.map((t: any) => [
+        t.title ?? '',
+        t.description ? (t.description.length > 45 ? t.description.slice(0, 45) + '...' : t.description) : '',
+        t.status === 'in_progress' ? 'In Progress' : t.status === 'completed' ? 'Done' : 'Open',
+        t.priority ?? '',
+        (t.assignee as any)?.full_name ?? 'Unassigned',
+        (t.folder as any)?.name ?? 'No Folder',
+        t.due_date ? new Date(t.due_date).toLocaleDateString() : '—',
+        t.archived ? 'Yes' : 'No',
+      ]);
+
+      autoTable(doc, {
+        startY: 34,
+        head: [['Title', 'Description', 'Status', 'Priority', 'Assigned To', 'Folder', 'Due Date', 'Archived']],
+        body: rows,
+        theme: 'grid',
+        styles: {
+          fontSize: 8,
+          cellPadding: 3,
+          fillColor: [17, 24, 39],
+          textColor: [229, 231, 235],
+          lineColor: [31, 41, 55],
+          lineWidth: 0.3,
+        },
+        headStyles: {
+          fillColor: [31, 41, 55],
+          textColor: [156, 163, 175],
+          fontStyle: 'bold',
+          fontSize: 8,
+        },
+        alternateRowStyles: {
+          fillColor: [13, 19, 33],
+        },
+        columnStyles: {
+          0: { cellWidth: 55 },
+          1: { cellWidth: 60 },
+          2: { cellWidth: 25 },
+          3: { cellWidth: 20 },
+          4: { cellWidth: 35 },
+          5: { cellWidth: 35 },
+          6: { cellWidth: 25 },
+          7: { cellWidth: 18 },
+        },
+        didParseCell: (data) => {
+          if (data.section === 'body' && data.column.index === 2) {
+            const val = data.cell.raw as string;
+            if (val === 'Done') data.cell.styles.textColor = [34, 197, 94];
+            else if (val === 'In Progress') data.cell.styles.textColor = [249, 115, 22];
+            else data.cell.styles.textColor = [107, 114, 128];
+          }
+          if (data.section === 'body' && data.column.index === 3) {
+            const val = data.cell.raw as string;
+            if (val === 'high') data.cell.styles.textColor = [239, 68, 68];
+            else if (val === 'medium') data.cell.styles.textColor = [245, 158, 11];
+            else data.cell.styles.textColor = [107, 114, 128];
+          }
+        },
+      });
+
+      doc.save(`${project?.name ?? 'tasks'} - ${exportFolderName}.pdf`);
     } catch (e: any) {
       alert(e.message);
     }
