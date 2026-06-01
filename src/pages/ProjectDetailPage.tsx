@@ -211,7 +211,7 @@ export default function ProjectDetailPage() {
       ];
 
       const workbook = XLSX.utils.book_new();
-      const safeSheetName = exportFolderName.replace(/[:\\\/\?\*\[\]]/g, '').slice(0, 31);
+      const safeSheetName = exportFolderName.replace(/[:\\/?*[\]]/g, '').slice(0, 31);
 XLSX.utils.book_append_sheet(workbook, worksheet, safeSheetName);
 
       const fileName = `${project?.name ?? 'tasks'} - ${exportFolderName}.xlsx`;
