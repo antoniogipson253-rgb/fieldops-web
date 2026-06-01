@@ -117,7 +117,7 @@ function ProjectMap({ projects, projectProgress }: { projects: any[]; projectPro
           popupAnchor: [0, -16],
         });
 
-        const pct = projectProgress[p.id] ?? 0;
+        
         const popup = L.popup({ maxWidth: 220 }).setContent(`
           <div style="font-family:sans-serif;padding:4px;">
             <div style="font-size:14px;font-weight:700;margin-bottom:6px;">${p.name}</div>
