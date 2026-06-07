@@ -405,25 +405,40 @@ export default function ProjectDetailPage() {
     setEditTaskAssignee(task.assigned_to ?? '');
   }
 
-  async function handleSaveTask() {
-    if (!selectedTask) return;
-    setSavingTask(true);
-    try {
-      const { error } = await supabase.from('tasks').update({
-        title: editTaskTitle, description: editTaskDescription || null,
-        status: editTaskStatus, priority: editTaskPriority,
-        due_date: editTaskDueDate || null, assigned_to: editTaskAssignee || null,
-      }).eq('id', selectedTask.id);
-      if (error) throw error;
-      queryClient.invalidateQueries({ queryKey: ['web-folder-tasks', id] });
-      queryClient.invalidateQueries({ queryKey: ['web-folders', id] });
-      queryClient.invalidateQueries({ queryKey: ['web-calendar-tasks'] });
-      queryClient.invalidateQueries({ queryKey: ['web-all-tasks'] });
-      invalidateDashboard();
-      setSelectedTask(null);
-    } catch (e: any) { alert(e.message); }
-    finally { setSavingTask(false); }
+async function handleSaveTask() {
+  if (!selectedTask) return;
+  setSavingTask(true);
+  try {
+    const updatePayload: Record<string, any> = {
+      title: editTaskTitle.trim(),
+      description: editTaskDescription.trim() || null,
+      status: editTaskStatus,
+      priority: editTaskPriority,
+      due_date: editTaskDueDate || null,
+      assigned_to: editTaskAssignee && editTaskAssignee.trim() !== '' ? editTaskAssignee : null,
+    };
+
+    console.log('Task update payload:', JSON.stringify(updatePayload));
+
+    const { error } = await supabase
+      .from('tasks')
+      .update(updatePayload)
+      .eq('id', selectedTask.id);
+
+    if (error) throw error;
+
+    queryClient.invalidateQueries({ queryKey: ['web-folder-tasks', id] });
+    queryClient.invalidateQueries({ queryKey: ['web-folders', id] });
+    queryClient.invalidateQueries({ queryKey: ['web-calendar-tasks'] });
+    queryClient.invalidateQueries({ queryKey: ['web-all-tasks'] });
+    invalidateDashboard();
+    setSelectedTask(null);
+  } catch (e: any) {
+    alert(e.message);
+  } finally {
+    setSavingTask(false);
   }
+}
 
   async function handleArchiveTask(task: any) {
     try {
