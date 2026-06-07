@@ -162,7 +162,7 @@ serve(async (req) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: 'FieldOps <noreply@fieldopspro.org>',
+        from: 'FieldOps Pro <noreply@mail.fieldopspro.org>',
         to: recipientEmail,
         subject: `${companyName} — Timesheet ${weekLabel}`,
         html: `
