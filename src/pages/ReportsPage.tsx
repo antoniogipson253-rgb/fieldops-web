@@ -142,7 +142,7 @@ export default function DailyReportsPage() {
 
       if (report.weather) {
         y += 6;
-        doc.text(`Weather: ${report.weather.replace(/[^\x00-\x7F]/g, '').trim()}`, 14, y);
+        doc.text(`Weather: ${report.weather.replace(/[^\u0020-\u007E]/g, '').trim()}`, 14, y);
       }
 
       y += 10;
