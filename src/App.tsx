@@ -21,6 +21,7 @@ import IncidentsPage from './pages/IncidentsPage';
 import AcceptInvitePage from './pages/AcceptInvitePage';
 import ClientPortalPage from './pages/ClientPortalPage';
 import TimesheetPage from './pages/TimesheetPage';
+import DailyReportsPage from './pages/DailyReportsPage';
 
 const PLANS = [
   {
@@ -278,6 +279,7 @@ export default function App() {
           <Route path="/projects" element={<ClientGuard session={session}><AppLayout><ProjectsPage /></AppLayout></ClientGuard>} />
           <Route path="/projects/:id" element={<ClientGuard session={session}><AppLayout><ProjectDetailPage /></AppLayout></ClientGuard>} />
           <Route path="/projects/:id/chat" element={<ClientGuard session={session}><AppLayout><ChatPage /></AppLayout></ClientGuard>} />
+          <Route path="/projects/:id/daily-reports" element={<ClientGuard session={session}><AppLayout><DailyReportsPage /></AppLayout></ClientGuard>} />
           <Route path="/tasks" element={<ClientGuard session={session}><AppLayout><TasksPage /></AppLayout></ClientGuard>} />
           <Route path="/calendar" element={<ClientGuard session={session}><AppLayout><CalendarPage /></AppLayout></ClientGuard>} />
           <Route path="/team" element={<ClientGuard session={session}><AppLayout><TeamPage /></AppLayout></ClientGuard>} />
