@@ -64,6 +64,11 @@ export default function ClientPortalPage() {
   const [mobileThreadOpen, setMobileThreadOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 680);
   const threadEndRef = useRef<HTMLDivElement>(null);
+  const [showCompose, setShowCompose] = useState(false);
+  const [composeSubject, setComposeSubject] = useState('');
+  const [composeBody, setComposeBody] = useState('');
+  const [composeFile, setComposeFile] = useState<File | null>(null);
+  const [sendingCompose, setSendingCompose] = useState(false);
 
   useEffect(() => {
     const handler = () => setIsMobile(window.innerWidth < 680);
@@ -86,7 +91,7 @@ export default function ClientPortalPage() {
       if (!user) return [];
       const { data, error } = await supabase
         .from('client_projects')
-        .select('project:project_id (id, name, status, description, created_at)')
+        .select('project:project_id (id, name, status, description, created_at, client_photos_enabled)')
         .eq('client_id', user.id);
       if (error) throw error;
       const projs = (data ?? []).map((d: any) => d.project).filter(Boolean);
@@ -110,7 +115,7 @@ export default function ClientPortalPage() {
       const [foldersRes, photosRes, reportsRes] = await Promise.all([
         supabase.from('folders').select('*').eq('project_id', selectedProject).order('created_at', { ascending: true }),
         supabase.from('task_photos').select('*, task:task_id (title, project_id)').eq('task.project_id', selectedProject).order('created_at', { ascending: false }).limit(20),
-        supabase.from('daily_reports').select('*').eq('project_id', selectedProject).order('created_at', { ascending: false }).limit(10),
+        supabase.from('daily_reports').select('*').eq('project_id', selectedProject).eq('visible_to_client', true).order('created_at', { ascending: false }).limit(10),
       ]);
       const folders = foldersRes.data ?? [];
       const tasksRes = await supabase.from('tasks').select('id, folder_id, status, archived').eq('project_id', selectedProject);
@@ -266,6 +271,43 @@ export default function ClientPortalPage() {
     finally { setSendingReply(false); }
   }
 
+  async function handleSendCompose() {
+    if (!composeSubject.trim() || !composeBody.trim()) return;
+    setSendingCompose(true);
+    try {
+      const { data: { user: cu } } = await supabase.auth.getUser();
+      let attachmentKey: string | null = null;
+      let attachmentName: string | null = null;
+      let attachmentType: string | null = null;
+      if (composeFile) {
+        attachmentName = composeFile.name;
+        attachmentType = detectAttachmentType(composeFile.name);
+        const ext = composeFile.name.split('.').pop() ?? 'bin';
+        attachmentKey = `client-messages/${selectedProject}/${Date.now()}.${ext}`;
+        const { error: upErr } = await supabase.storage.from('project-files').upload(attachmentKey, composeFile);
+        if (upErr) throw upErr;
+      }
+      const { error } = await supabase.from('client_messages').insert({
+        project_id: selectedProject,
+        subject: composeSubject.trim(),
+        message: composeBody.trim(),
+        sender_type: 'client',
+        sender_id: cu!.id,
+        read_by_client: true,
+        read_by_admin: false,
+        attachment_key: attachmentKey,
+        attachment_name: attachmentName,
+        attachment_type: attachmentType,
+      });
+      if (error) throw error;
+      queryClient.invalidateQueries({ queryKey: ['client-messages', selectedProject] });
+      setSelectedThread(composeSubject.trim());
+      setShowCompose(false);
+      setComposeSubject(''); setComposeBody(''); setComposeFile(null);
+    } catch (e: any) { alert(e.message); }
+    finally { setSendingCompose(false); }
+  }
+
   function goBack() {
     setSelectedProject(null);
     setActiveTab('overview');
@@ -385,11 +427,11 @@ export default function ClientPortalPage() {
             {/* Tab bar */}
             <div style={{ display: 'flex', borderBottom: '2px solid #E5E7EB', marginBottom: 28, gap: 0, overflowX: 'auto' }}>
               {([
-                { key: 'overview', label: 'Overview' },
-                { key: 'reports', label: 'Daily Reports' },
-                { key: 'photos', label: 'Site Photos' },
-                { key: 'messages', label: 'Messages', dot: hasUnreadMessages },
-              ] as const).map((tab) => (
+                { key: 'overview' as const, label: 'Overview' },
+                { key: 'reports' as const, label: 'Daily Reports' },
+                { key: 'photos' as const, label: 'Site Photos' },
+                { key: 'messages' as const, label: 'Messages', dot: hasUnreadMessages },
+              ].filter((t) => t.key !== 'photos' || !!(selectedProjectData as any)?.client_photos_enabled) as Array<{ key: typeof activeTab; label: string; dot?: boolean }>).map((tab) => (
                 <button
                   key={tab.key}
                   onClick={() => setActiveTab(tab.key)}
@@ -559,21 +601,22 @@ export default function ClientPortalPage() {
 
                 {/* ===== MESSAGES ===== */}
                 {activeTab === 'messages' && (
-                  !messages?.length ? (
-                    <div style={{ ...card, textAlign: 'center', padding: '60px 0' }}>
-                      <div style={{ fontSize: 48, marginBottom: 12 }}>✉️</div>
-                      <div style={{ fontSize: 18, fontWeight: 700, color: '#111827', marginBottom: 8 }}>No messages yet</div>
-                      <div style={{ fontSize: 14, color: '#6B7280' }}>Your contractor will reach out here.</div>
-                    </div>
-                  ) : (
                     <div style={{ ...card, padding: 0, display: 'flex', minHeight: 520, overflow: 'hidden' }}>
                       {/* Thread list */}
                       {(!isMobile || !mobileThreadOpen) && (
                         <div style={{ width: isMobile ? '100%' : '30%', borderRight: isMobile ? 'none' : '1px solid #E5E7EB', display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
-                          <div style={{ padding: '14px 16px', borderBottom: '1px solid #E5E7EB' }}>
+                          <div style={{ padding: '14px 16px', borderBottom: '1px solid #E5E7EB', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <span style={{ fontSize: 13, fontWeight: 700, color: '#111827' }}>Conversations</span>
+                            <button onClick={() => setShowCompose(true)} style={{ padding: '5px 12px', backgroundColor: '#F97316', border: 'none', borderRadius: 6, color: '#FFFFFF', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>+ New</button>
                           </div>
                           <div style={{ overflowY: 'auto', flex: 1 }}>
+                            {!threads.length && (
+                              <div style={{ textAlign: 'center', padding: '40px 20px' }}>
+                                <div style={{ fontSize: 28, marginBottom: 8 }}>✉️</div>
+                                <div style={{ fontSize: 13, fontWeight: 600, color: '#6B7280', marginBottom: 4 }}>No conversations yet</div>
+                                <div style={{ fontSize: 12, color: '#9CA3AF' }}>Tap "+ New" to start one.</div>
+                              </div>
+                            )}
                             {threads.map((thread) => {
                               const isSelected = !isMobile && selectedThread === thread.subject;
                               const lastMsg = thread.lastMsg;
@@ -692,13 +735,54 @@ export default function ClientPortalPage() {
                         </div>
                       )}
                     </div>
-                  )
                 )}
               </>
             )}
           </>
         )}
       </div>
+
+      {/* Compose modal */}
+      {showCompose && (
+        <div
+          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 2000, padding: 20 }}
+          onClick={() => { setShowCompose(false); setComposeSubject(''); setComposeBody(''); setComposeFile(null); }}
+        >
+          <div style={{ backgroundColor: '#FFFFFF', borderRadius: 14, padding: 28, width: '100%', maxWidth: 540, boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+              <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: '#111827' }}>New Message</h3>
+              <button onClick={() => { setShowCompose(false); setComposeSubject(''); setComposeBody(''); setComposeFile(null); }} style={{ backgroundColor: 'transparent', border: '1px solid #E5E7EB', borderRadius: 8, color: '#6B7280', fontSize: 14, cursor: 'pointer', padding: '4px 10px' }}>✕</button>
+            </div>
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#6B7280', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 6 }}>Subject</label>
+              <input type="text" value={composeSubject} onChange={(e) => setComposeSubject(e.target.value)} placeholder="Enter subject..." style={inputSt} />
+            </div>
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#6B7280', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 6 }}>Message</label>
+              <textarea value={composeBody} onChange={(e) => setComposeBody(e.target.value)} placeholder="Type your message..." style={{ ...inputSt, resize: 'vertical' as const, minHeight: 120 }} />
+            </div>
+            {composeFile && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, padding: '8px 12px', backgroundColor: '#F9FAFB', borderRadius: 8, border: '1px solid #E5E7EB' }}>
+                <span style={{ fontSize: 12, color: '#6B7280', flex: 1 }}>📎 {composeFile.name}</span>
+                <button onClick={() => setComposeFile(null)} style={{ backgroundColor: 'transparent', border: 'none', color: '#9CA3AF', cursor: 'pointer', fontSize: 14 }}>✕</button>
+              </div>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <label style={{ cursor: 'pointer', padding: '9px 14px', border: '1px solid #E5E7EB', borderRadius: 8, color: '#6B7280', fontSize: 13, backgroundColor: '#F9FAFB' }}>
+                📎 Attach file
+                <input type="file" style={{ display: 'none' }} onChange={(e) => setComposeFile(e.target.files?.[0] ?? null)} />
+              </label>
+              <button
+                onClick={handleSendCompose}
+                disabled={!composeSubject.trim() || !composeBody.trim() || sendingCompose}
+                style={{ padding: '10px 24px', backgroundColor: (!composeSubject.trim() || !composeBody.trim() || sendingCompose) ? '#E5E7EB' : '#F97316', border: 'none', borderRadius: 8, color: (!composeSubject.trim() || !composeBody.trim() || sendingCompose) ? '#9CA3AF' : '#FFFFFF', fontSize: 14, fontWeight: 700, cursor: (!composeSubject.trim() || !composeBody.trim() || sendingCompose) ? 'not-allowed' : 'pointer' }}
+              >
+                {sendingCompose ? 'Sending...' : 'Send Message'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Photo lightbox */}
       {viewingPhoto && (

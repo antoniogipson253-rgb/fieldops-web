@@ -54,6 +54,8 @@ export default function TeamPage() {
   const [clientInviting, setClientInviting] = useState(false);
   const [clientMessage, setClientMessage] = useState('');
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [addToProjectClientId, setAddToProjectClientId] = useState<string | null>(null);
+  const [addToProjectId, setAddToProjectId] = useState('');
 
   useState(() => {
     supabase.auth.getUser().then(({ data }) => setCurrentUserId(data.user?.id ?? null));
@@ -106,6 +108,41 @@ export default function TeamPage() {
     },
     enabled: !!isAdmin,
   });
+
+  const { data: allClients } = useQuery({
+    queryKey: ['web-all-clients'],
+    queryFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return [];
+      const { data: memberData } = await supabase
+        .from('company_members')
+        .select('company_id')
+        .eq('user_id', user.id)
+        .single();
+      if (!memberData) return [];
+      const { data: companyProjects } = await supabase
+        .from('projects')
+        .select('id')
+        .eq('company_id', memberData.company_id)
+        .eq('archived', false);
+      if (!companyProjects?.length) return [];
+      const { data, error } = await supabase
+        .from('client_projects')
+        .select('client_id, project_id, client:client_id(id, full_name), project:project_id(id, name)')
+        .in('project_id', companyProjects.map((p: any) => p.id));
+      if (error) throw error;
+      return data ?? [];
+    },
+    enabled: !!isAdmin,
+  });
+
+  const clientsGrouped: Record<string, { id: string; name: string; projects: { id: string; name: string }[] }> = (allClients ?? []).reduce((acc: any, row: any) => {
+    const cid = row.client_id;
+    if (!acc[cid]) acc[cid] = { id: cid, name: (row.client as any)?.full_name ?? 'Unknown', projects: [] };
+    acc[cid].projects.push({ id: row.project_id, name: (row.project as any)?.name ?? 'Unknown' });
+    return acc;
+  }, {});
+  const clientsList = Object.values(clientsGrouped) as { id: string; name: string; projects: { id: string; name: string }[] }[];
 
   const totalMembers = companyMembers?.length ?? 0;
   const maxMembers = company?.max_members ?? 10;
@@ -213,6 +250,25 @@ export default function TeamPage() {
       alert(e.message);
     } finally {
       setUpdatingRole(null);
+    }
+  }
+
+  async function handleRemoveClientFromProject(clientId: string, projectId: string) {
+    if (!window.confirm('Remove this client from the project?')) return;
+    const { error } = await supabase.from('client_projects').delete().eq('client_id', clientId).eq('project_id', projectId);
+    if (error) alert(error.message);
+    else queryClient.invalidateQueries({ queryKey: ['web-all-clients'] });
+  }
+
+  async function handleAddClientToProject(clientId: string) {
+    if (!addToProjectId) return;
+    const { error } = await supabase.from('client_projects').insert({ client_id: clientId, project_id: addToProjectId });
+    if (error && error.code === '23505') alert('This client is already on that project.');
+    else if (error) alert(error.message);
+    else {
+      queryClient.invalidateQueries({ queryKey: ['web-all-clients'] });
+      setAddToProjectClientId(null);
+      setAddToProjectId('');
     }
   }
 
@@ -451,6 +507,57 @@ export default function TeamPage() {
             </div>
           )}
         </div>
+      )}
+
+      {/* ===== CLIENTS SECTION ===== */}
+      {isAdmin && (
+        <>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16, margin: '32px 0 20px' }}>
+            <div style={{ flex: 1, height: 1, backgroundColor: '#1F2937' }} />
+            <span style={{ fontSize: 11, fontWeight: 700, color: '#4B5563', letterSpacing: 2 }}>CLIENTS</span>
+            <div style={{ flex: 1, height: 1, backgroundColor: '#1F2937' }} />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {clientsList.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: 40, color: '#4B5563' }}>
+                <div style={{ fontSize: 13 }}>No clients added yet. Use "Invite Client" to add one.</div>
+              </div>
+            ) : clientsList.map((client) => (
+              <div key={client.id} style={{ background: '#111827', borderRadius: 12, padding: '16px 20px', border: '0.5px solid #1F2937', display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+                <div style={{ width: 44, height: 44, borderRadius: 22, background: '#1F293760', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 700, color: '#378ADD', flexShrink: 0, border: '1.5px solid #378ADD40' }}>
+                  {getInitials(client.name)}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>{client.name}</div>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                    {client.projects.map((p) => (
+                      <span key={p.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 700, color: '#6B7280', backgroundColor: '#1F2937', padding: '3px 8px', borderRadius: 20 }}>
+                        {p.name}
+                        <button onClick={() => handleRemoveClientFromProject(client.id, p.id)} style={{ background: 'none', border: 'none', color: '#EF4444', cursor: 'pointer', fontSize: 11, padding: 0, lineHeight: 1, marginLeft: 2 }}>✕</button>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  {addToProjectClientId === client.id ? (
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <select value={addToProjectId} onChange={(e) => setAddToProjectId(e.target.value)} style={{ padding: '6px 10px', background: '#1F2937', border: '1px solid #374151', borderRadius: 8, color: '#FFFFFF', fontSize: 12, cursor: 'pointer', outline: 'none' }}>
+                        <option value="">Select project...</option>
+                        {projects?.filter((p: any) => !client.projects.some((cp) => cp.id === p.id)).map((p: any) => (
+                          <option key={p.id} value={p.id}>{p.name}</option>
+                        ))}
+                      </select>
+                      <button onClick={() => handleAddClientToProject(client.id)} disabled={!addToProjectId} style={{ padding: '6px 12px', background: '#378ADD', border: 'none', borderRadius: 8, color: '#FFFFFF', fontSize: 12, fontWeight: 700, cursor: addToProjectId ? 'pointer' : 'not-allowed', opacity: addToProjectId ? 1 : 0.5 }}>Add</button>
+                      <button onClick={() => { setAddToProjectClientId(null); setAddToProjectId(''); }} style={{ padding: '6px 10px', background: 'transparent', border: '1px solid #374151', borderRadius: 8, color: '#6B7280', fontSize: 12, cursor: 'pointer' }}>Cancel</button>
+                    </div>
+                  ) : (
+                    <button onClick={() => { setAddToProjectClientId(client.id); setAddToProjectId(''); }} style={{ padding: '7px 14px', background: '#1F2937', border: '0.5px solid #378ADD', borderRadius: 8, color: '#378ADD', fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>+ Add to Project</button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
       )}
     </div>
   );

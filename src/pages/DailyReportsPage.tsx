@@ -1,7 +1,8 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { useIsAdmin } from '../lib/useIsAdmin';
 import jsPDF from 'jspdf';
 
 type DailyReport = {
@@ -17,6 +18,7 @@ type DailyReport = {
   photo_keys: string[] | null;
   created_at: string;
   updated_at: string | null;
+  visible_to_client: boolean;
   author?: { id: string; full_name: string | null };
 };
 
@@ -55,8 +57,11 @@ async function imageUrlToBase64(url: string): Promise<string | null> {
 export default function DailyReportsPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { data: isAdmin } = useIsAdmin();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [exportingId, setExportingId] = useState<string | null>(null);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
 
   const { data: project } = useQuery({
     queryKey: ['web-project', id],
@@ -242,6 +247,22 @@ export default function DailyReportsPage() {
     }
   }
 
+  async function handleToggleVisibility(report: DailyReport) {
+    setTogglingId(report.id);
+    try {
+      const { error } = await supabase
+        .from('daily_reports')
+        .update({ visible_to_client: !report.visible_to_client })
+        .eq('id', report.id);
+      if (error) throw error;
+      queryClient.invalidateQueries({ queryKey: ['web-daily-reports', id] });
+    } catch (e: any) {
+      alert(e.message);
+    } finally {
+      setTogglingId(null);
+    }
+  }
+
   return (
     <div style={{ padding: 32, color: '#FFFFFF' }}>
       <button onClick={() => navigate(`/projects/${id}`)} style={{ backgroundColor: 'transparent', border: 'none', color: '#F97316', fontSize: 14, fontWeight: 600, cursor: 'pointer', padding: 0, marginBottom: 16 }}>
@@ -277,7 +298,19 @@ export default function DailyReportsPage() {
                       {report.photo_keys && report.photo_keys.length > 0 ? ` · ${report.photo_keys.length} photo${report.photo_keys.length !== 1 ? 's' : ''}` : ''}
                     </div>
                   </div>
-                  <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                  <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: report.visible_to_client ? '#22C55E' : '#4B5563', backgroundColor: report.visible_to_client ? '#22C55E20' : '#1F2937', padding: '2px 8px', borderRadius: 20 }}>
+                      {report.visible_to_client ? '👁 Client visible' : 'Internal'}
+                    </span>
+                    {isAdmin && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleToggleVisibility(report); }}
+                        disabled={togglingId === report.id}
+                        style={{ padding: '5px 12px', backgroundColor: report.visible_to_client ? '#22C55E20' : '#1F2937', border: `1px solid ${report.visible_to_client ? '#22C55E' : '#374151'}`, borderRadius: 8, color: report.visible_to_client ? '#22C55E' : '#6B7280', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}
+                      >
+                        {togglingId === report.id ? '...' : report.visible_to_client ? 'Hide from client' : 'Show to client'}
+                      </button>
+                    )}
                     <button
                       onClick={(e) => { e.stopPropagation(); handleExportPDF(report); }}
                       disabled={exportingId === report.id}

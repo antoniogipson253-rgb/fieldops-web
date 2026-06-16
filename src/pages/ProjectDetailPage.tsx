@@ -43,10 +43,12 @@ export default function ProjectDetailPage() {
   const [editDescription, setEditDescription] = useState('');
   const [editStatus, setEditStatus] = useState('active');
   const [savingProject, setSavingProject] = useState(false);
+  const [editClientPhotosEnabled, setEditClientPhotosEnabled] = useState(false);
 
   const [showInvite, setShowInvite] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviting, setInviting] = useState(false);
+  const [inviteType, setInviteType] = useState<'team' | 'client'>('team');
 
   const [showExportModal, setShowExportModal] = useState(false);
   const [exportFolderFilter, setExportFolderFilter] = useState<string>('all');
@@ -372,7 +374,7 @@ export default function ProjectDetailPage() {
   async function handleSaveProject() {
     setSavingProject(true);
     try {
-      const { error } = await supabase.from('projects').update({ name: editName, description: editDescription, status: editStatus }).eq('id', id);
+      const { error } = await supabase.from('projects').update({ name: editName, description: editDescription, status: editStatus, client_photos_enabled: editClientPhotosEnabled }).eq('id', id);
       if (error) throw error;
       queryClient.invalidateQueries({ queryKey: ['web-project', id] });
       queryClient.invalidateQueries({ queryKey: ['web-projects'] });
@@ -395,6 +397,55 @@ export default function ProjectDetailPage() {
         alert('Team member added!');
         queryClient.invalidateQueries({ queryKey: ['web-project-members', id] });
         setInviteEmail(''); setShowInvite(false);
+      }
+    } catch (e: any) { alert(e.message); }
+    finally { setInviting(false); }
+  }
+
+  async function handleInviteClient() {
+    if (!inviteEmail.trim()) return;
+    setInviting(true);
+    try {
+      const { data: { user: cu } } = await supabase.auth.getUser();
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('email', inviteEmail.toLowerCase().trim())
+        .maybeSingle();
+      if (profile) {
+        const { error } = await supabase.from('client_projects').insert({ project_id: id, client_id: profile.id });
+        if (error && error.code === '23505') { alert('This client is already on this project.'); }
+        else {
+          if (error) throw error;
+          alert('Client added to project!');
+          setInviteEmail(''); setShowInvite(false); setInviteType('team');
+        }
+      } else {
+        const { data: memberRow } = await supabase
+          .from('company_members')
+          .select('company_id, company:company_id(name)')
+          .eq('user_id', cu!.id)
+          .single();
+        const { data: { session } } = await supabase.auth.getSession();
+        const res = await fetch(
+          `${process.env.REACT_APP_SUPABASE_URL}/functions/v1/send-invite`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+            body: JSON.stringify({
+              email: inviteEmail.toLowerCase().trim(),
+              invitedBy: cu!.id,
+              companyName: (memberRow?.company as any)?.name ?? 'your team',
+              role: 'client',
+              projectId: id,
+              companyId: memberRow?.company_id,
+            }),
+          }
+        );
+        const result = await res.json();
+        if (!result.success) throw new Error(result.error);
+        alert('Client invite sent!');
+        setInviteEmail(''); setShowInvite(false); setInviteType('team');
       }
     } catch (e: any) { alert(e.message); }
     finally { setInviting(false); }
@@ -605,7 +656,7 @@ async function handleSaveTask() {
           )}
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          {canEdit && <button onClick={() => { setEditName(project?.name ?? ''); setEditDescription(project?.description ?? ''); setEditStatus(project?.status ?? 'active'); setShowEditProject(true); }} style={{ padding: '10px 16px', backgroundColor: '#111827', border: '1px solid #374151', borderRadius: 10, color: '#9CA3AF', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>✏️ Edit</button>}
+          {canEdit && <button onClick={() => { setEditName(project?.name ?? ''); setEditDescription(project?.description ?? ''); setEditStatus(project?.status ?? 'active'); setEditClientPhotosEnabled((project as any)?.client_photos_enabled ?? false); setShowEditProject(true); }} style={{ padding: '10px 16px', backgroundColor: '#111827', border: '1px solid #374151', borderRadius: 10, color: '#9CA3AF', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>✏️ Edit</button>}
           {isAdmin && <button onClick={() => setShowInvite(!showInvite)} style={{ padding: '10px 16px', backgroundColor: '#111827', border: '1px solid #374151', borderRadius: 10, color: '#9CA3AF', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>👥 Invite</button>}
           <button onClick={() => navigate(`/projects/${id}/chat`)} style={{ padding: '10px 16px', backgroundColor: '#111827', border: '1px solid #374151', borderRadius: 10, color: '#9CA3AF', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>💬 Chat</button>
           <button onClick={() => navigate(`/projects/${id}/daily-reports`)} style={{ padding: '10px 16px', backgroundColor: '#111827', border: '1px solid #374151', borderRadius: 10, color: '#9CA3AF', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>📋 Daily Reports</button>
@@ -746,6 +797,17 @@ async function handleSaveTask() {
               <option value="completed">Completed</option>
             </select>
           </div>
+          {isAdmin && (
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#6B7280', letterSpacing: 2, marginBottom: 6 }}>CLIENT ACCESS</label>
+              <button
+                onClick={() => setEditClientPhotosEnabled(!editClientPhotosEnabled)}
+                style={{ padding: '10px 16px', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer', backgroundColor: editClientPhotosEnabled ? '#F9731620' : '#1F2937', border: `1px solid ${editClientPhotosEnabled ? '#F97316' : '#374151'}`, color: editClientPhotosEnabled ? '#F97316' : '#9CA3AF' }}
+              >
+                {editClientPhotosEnabled ? '✓ Show site photos to client' : '○ Show site photos to client'}
+              </button>
+            </div>
+          )}
           <div style={{ display: 'flex', gap: 10 }}>
             <button onClick={() => setShowEditProject(false)} style={{ padding: '10px 20px', backgroundColor: 'transparent', border: '1px solid #374151', borderRadius: 10, color: '#6B7280', fontSize: 14, cursor: 'pointer' }}>Cancel</button>
             <button onClick={handleSaveProject} disabled={savingProject} style={{ padding: '10px 24px', backgroundColor: '#F97316', border: 'none', borderRadius: 10, color: '#0A0F1E', fontSize: 14, fontWeight: 800, cursor: 'pointer' }}>{savingProject ? 'Saving...' : 'Save Changes'}</button>
@@ -757,7 +819,15 @@ async function handleSaveTask() {
       {showInvite && isAdmin && (
         <div style={{ backgroundColor: '#111827', borderRadius: 14, padding: 24, border: '1px solid #1F2937', marginBottom: 24 }}>
           <h3 style={{ margin: '0 0 16px 0', fontSize: 16, fontWeight: 700 }}>Invite to Project</h3>
-          {teamMembers && teamMembers.length > 0 && (
+          {/* Invite type toggle */}
+          <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+            {(['team', 'client'] as const).map((t) => (
+              <button key={t} onClick={() => setInviteType(t)} style={{ flex: 1, padding: '8px 12px', backgroundColor: inviteType === t ? (t === 'team' ? '#F9731620' : '#3B82F620') : '#1F2937', border: `1px solid ${inviteType === t ? (t === 'team' ? '#F97316' : '#3B82F6') : '#374151'}`, borderRadius: 8, color: inviteType === t ? (t === 'team' ? '#F97316' : '#3B82F6') : '#6B7280', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                {t === 'team' ? '👷 Team Member' : '👔 Client'}
+              </button>
+            ))}
+          </div>
+          {inviteType === 'team' && teamMembers && teamMembers.length > 0 && (
             <div style={{ marginBottom: 16 }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', letterSpacing: 2, marginBottom: 8 }}>CURRENT MEMBERS</div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -766,9 +836,9 @@ async function handleSaveTask() {
             </div>
           )}
           <div style={{ display: 'flex', gap: 10 }}>
-            <input type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder="worker@company.com" onKeyDown={(e) => e.key === 'Enter' && handleInvite()} style={{ flex: 1, ...inputStyle, width: 'auto' }} />
-            <button onClick={handleInvite} disabled={inviting} style={{ padding: '10px 20px', backgroundColor: '#F97316', border: 'none', borderRadius: 8, color: '#0A0F1E', fontSize: 14, fontWeight: 800, cursor: 'pointer' }}>{inviting ? 'Adding...' : 'Add'}</button>
-            <button onClick={() => setShowInvite(false)} style={{ padding: '10px 16px', backgroundColor: 'transparent', border: '1px solid #374151', borderRadius: 8, color: '#6B7280', fontSize: 14, cursor: 'pointer' }}>Cancel</button>
+            <input type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder={inviteType === 'team' ? 'worker@company.com' : 'client@company.com'} onKeyDown={(e) => e.key === 'Enter' && (inviteType === 'team' ? handleInvite() : handleInviteClient())} style={{ flex: 1, ...inputStyle, width: 'auto' }} />
+            <button onClick={inviteType === 'team' ? handleInvite : handleInviteClient} disabled={inviting} style={{ padding: '10px 20px', backgroundColor: inviteType === 'team' ? '#F97316' : '#3B82F6', border: 'none', borderRadius: 8, color: '#FFFFFF', fontSize: 14, fontWeight: 800, cursor: 'pointer' }}>{inviting ? 'Adding...' : 'Add'}</button>
+            <button onClick={() => { setShowInvite(false); setInviteType('team'); }} style={{ padding: '10px 16px', backgroundColor: 'transparent', border: '1px solid #374151', borderRadius: 8, color: '#6B7280', fontSize: 14, cursor: 'pointer' }}>Cancel</button>
           </div>
         </div>
       )}
