@@ -68,7 +68,7 @@ export function ProjectBudgetTab({ projectId, isAdmin, canEdit }: Props) {
     enabled: !!projectId,
   });
 
-  const totalBudget = (budget as any)?.amount ?? 0;
+  const totalBudget = (budget as any)?.budget_amount ?? 0;
   const spent = (expenses ?? []).filter((e: any) => e.status === 'approved').reduce((s: number, e: any) => s + (e.amount ?? 0), 0);
   const remaining = totalBudget - spent;
   const pct = totalBudget > 0 ? Math.round((spent / totalBudget) * 100) : 0;
@@ -80,7 +80,7 @@ export function ProjectBudgetTab({ projectId, isAdmin, canEdit }: Props) {
     setSavingBudget(true);
     try {
       const { error } = await supabase.from('project_budgets').upsert(
-        { project_id: projectId, amount: parseFloat(budgetInput) },
+        { project_id: projectId, budget_amount: parseFloat(budgetInput) },
         { onConflict: 'project_id' }
       );
       if (error) throw error;

@@ -119,7 +119,7 @@ export function ProjectClientMessagesTab({ projectId, isAdmin }: Props) {
       const { error } = await supabase.from('client_messages').insert({
         project_id: projectId,
         subject: composeSubject.trim(),
-        body: composeBody.trim(),
+        message: composeBody.trim(),
         sender_type: 'admin',
         sender_id: user!.id,
         read_by_admin: true,
@@ -146,7 +146,7 @@ export function ProjectClientMessagesTab({ projectId, isAdmin }: Props) {
       const { error } = await supabase.from('client_messages').insert({
         project_id: projectId,
         subject: selectedThread,
-        body: replyText.trim(),
+        message: replyText.trim(),
         sender_type: 'admin',
         sender_id: user!.id,
         read_by_admin: true,
@@ -199,7 +199,7 @@ export function ProjectClientMessagesTab({ projectId, isAdmin }: Props) {
             {threads.map((thread) => {
               const isSelected = selectedThread === thread.subject;
               const lastMsg = thread.lastMsg;
-              const preview = lastMsg?.body?.slice(0, 60) ?? '';
+              const preview = lastMsg?.message?.slice(0, 60) ?? '';
               const senderName = (lastMsg?.sender as any)?.full_name ?? (lastMsg?.sender_type === 'client' ? 'Client' : 'You');
               return (
                 <div
@@ -248,7 +248,7 @@ export function ProjectClientMessagesTab({ projectId, isAdmin }: Props) {
                         </div>
                         <span style={{ fontSize: 11, color: '#6B7280' }}>{new Date(msg.created_at).toLocaleString()}</span>
                       </div>
-                      <p style={{ margin: 0, fontSize: 14, color: '#D1D5DB', lineHeight: 1.6 }}>{msg.body}</p>
+                      <p style={{ margin: 0, fontSize: 14, color: '#D1D5DB', lineHeight: 1.6 }}>{msg.message}</p>
                       {attachmentUrl && msg.attachment_name && (
                         <a href={attachmentUrl} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginTop: 12, padding: '8px 14px', backgroundColor: '#1F2937', border: '1px solid #374151', borderRadius: 8, textDecoration: 'none', color: '#9CA3AF', fontSize: 12 }}>
                           <span>📎</span>

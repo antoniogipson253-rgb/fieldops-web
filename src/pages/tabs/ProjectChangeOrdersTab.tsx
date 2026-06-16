@@ -36,7 +36,12 @@ const statusColors: Record<string, string> = {
   void: '#4B5563',
 };
 
-const reasonOptions = ['Client Request', 'Design Change', 'Site Condition', 'Material Change', 'Scope Addition', 'Error/Omission', 'Other'];
+const reasonOptions = [
+  { value: 'owner_request', label: 'Owner Request' },
+  { value: 'unforeseen_conditions', label: 'Unforeseen Conditions' },
+  { value: 'design_change', label: 'Design Change' },
+  { value: 'other', label: 'Other' },
+];
 
 export function ProjectChangeOrdersTab({ projectId, isAdmin, canEdit }: Props) {
   const queryClient = useQueryClient();
@@ -46,7 +51,7 @@ export function ProjectChangeOrdersTab({ projectId, isAdmin, canEdit }: Props) {
   const [newTitle, setNewTitle] = useState('');
   const [newDescription, setNewDescription] = useState('');
   const [newScope, setNewScope] = useState('');
-  const [newReason, setNewReason] = useState('Client Request');
+  const [newReason, setNewReason] = useState('owner_request');
   const [newCost, setNewCost] = useState('');
   const [savingCO, setSavingCO] = useState(false);
   const [rejectNotes, setRejectNotes] = useState('');
@@ -114,7 +119,7 @@ export function ProjectChangeOrdersTab({ projectId, isAdmin, canEdit }: Props) {
       if (error) throw error;
       queryClient.invalidateQueries({ queryKey: ['change-orders', projectId] });
       setShowNewCO(false);
-      setNewTitle(''); setNewDescription(''); setNewScope(''); setNewReason('Client Request'); setNewCost('');
+      setNewTitle(''); setNewDescription(''); setNewScope(''); setNewReason('owner_request'); setNewCost('');
     } catch (e: any) { alert(e.message); }
     finally { setSavingCO(false); }
   }
@@ -322,7 +327,7 @@ export function ProjectChangeOrdersTab({ projectId, isAdmin, canEdit }: Props) {
             <div style={{ marginBottom: 16 }}>
               <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#6B7280', letterSpacing: 2, marginBottom: 8 }}>REASON</label>
               <select value={newReason} onChange={(e) => setNewReason(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
-                {reasonOptions.map((r) => <option key={r} value={r}>{r}</option>)}
+                {reasonOptions.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
               </select>
             </div>
             <div style={{ marginBottom: 16 }}>
