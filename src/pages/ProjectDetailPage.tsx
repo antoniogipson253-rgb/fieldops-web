@@ -422,9 +422,14 @@ export default function ProjectDetailPage() {
 
       if (existingProfile) {
         // Step 2: user already has an account — add directly to client_projects, no auth invite needed
+        const { data: memberRow2 } = await supabase
+          .from('company_members')
+          .select('company_id')
+          .eq('user_id', cu!.id)
+          .single();
         const { error } = await supabase
           .from('client_projects')
-          .insert({ project_id: id, client_id: existingProfile.id });
+          .insert({ project_id: id, client_id: existingProfile.id, company_id: memberRow2?.company_id });
         if (error && error.code === '23505') {
           alert('This client is already on this project.');
         } else {
