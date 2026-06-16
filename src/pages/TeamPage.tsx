@@ -120,18 +120,50 @@ export default function TeamPage() {
         .eq('user_id', user.id)
         .single();
       if (!memberData) return [];
+
+      // Fetch all non-archived projects for the company (neq handles null archived values too)
       const { data: companyProjects } = await supabase
         .from('projects')
         .select('id')
         .eq('company_id', memberData.company_id)
-        .eq('archived', false);
+        .neq('archived', true);
       if (!companyProjects?.length) return [];
-      const { data, error } = await supabase
+
+      // Fetch client_projects rows without relying on PostgREST FK joins
+      const { data: cpRows, error: cpError } = await supabase
         .from('client_projects')
-        .select('client_id, project_id, client:client_id(id, full_name), project:project_id(id, name)')
+        .select('client_id, project_id')
         .in('project_id', companyProjects.map((p: any) => p.id));
-      if (error) throw error;
-      return data ?? [];
+
+      console.log('[allClients] client_projects raw:', cpRows, 'error:', cpError);
+
+      if (cpError) throw cpError;
+      if (!cpRows?.length) return [];
+
+      // Collect unique IDs then fetch profiles and projects separately
+      const clientIds = [...new Set(cpRows.map((r: any) => r.client_id))];
+      const projectIds = [...new Set(cpRows.map((r: any) => r.project_id))];
+
+      const [profilesRes, projectsRes] = await Promise.all([
+        supabase.from('profiles').select('id, full_name').in('id', clientIds),
+        supabase.from('projects').select('id, name').in('id', projectIds),
+      ]);
+
+      console.log('[allClients] profiles:', profilesRes.data, 'projects:', projectsRes.data);
+
+      const profileMap: Record<string, any> = Object.fromEntries(
+        (profilesRes.data ?? []).map((p: any) => [p.id, p])
+      );
+      const projectMap: Record<string, any> = Object.fromEntries(
+        (projectsRes.data ?? []).map((p: any) => [p.id, p])
+      );
+
+      return cpRows.map((row: any) => ({
+        client_id: row.client_id,
+        project_id: row.project_id,
+        client: profileMap[row.client_id] ?? null,
+        project: projectMap[row.project_id] ?? null,
+      }));
     },
     enabled: !!isAdmin,
   });

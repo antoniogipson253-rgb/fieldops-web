@@ -407,20 +407,34 @@ export default function ProjectDetailPage() {
     setInviting(true);
     try {
       const { data: { user: cu } } = await supabase.auth.getUser();
-      const { data: profile } = await supabase
+
+      // Step 1: check if a profile already exists with this email
+      const { data: existingProfile, error: profileLookupError } = await supabase
         .from('profiles')
         .select('id')
         .eq('email', inviteEmail.toLowerCase().trim())
         .maybeSingle();
-      if (profile) {
-        const { error } = await supabase.from('client_projects').insert({ project_id: id, client_id: profile.id });
-        if (error && error.code === '23505') { alert('This client is already on this project.'); }
-        else {
+
+      console.log('[handleInviteClient] profile lookup result:', existingProfile, 'error:', profileLookupError);
+
+      // Surface RLS / query errors immediately — don't silently fall through to the invite flow
+      if (profileLookupError) throw profileLookupError;
+
+      if (existingProfile) {
+        // Step 2: user already has an account — add directly to client_projects, no auth invite needed
+        const { error } = await supabase
+          .from('client_projects')
+          .insert({ project_id: id, client_id: existingProfile.id });
+        if (error && error.code === '23505') {
+          alert('This client is already on this project.');
+        } else {
           if (error) throw error;
-          alert('Client added to project!');
+          queryClient.invalidateQueries({ queryKey: ['web-all-clients'] });
+          alert('Client added to this project!');
           setInviteEmail(''); setShowInvite(false); setInviteType('team');
         }
       } else {
+        // Step 3: brand-new client — send invite email so they can create an account
         const { data: memberRow } = await supabase
           .from('company_members')
           .select('company_id, company:company_id(name)')
