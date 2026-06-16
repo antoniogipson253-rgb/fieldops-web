@@ -69,6 +69,9 @@ export default function ClientPortalPage() {
   const [composeBody, setComposeBody] = useState('');
   const [composeFile, setComposeFile] = useState<File | null>(null);
   const [sendingCompose, setSendingCompose] = useState(false);
+  const [showEditName, setShowEditName] = useState(false);
+  const [editNameValue, setEditNameValue] = useState('');
+  const [savingName, setSavingName] = useState(false);
 
   useEffect(() => {
     const handler = () => setIsMobile(window.innerWidth < 680);
@@ -82,6 +85,17 @@ export default function ClientPortalPage() {
       const { data: { user } } = await supabase.auth.getUser();
       return user;
     },
+  });
+
+  const { data: profile } = useQuery({
+    queryKey: ['client-profile'],
+    queryFn: async () => {
+      const { data: { user: u } } = await supabase.auth.getUser();
+      if (!u) return null;
+      const { data } = await supabase.from('profiles').select('id, full_name').eq('id', u.id).single();
+      return data;
+    },
+    enabled: !!user,
   });
 
   const { data: projects, isLoading: projectsLoading } = useQuery({
@@ -197,7 +211,8 @@ export default function ClientPortalPage() {
   const selectedProjectData = projects?.find((p: any) => p.id === selectedProject);
   const emailName = user?.email?.split('@')[0] ?? '';
   const firstName = emailName.split(/[._]/)[0];
-  const displayName = firstName.charAt(0).toUpperCase() + firstName.slice(1);
+  const emailDisplayName = firstName.charAt(0).toUpperCase() + firstName.slice(1);
+  const displayName = (profile as any)?.full_name || emailDisplayName;
 
   const threads: { subject: string; messages: any[]; hasUnread: boolean; lastMsg: any }[] = messages
     ? Object.values(
@@ -308,6 +323,23 @@ export default function ClientPortalPage() {
     finally { setSendingCompose(false); }
   }
 
+  async function handleSaveName() {
+    if (!editNameValue.trim()) return;
+    setSavingName(true);
+    try {
+      const { data: { user: cu } } = await supabase.auth.getUser();
+      const { error } = await supabase
+        .from('profiles')
+        .update({ full_name: editNameValue.trim() })
+        .eq('id', cu!.id);
+      if (error) throw error;
+      queryClient.invalidateQueries({ queryKey: ['client-profile'] });
+      setShowEditName(false);
+      alert('Name updated!');
+    } catch (e: any) { alert(e.message); }
+    finally { setSavingName(false); }
+  }
+
   function goBack() {
     setSelectedProject(null);
     setActiveTab('overview');
@@ -324,8 +356,14 @@ export default function ClientPortalPage() {
           <div style={{ fontSize: 15, fontWeight: 900, color: '#111827', letterSpacing: 4 }}>FIELDOPS PRO</div>
           <div style={{ fontSize: 10, color: '#9CA3AF', fontWeight: 500, letterSpacing: 2, textTransform: 'uppercase' }}>client portal</div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <span style={{ fontSize: 13, color: '#6B7280' }}>{user?.email}</span>
+          <button
+            onClick={() => { setEditNameValue((profile as any)?.full_name ?? ''); setShowEditName(true); }}
+            style={{ padding: '7px 16px', backgroundColor: 'transparent', border: '1px solid #E5E7EB', borderRadius: 8, color: '#6B7280', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+          >
+            Edit Name
+          </button>
           <button onClick={() => supabase.auth.signOut()} style={{ padding: '7px 16px', backgroundColor: 'transparent', border: '1px solid #E5E7EB', borderRadius: 8, color: '#6B7280', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
             Sign Out
           </button>
@@ -778,6 +816,45 @@ export default function ClientPortalPage() {
                 style={{ padding: '10px 24px', backgroundColor: (!composeSubject.trim() || !composeBody.trim() || sendingCompose) ? '#E5E7EB' : '#F97316', border: 'none', borderRadius: 8, color: (!composeSubject.trim() || !composeBody.trim() || sendingCompose) ? '#9CA3AF' : '#FFFFFF', fontSize: 14, fontWeight: 700, cursor: (!composeSubject.trim() || !composeBody.trim() || sendingCompose) ? 'not-allowed' : 'pointer' }}
               >
                 {sendingCompose ? 'Sending...' : 'Send Message'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Name modal */}
+      {showEditName && (
+        <div
+          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 2000, padding: 20 }}
+          onClick={() => setShowEditName(false)}
+        >
+          <div style={{ backgroundColor: '#FFFFFF', borderRadius: 14, padding: 28, width: '100%', maxWidth: 400, boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+              <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: '#111827' }}>Edit Name</h3>
+              <button onClick={() => setShowEditName(false)} style={{ backgroundColor: 'transparent', border: '1px solid #E5E7EB', borderRadius: 8, color: '#6B7280', fontSize: 14, cursor: 'pointer', padding: '4px 10px' }}>✕</button>
+            </div>
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#6B7280', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 6 }}>Full Name</label>
+              <input
+                type="text"
+                value={editNameValue}
+                onChange={(e) => setEditNameValue(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && editNameValue.trim()) handleSaveName(); }}
+                placeholder="Enter your name..."
+                autoFocus
+                style={inputSt}
+              />
+            </div>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button onClick={() => setShowEditName(false)} style={{ padding: '10px 20px', backgroundColor: 'transparent', border: '1px solid #E5E7EB', borderRadius: 8, color: '#6B7280', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveName}
+                disabled={!editNameValue.trim() || savingName}
+                style={{ padding: '10px 24px', backgroundColor: (!editNameValue.trim() || savingName) ? '#E5E7EB' : '#F97316', border: 'none', borderRadius: 8, color: (!editNameValue.trim() || savingName) ? '#9CA3AF' : '#FFFFFF', fontSize: 14, fontWeight: 700, cursor: (!editNameValue.trim() || savingName) ? 'not-allowed' : 'pointer' }}
+              >
+                {savingName ? 'Saving...' : 'Save'}
               </button>
             </div>
           </div>
