@@ -121,11 +121,19 @@ export default function TeamPage() {
         .single();
       if (!memberData) return [];
 
-      // Fetch all non-archived projects for the company (neq handles null archived values too)
+      // Get all user IDs belonging to this company
+      const { data: companyUsers } = await supabase
+        .from('company_members')
+        .select('user_id')
+        .eq('company_id', memberData.company_id);
+      const userIds = (companyUsers ?? []).map((u: any) => u.user_id);
+      if (!userIds.length) return [];
+
+      // Fetch all non-archived projects created by any member of this company
       const { data: companyProjects } = await supabase
         .from('projects')
         .select('id')
-        .eq('company_id', memberData.company_id)
+        .in('created_by', userIds)
         .neq('archived', true);
       if (!companyProjects?.length) return [];
 
