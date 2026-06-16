@@ -5,6 +5,10 @@ import { supabase } from '../lib/supabase';
 import { useIsAdmin, useIsProjectOwner, useIsProjectManager } from '../lib/useIsAdmin';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { ProjectBudgetTab } from './tabs/ProjectBudgetTab';
+import { ProjectChangeOrdersTab } from './tabs/ProjectChangeOrdersTab';
+import { ProjectRFITab } from './tabs/ProjectRFITab';
+import { ProjectClientMessagesTab } from './tabs/ProjectClientMessagesTab';
 
 export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -24,6 +28,7 @@ export default function ProjectDetailPage() {
   const [editingFolder, setEditingFolder] = useState<any>(null);
   const [editFolderName, setEditFolderName] = useState('');
   const [taskSearch, setTaskSearch] = useState('');
+  const [activeTab, setActiveTab] = useState<'tasks' | 'budget' | 'change-orders' | 'rfi' | 'client-messages'>('tasks');
 
   const [showImport, setShowImport] = useState(false);
   const [importMode, setImportMode] = useState<'paste' | 'manual' | null>(null);
@@ -621,6 +626,35 @@ async function handleSaveTask() {
         <span style={{ fontSize: 12, color: '#6B7280' }}>{completedTasks} of {totalTasks} tasks completed across {folders?.length ?? 0} folder{folders?.length !== 1 ? 's' : ''}</span>
       </div>
 
+      {/* Tab Bar */}
+      <div style={{ display: 'flex', borderBottom: '1px solid #1F2937', marginBottom: 24 }}>
+        {[
+          { key: 'tasks', label: 'Tasks' },
+          { key: 'budget', label: 'Budget' },
+          { key: 'change-orders', label: 'Change Orders' },
+          { key: 'rfi', label: 'RFI Log' },
+          { key: 'client-messages', label: 'Client Messages' },
+        ].map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveTab(tab.key as any)}
+            style={{
+              padding: '12px 20px',
+              backgroundColor: 'transparent',
+              border: 'none',
+              borderBottom: `2px solid ${activeTab === tab.key ? '#F97316' : 'transparent'}`,
+              color: activeTab === tab.key ? '#F97316' : '#6B7280',
+              fontSize: 14,
+              fontWeight: activeTab === tab.key ? 700 : 500,
+              cursor: 'pointer',
+              marginBottom: -1,
+            }}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
       {/* Export Modal */}
       {showExportModal && (
         <div style={modalOverlay} onClick={() => setShowExportModal(false)}>
@@ -1021,8 +1055,28 @@ async function handleSaveTask() {
         </div>
       )}
 
-      {/* Main Layout */}
-      <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: 20 }}>
+      {/* Budget Tab */}
+      {activeTab === 'budget' && (
+        <ProjectBudgetTab projectId={id ?? ''} isAdmin={!!isAdmin} canEdit={!!canEdit} />
+      )}
+
+      {/* Change Orders Tab */}
+      {activeTab === 'change-orders' && (
+        <ProjectChangeOrdersTab projectId={id ?? ''} isAdmin={!!isAdmin} canEdit={!!canEdit} teamMembers={teamMembers ?? []} />
+      )}
+
+      {/* RFI Tab */}
+      {activeTab === 'rfi' && (
+        <ProjectRFITab projectId={id ?? ''} isAdmin={!!isAdmin} canEdit={!!canEdit} />
+      )}
+
+      {/* Client Messages Tab */}
+      {activeTab === 'client-messages' && (
+        <ProjectClientMessagesTab projectId={id ?? ''} isAdmin={!!isAdmin} />
+      )}
+
+      {/* Tasks Tab — Main Layout */}
+      {activeTab === 'tasks' && <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: 20 }}>
         {/* Folders Panel */}
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
@@ -1163,7 +1217,7 @@ async function handleSaveTask() {
             </table>
           )}
         </div>
-      </div>
+      </div>}
     </div>
   );
 }
