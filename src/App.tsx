@@ -20,6 +20,7 @@ import PunchListPage from './pages/PunchListPage';
 import IncidentsPage from './pages/IncidentsPage';
 import AcceptInvitePage from './pages/AcceptInvitePage';
 import ClientPortalPage from './pages/ClientPortalPage';
+import ClientLoginPage from './pages/ClientLoginPage';
 import TimesheetPage from './pages/TimesheetPage';
 import DailyReportsPage from './pages/DailyReportsPage';
 
@@ -273,8 +274,9 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={session ? <Navigate to="/" replace /> : <LoginPage />} />
+          <Route path="/client-login" element={session ? <Navigate to="/client-portal" replace /> : <ClientLoginPage />} />
           <Route path="/accept-invite" element={<AcceptInvitePage />} />
-          <Route path="/client-portal" element={session ? <ClientPortalPage /> : <Navigate to="/login" replace />} />
+          <Route path="/client-portal" element={session ? <ClientPortalPage /> : <Navigate to="/client-login" replace />} />
           <Route path="/" element={<ClientGuard session={session}><AppLayout><DashboardPage /></AppLayout></ClientGuard>} />
           <Route path="/projects" element={<ClientGuard session={session}><AppLayout><ProjectsPage /></AppLayout></ClientGuard>} />
           <Route path="/projects/:id" element={<ClientGuard session={session}><AppLayout><ProjectDetailPage /></AppLayout></ClientGuard>} />

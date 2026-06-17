@@ -29,7 +29,7 @@ serve(async (req) => {
         project_id: projectId ?? null,
         company_id: companyId ?? null,
       },
-      redirectTo: 'https://fieldops-web-mocha.vercel.app/accept-invite',
+      redirectTo: isClient ? 'https://fieldops-web-mocha.vercel.app/client-portal' : 'https://fieldops-web-mocha.vercel.app/accept-invite',
     })
 
     if (error) throw error
@@ -68,7 +68,7 @@ serve(async (req) => {
         <p style="color: #9CA3AF; font-size: 15px; line-height: 1.6; margin-bottom: 24px;">
           <strong style="color: #F97316;">${companyName}</strong> has invited you to view your project updates on FieldOps Pro.
         </p>
-        <a href="https://fieldops-web-mocha.vercel.app/accept-invite" style="display: inline-block; padding: 14px 32px; background: #378ADD; color: #FFFFFF; font-weight: 900; font-size: 15px; text-decoration: none; border-radius: 10px; letter-spacing: 2px;">
+        <a href="https://fieldops-web-mocha.vercel.app/client-login" style="display: inline-block; padding: 14px 32px; background: #F97316; color: #FFFFFF; font-weight: 900; font-size: 15px; text-decoration: none; border-radius: 10px; letter-spacing: 2px;">
           VIEW MY PROJECT
         </a>
         <p style="color: #374151; font-size: 12px; margin-top: 32px;">Questions? Email us at fieldops.pro1@gmail.com</p>
