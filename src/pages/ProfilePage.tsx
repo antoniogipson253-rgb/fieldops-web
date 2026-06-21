@@ -20,6 +20,10 @@ export default function ProfilePage() {
   const [savingPassword, setSavingPassword] = useState(false);
   const [passwordMsg, setPasswordMsg] = useState('');
 
+  // billing
+  const [loadingBilling, setLoadingBilling] = useState(false);
+  const [billingMsg, setBillingMsg] = useState('');
+
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
       setCurrentUser(user);
@@ -115,6 +119,24 @@ export default function ProfilePage() {
       setPasswordMsg(e.message);
     } finally {
       setSavingPassword(false);
+    }
+  }
+
+  async function handleManageBilling() {
+    setLoadingBilling(true);
+    setBillingMsg('');
+    try {
+      const { data, error } = await supabase.functions.invoke('create-billing-portal-session');
+      if (error) throw error;
+      if (data?.url) {
+        window.open(data.url, '_blank');
+      } else {
+        throw new Error('Unable to open billing portal. Please try again.');
+      }
+    } catch (e: any) {
+      setBillingMsg(e.message ?? 'Unable to open billing portal. Please try again.');
+    } finally {
+      setLoadingBilling(false);
     }
   }
 
@@ -312,6 +334,33 @@ export default function ProfilePage() {
                 You are not part of a company yet. Set up your company from the mobile app.
               </p>
             )}
+          </div>
+
+          {/* Billing */}
+          <div style={cardStyle}>
+            <h3 style={{ margin: '0 0 6px 0', fontSize: 16, fontWeight: 700 }}>Billing</h3>
+            <p style={{ color: '#6B7280', fontSize: 13, margin: '0 0 16px 0' }}>
+              View invoices, update your payment method, or change your subscription.
+            </p>
+            {billingMsg && (
+              <p style={{ fontSize: 13, color: '#EF4444', margin: '0 0 12px 0' }}>
+                {billingMsg}
+              </p>
+            )}
+            <button
+              onClick={handleManageBilling}
+              disabled={loadingBilling}
+              style={{
+                width: '100%', padding: '13px',
+                backgroundColor: loadingBilling ? '#374151' : '#F97316',
+                border: 'none', borderRadius: 10,
+                color: loadingBilling ? '#6B7280' : '#0A0F1E',
+                fontSize: 14, fontWeight: 900, letterSpacing: 2,
+                cursor: loadingBilling ? 'not-allowed' : 'pointer',
+              }}
+            >
+              {loadingBilling ? 'OPENING...' : 'MANAGE BILLING & SUBSCRIPTION'}
+            </button>
           </div>
 
           {/* Sign Out */}
