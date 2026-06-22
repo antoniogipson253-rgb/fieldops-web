@@ -22,6 +22,7 @@ import AcceptInvitePage from './pages/AcceptInvitePage';
 import ClientPortalPage from './pages/ClientPortalPage';
 import ClientLoginPage from './pages/ClientLoginPage';
 import SetPasswordPage from './pages/SetPasswordPage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import TimesheetPage from './pages/TimesheetPage';
 import DailyReportsPage from './pages/DailyReportsPage';
 
@@ -280,6 +281,7 @@ export default function App() {
           <Route path="/login" element={session ? <Navigate to="/" replace /> : <LoginPage />} />
           <Route path="/client-login" element={session ? <Navigate to="/client-portal" replace /> : <ClientLoginPage />} />
           <Route path="/set-password" element={<SetPasswordPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/accept-invite" element={<AcceptInvitePage />} />
           <Route path="/client-portal" element={session ? <ClientPortalPage /> : <Navigate to="/client-login" replace />} />
           <Route path="/" element={<ClientGuard session={session}><AppLayout><DashboardPage /></AppLayout></ClientGuard>} />

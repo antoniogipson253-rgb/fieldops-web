@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 
 export default function LoginPage() {
@@ -143,10 +144,18 @@ export default function LoginPage() {
             <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && (mode === 'login' ? handleLogin() : handleSignUp())} placeholder="you@company.com" style={{ width: '100%', padding: '12px 16px', backgroundColor: '#1F2937', border: '1px solid #374151', borderRadius: 10, color: '#FFFFFF', fontSize: 15, outline: 'none', boxSizing: 'border-box' }} />
           </div>
 
-          <div style={{ marginBottom: 24 }}>
+          <div style={{ marginBottom: mode === 'login' ? 12 : 24 }}>
             <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#6B7280', letterSpacing: 2, marginBottom: 8 }}>PASSWORD</label>
             <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && (mode === 'login' ? handleLogin() : handleSignUp())} placeholder="••••••••" style={{ width: '100%', padding: '12px 16px', backgroundColor: '#1F2937', border: '1px solid #374151', borderRadius: 10, color: '#FFFFFF', fontSize: 15, outline: 'none', boxSizing: 'border-box' }} />
           </div>
+
+          {mode === 'login' && (
+            <div style={{ textAlign: 'right', marginBottom: 24 }}>
+              <Link to="/forgot-password" style={{ color: '#F97316', fontSize: 13, fontWeight: 600, textDecoration: 'none' }}>
+                Forgot password?
+              </Link>
+            </div>
+          )}
 
           <button onClick={mode === 'login' ? handleLogin : handleSignUp} disabled={loading} style={{ width: '100%', padding: '14px 24px', backgroundColor: loading ? '#F9731680' : '#F97316', border: 'none', borderRadius: 10, color: '#0A0F1E', fontSize: 15, fontWeight: 900, letterSpacing: 2, cursor: loading ? 'not-allowed' : 'pointer' }}>
             {loading ? (mode === 'login' ? 'SIGNING IN...' : 'CREATING ACCOUNT...') : (mode === 'login' ? 'SIGN IN' : 'START FREE TRIAL')}
