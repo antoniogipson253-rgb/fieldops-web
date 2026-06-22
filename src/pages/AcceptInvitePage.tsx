@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { useIsMobile } from '../hooks/useIsMobile';
 
 export default function AcceptInvitePage() {
+  const isMobile = useIsMobile();
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [loading, setLoading] = useState(false);
@@ -107,7 +109,7 @@ export default function AcceptInvitePage() {
 
   return (
     <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', backgroundColor: '#0A0F1E' }}>
-      <div style={{ backgroundColor: '#111827', borderRadius: 8, padding: 40, width: '100%', maxWidth: 420, border: '1px solid #1F2937' }}>
+      <div style={{ backgroundColor: '#111827', borderRadius: 8, padding: isMobile ? 20 : 40, width: '100%', maxWidth: isMobile ? 'calc(100% - 32px)' : 420, border: '1px solid #1F2937' }}>
         <div style={{ fontSize: 13, fontWeight: 700, color: '#F97316', letterSpacing: 4, marginBottom: 16, textTransform: 'uppercase' as const }}>
           FieldOps Pro
         </div>
@@ -125,7 +127,7 @@ export default function AcceptInvitePage() {
             type="password"
             value={password}
             onChange={e => setPassword(e.target.value)}
-            style={{ width: '100%', padding: '12px 14px', backgroundColor: '#0A0F1E', border: '1px solid #1F2937', borderRadius: 6, color: '#FFFFFF', fontSize: 14, boxSizing: 'border-box' as const, outline: 'none' }}
+            style={{ width: '100%', padding: '12px 14px', minHeight: isMobile ? 44 : undefined, backgroundColor: '#0A0F1E', border: '1px solid #1F2937', borderRadius: 6, color: '#FFFFFF', fontSize: 14, boxSizing: 'border-box' as const, outline: 'none' }}
           />
         </div>
         <div style={{ marginBottom: 24 }}>
@@ -137,7 +139,7 @@ export default function AcceptInvitePage() {
             value={confirm}
             onChange={e => setConfirm(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleSubmit()}
-            style={{ width: '100%', padding: '12px 14px', backgroundColor: '#0A0F1E', border: '1px solid #1F2937', borderRadius: 6, color: '#FFFFFF', fontSize: 14, boxSizing: 'border-box' as const, outline: 'none' }}
+            style={{ width: '100%', padding: '12px 14px', minHeight: isMobile ? 44 : undefined, backgroundColor: '#0A0F1E', border: '1px solid #1F2937', borderRadius: 6, color: '#FFFFFF', fontSize: 14, boxSizing: 'border-box' as const, outline: 'none' }}
           />
         </div>
         {error && (
@@ -146,7 +148,7 @@ export default function AcceptInvitePage() {
         <button
           onClick={handleSubmit}
           disabled={loading}
-          style={{ width: '100%', padding: '14px', backgroundColor: '#F97316', border: 'none', borderRadius: 6, color: '#FFFFFF', fontSize: 13, fontWeight: 800, letterSpacing: 2, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1, textTransform: 'uppercase' as const }}
+          style={{ width: '100%', padding: '14px', minHeight: isMobile ? 44 : undefined, backgroundColor: '#F97316', border: 'none', borderRadius: 6, color: '#FFFFFF', fontSize: 13, fontWeight: 800, letterSpacing: 2, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1, textTransform: 'uppercase' as const }}
         >
           {loading ? 'Activating...' : 'Activate Account'}
         </button>

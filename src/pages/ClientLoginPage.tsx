@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { useIsMobile } from '../hooks/useIsMobile';
 
 export default function ClientLoginPage() {
+  const isMobile = useIsMobile();
   const [email, setEmail] = useState('');
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
@@ -29,14 +31,14 @@ export default function ClientLoginPage() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}>
-      <div style={{ width: '100%', maxWidth: 400 }}>
+    <div style={{ minHeight: '100vh', backgroundColor: '#FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: isMobile ? 0 : 24, fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}>
+      <div style={{ width: '100%', maxWidth: isMobile ? 'calc(100% - 32px)' : 400 }}>
         <div style={{ textAlign: 'center', marginBottom: 40 }}>
           <div style={{ fontSize: 20, fontWeight: 900, color: '#111827', letterSpacing: 5 }}>FIELDOPS PRO</div>
           <div style={{ fontSize: 10, color: '#9CA3AF', fontWeight: 600, letterSpacing: 3, textTransform: 'uppercase' as const, marginTop: 4 }}>client portal</div>
         </div>
 
-        <div style={{ backgroundColor: '#F9FAFB', border: '1px solid #E5E7EB', borderRadius: 16, padding: 32 }}>
+        <div style={{ backgroundColor: '#F9FAFB', border: '1px solid #E5E7EB', borderRadius: 16, padding: isMobile ? 20 : 32 }}>
           {!sent ? (
             <>
               <h2 style={{ margin: '0 0 8px 0', fontSize: 20, fontWeight: 700, color: '#111827' }}>Sign in to your portal</h2>
@@ -53,7 +55,7 @@ export default function ClientLoginPage() {
                     placeholder="you@example.com"
                     required
                     autoFocus
-                    style={{ width: '100%', padding: '11px 14px', border: '1px solid #E5E7EB', borderRadius: 8, fontSize: 14, color: '#111827', backgroundColor: '#FFFFFF', outline: 'none', boxSizing: 'border-box' as const, fontFamily: 'inherit' }}
+                    style={{ width: '100%', padding: '11px 14px', minHeight: isMobile ? 44 : undefined, border: '1px solid #E5E7EB', borderRadius: 8, fontSize: 14, color: '#111827', backgroundColor: '#FFFFFF', outline: 'none', boxSizing: 'border-box' as const, fontFamily: 'inherit' }}
                   />
                 </div>
                 {error && (
@@ -64,7 +66,7 @@ export default function ClientLoginPage() {
                 <button
                   type="submit"
                   disabled={sending || !email.trim()}
-                  style={{ width: '100%', padding: 13, backgroundColor: (!email.trim() || sending) ? '#E5E7EB' : '#F97316', border: 'none', borderRadius: 8, color: (!email.trim() || sending) ? '#9CA3AF' : '#FFFFFF', fontSize: 14, fontWeight: 700, cursor: (!email.trim() || sending) ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}
+                  style={{ width: '100%', padding: 13, minHeight: isMobile ? 44 : undefined, backgroundColor: (!email.trim() || sending) ? '#E5E7EB' : '#F97316', border: 'none', borderRadius: 8, color: (!email.trim() || sending) ? '#9CA3AF' : '#FFFFFF', fontSize: 14, fontWeight: 700, cursor: (!email.trim() || sending) ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}
                 >
                   {sending ? 'Sending…' : 'Send me a login link'}
                 </button>
@@ -83,7 +85,7 @@ export default function ClientLoginPage() {
               </div>
               <button
                 onClick={() => { setSent(false); setEmail(''); setError(null); }}
-                style={{ width: '100%', padding: '10px 14px', backgroundColor: 'transparent', border: '1px solid #E5E7EB', borderRadius: 8, color: '#6B7280', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}
+                style={{ width: '100%', padding: '10px 14px', minHeight: isMobile ? 44 : undefined, backgroundColor: 'transparent', border: '1px solid #E5E7EB', borderRadius: 8, color: '#6B7280', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}
               >
                 Use a different email
               </button>

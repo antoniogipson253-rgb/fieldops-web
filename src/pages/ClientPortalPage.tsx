@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
+import { useIsMobile } from '../hooks/useIsMobile';
 
 const statusColors: Record<string, string> = { active: '#22C55E', on_hold: '#F59E0B', completed: '#6B7280' };
 const statusLabels: Record<string, string> = { active: 'Active', on_hold: 'On Hold', completed: 'Completed' };
@@ -62,7 +63,7 @@ export default function ClientPortalPage() {
   const [replyFile, setReplyFile] = useState<File | null>(null);
   const [sendingReply, setSendingReply] = useState(false);
   const [mobileThreadOpen, setMobileThreadOpen] = useState(false);
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 680);
+  const isMobile = useIsMobile();
   const threadEndRef = useRef<HTMLDivElement>(null);
   const [showCompose, setShowCompose] = useState(false);
   const [composeSubject, setComposeSubject] = useState('');
@@ -72,12 +73,6 @@ export default function ClientPortalPage() {
   const [showEditName, setShowEditName] = useState(false);
   const [editNameValue, setEditNameValue] = useState('');
   const [savingName, setSavingName] = useState(false);
-
-  useEffect(() => {
-    const handler = () => setIsMobile(window.innerWidth < 680);
-    window.addEventListener('resize', handler);
-    return () => window.removeEventListener('resize', handler);
-  }, []);
 
   const { data: user } = useQuery({
     queryKey: ['client-user'],
@@ -349,28 +344,31 @@ export default function ClientPortalPage() {
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#FFFFFF', color: '#111827', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}>
+      <style>{`
+        .client-portal-tabs::-webkit-scrollbar { display: none; }
+      `}</style>
 
       {/* Header */}
-      <div style={{ height: 64, backgroundColor: '#FFFFFF', borderBottom: '1px solid #E5E7EB', padding: '0 32px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, zIndex: 100 }}>
+      <div style={{ height: 64, backgroundColor: '#FFFFFF', borderBottom: '1px solid #E5E7EB', padding: isMobile ? '0 16px' : '0 32px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, zIndex: 100 }}>
         <div>
           <div style={{ fontSize: 15, fontWeight: 900, color: '#111827', letterSpacing: 4 }}>FIELDOPS PRO</div>
           <div style={{ fontSize: 10, color: '#9CA3AF', fontWeight: 500, letterSpacing: 2, textTransform: 'uppercase' }}>client portal</div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span style={{ fontSize: 13, color: '#6B7280' }}>{user?.email}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 8 : 12 }}>
+          {!isMobile && <span style={{ fontSize: 13, color: '#6B7280' }}>{user?.email}</span>}
           <button
             onClick={() => { setEditNameValue((profile as any)?.full_name ?? ''); setShowEditName(true); }}
-            style={{ padding: '7px 16px', backgroundColor: 'transparent', border: '1px solid #E5E7EB', borderRadius: 8, color: '#6B7280', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+            style={{ padding: isMobile ? '7px 12px' : '7px 16px', backgroundColor: 'transparent', border: '1px solid #E5E7EB', borderRadius: 8, color: '#6B7280', fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}
           >
             Edit Name
           </button>
-          <button onClick={() => supabase.auth.signOut()} style={{ padding: '7px 16px', backgroundColor: 'transparent', border: '1px solid #E5E7EB', borderRadius: 8, color: '#6B7280', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+          <button onClick={() => supabase.auth.signOut()} style={{ padding: isMobile ? '7px 12px' : '7px 16px', backgroundColor: 'transparent', border: '1px solid #E5E7EB', borderRadius: 8, color: '#6B7280', fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>
             Sign Out
           </button>
         </div>
       </div>
 
-      <div style={{ padding: '32px 32px', maxWidth: 1100, margin: '0 auto' }}>
+      <div style={{ padding: isMobile ? '20px 16px' : '32px 32px', maxWidth: 1100, margin: '0 auto' }}>
 
         {/* ===== PROJECT LIST ===== */}
         {!selectedProject ? (
@@ -387,7 +385,7 @@ export default function ClientPortalPage() {
                 <div style={{ fontSize: 14, color: '#6B7280' }}>Your contractor hasn't added you to any projects yet.</div>
               </div>
             ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 20 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(300px, 1fr))', gap: 20 }}>
                 {projects.map((project: any) => (
                   <div
                     key={project.id}
@@ -463,7 +461,7 @@ export default function ClientPortalPage() {
             )}
 
             {/* Tab bar */}
-            <div style={{ display: 'flex', borderBottom: '2px solid #E5E7EB', marginBottom: 28, gap: 0, overflowX: 'auto' }}>
+            <div className="client-portal-tabs" style={{ display: 'flex', borderBottom: '2px solid #E5E7EB', marginBottom: 28, gap: 0, overflowX: 'auto', scrollbarWidth: 'none' as const }}>
               {([
                 { key: 'overview' as const, label: 'Overview' },
                 { key: 'reports' as const, label: 'Daily Reports' },
@@ -487,9 +485,9 @@ export default function ClientPortalPage() {
               <>
                 {/* ===== OVERVIEW ===== */}
                 {activeTab === 'overview' && projectData && (
-                  <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: 24, flexWrap: 'wrap' }}>
                     {/* Left column */}
-                    <div style={{ flex: '3 1 300px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 20 }}>
+                    <div style={{ flex: isMobile ? '1 1 auto' : '3 1 300px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 20 }}>
 
                       {/* Progress */}
                       <div style={card}>
@@ -507,15 +505,15 @@ export default function ClientPortalPage() {
                       {budget && (
                         <div style={card}>
                           <div style={{ fontSize: 14, fontWeight: 700, color: '#111827', marginBottom: 16 }}>Budget Summary</div>
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 16 }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: isMobile ? 8 : 12, marginBottom: 16 }}>
                             {[
                               { label: 'Budget', value: `$${budget.budgetAmount.toLocaleString()}`, color: '#111827' },
                               { label: 'Spent', value: `$${budget.spent.toLocaleString()}`, color: getBudgetColor(budget.pct) },
                               { label: 'Remaining', value: `$${budget.remaining.toLocaleString()}`, color: budget.remaining < 0 ? '#EF4444' : '#22C55E' },
                             ].map((item) => (
-                              <div key={item.label} style={{ textAlign: 'center', backgroundColor: '#FFFFFF', borderRadius: 10, padding: '12px 8px', border: '1px solid #E5E7EB' }}>
-                                <div style={{ fontSize: 11, color: '#9CA3AF', fontWeight: 600, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 1 }}>{item.label}</div>
-                                <div style={{ fontSize: 17, fontWeight: 800, color: item.color }}>{item.value}</div>
+                              <div key={item.label} style={{ textAlign: 'center', backgroundColor: '#FFFFFF', borderRadius: 10, padding: isMobile ? '10px 4px' : '12px 8px', border: '1px solid #E5E7EB', minWidth: 0, overflow: 'hidden' }}>
+                                <div style={{ fontSize: isMobile ? 10 : 11, color: '#9CA3AF', fontWeight: 600, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 1 }}>{item.label}</div>
+                                <div style={{ fontSize: isMobile ? 14 : 17, fontWeight: 800, color: item.color, overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.value}</div>
                               </div>
                             ))}
                           </div>
@@ -552,7 +550,7 @@ export default function ClientPortalPage() {
                     </div>
 
                     {/* Right column */}
-                    <div style={{ flex: '2 1 240px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 20 }}>
+                    <div style={{ flex: isMobile ? '1 1 auto' : '2 1 240px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 20 }}>
 
                       {/* Project details */}
                       <div style={card}>
@@ -581,9 +579,9 @@ export default function ClientPortalPage() {
                             { label: 'In Progress', value: projectData.inProgressTasks, color: '#F97316' },
                             { label: 'Open', value: projectData.openTasks, color: '#6B7280' },
                           ].map((s) => (
-                            <div key={s.label} style={{ backgroundColor: '#FFFFFF', borderRadius: 10, padding: '14px 12px', border: '1px solid #E5E7EB', textAlign: 'center' }}>
-                              <div style={{ fontSize: 26, fontWeight: 900, color: s.color, marginBottom: 4 }}>{s.value}</div>
-                              <div style={{ fontSize: 11, color: '#9CA3AF', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1 }}>{s.label}</div>
+                            <div key={s.label} style={{ backgroundColor: '#FFFFFF', borderRadius: 10, padding: isMobile ? '12px 10px' : '14px 12px', border: '1px solid #E5E7EB', textAlign: 'center', minWidth: 0 }}>
+                              <div style={{ fontSize: isMobile ? 22 : 26, fontWeight: 900, color: s.color, marginBottom: 4 }}>{s.value}</div>
+                              <div style={{ fontSize: isMobile ? 10 : 11, color: '#9CA3AF', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1 }}>{s.label}</div>
                             </div>
                           ))}
                         </div>
@@ -603,7 +601,7 @@ export default function ClientPortalPage() {
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                       {projectData.reports.map((report: any) => (
-                        <div key={report.id} style={card}>
+                        <div key={report.id} style={isMobile ? { ...card, padding: 16 } : card}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 8 }}>
                             <span style={{ fontSize: 15, fontWeight: 700, color: '#111827' }}>
                               {new Date(report.created_at).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
@@ -627,7 +625,7 @@ export default function ClientPortalPage() {
                       <div style={{ fontSize: 14, color: '#6B7280' }}>Photos taken during work will appear here.</div>
                     </div>
                   ) : (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12 }}>
                       {projectData.photos.map((photo: any) => (
                         <div key={photo.id} onClick={() => setViewingPhoto(photo.url)} style={{ aspectRatio: '1', borderRadius: 10, overflow: 'hidden', cursor: 'pointer', backgroundColor: '#F3F4F6', border: '1px solid #E5E7EB' }}>
                           <img src={photo.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', transition: 'opacity 0.15s' }} onMouseOver={(e) => ((e.target as HTMLImageElement).style.opacity = '0.8')} onMouseOut={(e) => ((e.target as HTMLImageElement).style.opacity = '1')} />
@@ -786,7 +784,7 @@ export default function ClientPortalPage() {
           style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 2000, padding: 20 }}
           onClick={() => { setShowCompose(false); setComposeSubject(''); setComposeBody(''); setComposeFile(null); }}
         >
-          <div style={{ backgroundColor: '#FFFFFF', borderRadius: 14, padding: 28, width: '100%', maxWidth: 540, boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }} onClick={(e) => e.stopPropagation()}>
+          <div style={{ backgroundColor: '#FFFFFF', borderRadius: 14, padding: isMobile ? 20 : 28, width: '100%', maxWidth: isMobile ? 'calc(100% - 32px)' : 540, boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
               <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: '#111827' }}>New Message</h3>
               <button onClick={() => { setShowCompose(false); setComposeSubject(''); setComposeBody(''); setComposeFile(null); }} style={{ backgroundColor: 'transparent', border: '1px solid #E5E7EB', borderRadius: 8, color: '#6B7280', fontSize: 14, cursor: 'pointer', padding: '4px 10px' }}>✕</button>
@@ -828,7 +826,7 @@ export default function ClientPortalPage() {
           style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 2000, padding: 20 }}
           onClick={() => setShowEditName(false)}
         >
-          <div style={{ backgroundColor: '#FFFFFF', borderRadius: 14, padding: 28, width: '100%', maxWidth: 400, boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }} onClick={(e) => e.stopPropagation()}>
+          <div style={{ backgroundColor: '#FFFFFF', borderRadius: 14, padding: isMobile ? 20 : 28, width: '100%', maxWidth: isMobile ? 'calc(100% - 32px)' : 400, boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
               <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: '#111827' }}>Edit Name</h3>
               <button onClick={() => setShowEditName(false)} style={{ backgroundColor: 'transparent', border: '1px solid #E5E7EB', borderRadius: 8, color: '#6B7280', fontSize: 14, cursor: 'pointer', padding: '4px 10px' }}>✕</button>
