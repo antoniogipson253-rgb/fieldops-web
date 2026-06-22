@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useIsAdmin, useCurrentUser, useUserRole } from '../lib/useIsAdmin';
+import { useIsMobile } from '../hooks/useIsMobile';
 
 function formatTime(dateStr: string) {
   return new Date(dateStr).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
@@ -171,6 +172,7 @@ function ProjectMap({ projects, projectProgress }: { projects: any[]; projectPro
 }
 
 function AdminDashboard({ currentUserId }: { currentUserId: string }) {
+  const isMobile = useIsMobile();
   const { data: stats } = useQuery({
     queryKey: ['admin-dash-stats'],
     queryFn: async () => {
@@ -334,8 +336,8 @@ function AdminDashboard({ currentUserId }: { currentUserId: string }) {
   const mappedProjects = (projects ?? []).filter((p: any) => p.latitude && p.longitude);
 
   return (
-    <div style={{ padding: 32, color: '#FFFFFF' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
+    <div style={{ padding: isMobile ? 16 : 32, color: '#FFFFFF' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24, flexWrap: 'wrap', gap: 10 }}>
         <div>
           <h1 style={{ fontSize: 26, fontWeight: 700, margin: '0 0 4px' }}>Dashboard</h1>
           <p style={{ color: '#6B7280', fontSize: 13, margin: 0 }}>Good morning — here's what's happening today</p>
@@ -343,7 +345,7 @@ function AdminDashboard({ currentUserId }: { currentUserId: string }) {
         <div style={{ fontSize: 12, color: '#6B7280', background: '#111827', border: '0.5px solid #1F2937', borderRadius: 8, padding: '6px 12px' }}>{today}</div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, marginBottom: 20 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(5, 1fr)', gap: 12, marginBottom: 20 }}>
         <div style={statCard('#378ADD')}>
           <p style={{ fontSize: 12, color: '#6B7280', margin: '0 0 6px' }}>Active projects</p>
           <p style={{ fontSize: 24, fontWeight: 700, margin: 0 }}>{stats?.activeProjects ?? 0}</p>
@@ -371,7 +373,7 @@ function AdminDashboard({ currentUserId }: { currentUserId: string }) {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 320px', gap: 16 }}>
         <div>
           <div style={card}>
             <p style={cardTitle}>Project progress</p>
@@ -474,6 +476,7 @@ function AdminDashboard({ currentUserId }: { currentUserId: string }) {
 }
 
 function PMDashboard({ currentUserId }: { currentUserId: string }) {
+  const isMobile = useIsMobile();
   const { data: pmProjects } = useQuery({
     queryKey: ['pm-dash-projects', currentUserId],
     queryFn: async () => {
@@ -579,8 +582,8 @@ function PMDashboard({ currentUserId }: { currentUserId: string }) {
   const inProgressTasks = (tasks ?? []).filter((t: any) => t.status === 'in_progress').length;
 
   return (
-    <div style={{ padding: 32, color: '#FFFFFF' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
+    <div style={{ padding: isMobile ? 16 : 32, color: '#FFFFFF' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24, flexWrap: 'wrap', gap: 10 }}>
         <div>
           <h1 style={{ fontSize: 26, fontWeight: 700, margin: '0 0 4px' }}>My Projects</h1>
           <p style={{ color: '#6B7280', fontSize: 13, margin: 0 }}>Overview of projects you're managing</p>
@@ -588,7 +591,7 @@ function PMDashboard({ currentUserId }: { currentUserId: string }) {
         <div style={{ fontSize: 12, color: '#6B7280', background: '#111827', border: '0.5px solid #1F2937', borderRadius: 8, padding: '6px 12px' }}>{today}</div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 20 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: 12, marginBottom: 20 }}>
         <div style={statCard('#378ADD')}>
           <p style={{ fontSize: 12, color: '#6B7280', margin: '0 0 6px' }}>My projects</p>
           <p style={{ fontSize: 24, fontWeight: 700, margin: 0 }}>{(pmProjects ?? []).length}</p>
@@ -611,7 +614,7 @@ function PMDashboard({ currentUserId }: { currentUserId: string }) {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 300px', gap: 16 }}>
         <div>
           <div style={card}>
             <p style={cardTitle}>Project progress</p>
@@ -685,6 +688,7 @@ function PMDashboard({ currentUserId }: { currentUserId: string }) {
 }
 
 function WorkerDashboard({ currentUserId }: { currentUserId: string }) {
+  const isMobile = useIsMobile();
   const { data: clockStatus } = useQuery({
     queryKey: ['worker-clock-status', currentUserId],
     queryFn: async () => {
@@ -761,8 +765,8 @@ function WorkerDashboard({ currentUserId }: { currentUserId: string }) {
   const isClockedIn = !!clockStatus;
 
   return (
-    <div style={{ padding: 32, color: '#FFFFFF' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
+    <div style={{ padding: isMobile ? 16 : 32, color: '#FFFFFF' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24, flexWrap: 'wrap', gap: 10 }}>
         <div>
           <h1 style={{ fontSize: 26, fontWeight: 700, margin: '0 0 4px' }}>My Day</h1>
           <p style={{ color: '#6B7280', fontSize: 13, margin: 0 }}>
@@ -772,7 +776,7 @@ function WorkerDashboard({ currentUserId }: { currentUserId: string }) {
         <div style={{ fontSize: 12, color: '#6B7280', background: '#111827', border: '0.5px solid #1F2937', borderRadius: 8, padding: '6px 12px' }}>{today}</div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 14, marginBottom: 14 }}>
         <div style={{ background: isClockedIn ? '#0F2D1F' : '#111827', border: `0.5px solid ${isClockedIn ? '#1D9E75' : '#1F2937'}`, borderRadius: 14, padding: 20 }}>
           <p style={{ fontSize: 13, fontWeight: 600, color: isClockedIn ? '#1D9E75' : '#6B7280', margin: '0 0 4px' }}>
             {isClockedIn ? 'Clocked in' : 'Clocked out'}
@@ -803,7 +807,7 @@ function WorkerDashboard({ currentUserId }: { currentUserId: string }) {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 14 }}>
         <div style={card}>
           <p style={cardTitle}>My tasks</p>
           {(myTasks ?? []).length === 0 && <p style={{ color: '#4B5563', fontSize: 13 }}>No tasks assigned to you.</p>}

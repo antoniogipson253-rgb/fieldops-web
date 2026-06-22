@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useIsAdmin } from '../lib/useIsAdmin';
+import { useIsMobile } from '../hooks/useIsMobile';
 
 const ROLES = ['admin', 'project_manager', 'worker'] as const;
 type Role = typeof ROLES[number];
@@ -39,6 +40,7 @@ function getInitials(name: string | null) {
 
 export default function TeamPage() {
   const queryClient = useQueryClient();
+  const isMobile = useIsMobile();
   const { data: isAdmin } = useIsAdmin();
   const [showInvite, setShowInvite] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
@@ -336,9 +338,9 @@ export default function TeamPage() {
   }
 
   return (
-    <div style={{ padding: 32, color: '#FFFFFF' }}>
+    <div style={{ padding: isMobile ? 16 : 32, color: '#FFFFFF' }}>
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
         <div>
           <h1 style={{ fontSize: 26, fontWeight: 700, margin: '0 0 4px' }}>Team</h1>
           <p style={{ color: '#6B7280', fontSize: 13, margin: 0 }}>
@@ -504,38 +506,81 @@ export default function TeamPage() {
             const name = profile?.full_name ?? 'Unknown';
             const role = (member.role ?? 'worker') as Role;
             return (
-              <div key={member.user_id} style={{ background: '#111827', borderRadius: 12, padding: '16px 20px', border: '0.5px solid #1F2937', display: 'flex', alignItems: 'center', gap: 14 }}>
-                <div style={{ width: 44, height: 44, borderRadius: 22, background: '#1F2937', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 700, color: roleColors[role] ?? '#6B7280', flexShrink: 0, border: `1.5px solid ${roleColors[role] ?? '#374151'}` }}>
-                  {getInitials(name)}
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>{name}</div>
-                  {isAdmin && (
-                    <span style={{ fontSize: 11, fontWeight: 700, color: roleColors[role] ?? '#6B7280', background: (roleColors[role] ?? '#6B7280') + '20', padding: '2px 10px', borderRadius: 20 }}>
-                      {roleLabels[role] ?? role}
-                    </span>
-                  )}
-                  {profile?.phone && (
-                    <span style={{ fontSize: 12, color: '#4B5563', marginLeft: isAdmin ? 8 : 0 }}>{profile.phone}</span>
-                  )}
-                </div>
-                {isAdmin && (
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button
-                      onClick={() => { setEditingMember(member.user_id); setSelectedRole(role); }}
-                      style={{ padding: '7px 14px', background: '#1F2937', border: '0.5px solid #374151', borderRadius: 8, color: '#9CA3AF', fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}
-                    >
-                      Change Role
-                    </button>
-                    {member.user_id !== currentUserId && (
-                      <button
-                        onClick={() => handleRemoveMember(member.user_id, profile?.full_name)}
-                        style={{ padding: '7px 14px', background: 'transparent', border: '0.5px solid #EF4444', borderRadius: 8, color: '#EF4444', fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}
-                      >
-                        Remove
-                      </button>
+              <div key={member.user_id} style={{ background: '#111827', borderRadius: 12, padding: '16px 20px', border: '0.5px solid #1F2937', display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'stretch' : 'center', gap: isMobile ? 12 : 14 }}>
+                {isMobile ? (
+                  <>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                      <div style={{ width: 44, height: 44, borderRadius: 22, background: '#1F2937', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 700, color: roleColors[role] ?? '#6B7280', flexShrink: 0, border: `1.5px solid ${roleColors[role] ?? '#374151'}` }}>
+                        {getInitials(name)}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: profile?.phone ? 4 : 0 }}>
+                          <span style={{ fontSize: 15, fontWeight: 600 }}>{name}</span>
+                          {isAdmin && (
+                            <span style={{ fontSize: 11, fontWeight: 700, color: roleColors[role] ?? '#6B7280', background: (roleColors[role] ?? '#6B7280') + '20', padding: '2px 10px', borderRadius: 20 }}>
+                              {roleLabels[role] ?? role}
+                            </span>
+                          )}
+                        </div>
+                        {profile?.phone && (
+                          <div style={{ fontSize: 12, color: '#4B5563' }}>{profile.phone}</div>
+                        )}
+                      </div>
+                    </div>
+                    {isAdmin && (
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button
+                          onClick={() => { setEditingMember(member.user_id); setSelectedRole(role); }}
+                          style={{ padding: '7px 14px', minHeight: 44, flex: 1, background: '#1F2937', border: '0.5px solid #374151', borderRadius: 8, color: '#9CA3AF', fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                        >
+                          Change Role
+                        </button>
+                        {member.user_id !== currentUserId && (
+                          <button
+                            onClick={() => handleRemoveMember(member.user_id, profile?.full_name)}
+                            style={{ padding: '7px 14px', minHeight: 44, flex: 1, background: 'transparent', border: '0.5px solid #EF4444', borderRadius: 8, color: '#EF4444', fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
                     )}
-                  </div>
+                  </>
+                ) : (
+                  <>
+                    <div style={{ width: 44, height: 44, borderRadius: 22, background: '#1F2937', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 700, color: roleColors[role] ?? '#6B7280', flexShrink: 0, border: `1.5px solid ${roleColors[role] ?? '#374151'}` }}>
+                      {getInitials(name)}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>{name}</div>
+                      {isAdmin && (
+                        <span style={{ fontSize: 11, fontWeight: 700, color: roleColors[role] ?? '#6B7280', background: (roleColors[role] ?? '#6B7280') + '20', padding: '2px 10px', borderRadius: 20 }}>
+                          {roleLabels[role] ?? role}
+                        </span>
+                      )}
+                      {profile?.phone && (
+                        <span style={{ fontSize: 12, color: '#4B5563', marginLeft: isAdmin ? 8 : 0 }}>{profile.phone}</span>
+                      )}
+                    </div>
+                    {isAdmin && (
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button
+                          onClick={() => { setEditingMember(member.user_id); setSelectedRole(role); }}
+                          style={{ padding: '7px 14px', background: '#1F2937', border: '0.5px solid #374151', borderRadius: 8, color: '#9CA3AF', fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                        >
+                          Change Role
+                        </button>
+                        {member.user_id !== currentUserId && (
+                          <button
+                            onClick={() => handleRemoveMember(member.user_id, profile?.full_name)}
+                            style={{ padding: '7px 14px', background: 'transparent', border: '0.5px solid #EF4444', borderRadius: 8, color: '#EF4444', fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             );
