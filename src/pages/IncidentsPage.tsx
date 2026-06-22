@@ -16,6 +16,14 @@ const severityBg: Record<string, string> = {
   critical: '#7C3AED20',
 };
 
+// Postgres `timestamp without time zone` columns come back from PostgREST with no
+// 'Z'/offset suffix, which makes `new Date()` misparse a UTC instant as local time.
+// Force UTC interpretation when no timezone marker is present.
+function toInstant(timestamp: string): Date {
+  const hasTzMarker = /Z$|[+-]\d{2}:?\d{2}$/.test(timestamp);
+  return new Date(hasTzMarker ? timestamp : `${timestamp}Z`);
+}
+
 export default function IncidentsPage() {
   const [selectedProject, setSelectedProject] = useState('all');
   const [selectedSeverity, setSelectedSeverity] = useState('all');
@@ -58,13 +66,19 @@ export default function IncidentsPage() {
   }).length ?? 0;
 
   function formatDate(dateStr: string) {
-    return new Date(dateStr).toLocaleDateString('en-US', {
+    return toInstant(dateStr).toLocaleDateString('en-US', {
       weekday: 'short', month: 'short', day: 'numeric', year: 'numeric',
+      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     });
   }
 
   function formatTime(dateStr: string) {
-    return new Date(dateStr).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+    return toInstant(dateStr).toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    });
   }
 
   return (

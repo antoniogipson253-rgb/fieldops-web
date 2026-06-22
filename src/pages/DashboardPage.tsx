@@ -4,8 +4,21 @@ import { supabase } from '../lib/supabase';
 import { useIsAdmin, useCurrentUser, useUserRole } from '../lib/useIsAdmin';
 import { useIsMobile } from '../hooks/useIsMobile';
 
+// Postgres `timestamp without time zone` columns come back from PostgREST with no
+// 'Z'/offset suffix, which makes `new Date()` misparse a UTC instant as local time.
+// Force UTC interpretation when no timezone marker is present.
+function toInstant(timestamp: string): Date {
+  const hasTzMarker = /Z$|[+-]\d{2}:?\d{2}$/.test(timestamp);
+  return new Date(hasTzMarker ? timestamp : `${timestamp}Z`);
+}
+
 function formatTime(dateStr: string) {
-  return new Date(dateStr).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+  return toInstant(dateStr).toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+  });
 }
 
 function initials(name: string) {
