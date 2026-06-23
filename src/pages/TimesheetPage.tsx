@@ -23,7 +23,10 @@ function minutesToHours(minutes: number) {
 // (e.g. clock_in stored as UTC 12:43 gets read back as local 12:43 instead of converting
 // to 7:43 AM CDT). Force UTC interpretation when no timezone marker is present.
 function toInstant(timestamp: string): Date {
-  const hasTzMarker = /Z$|[+-]\d{2}:?\d{2}$/.test(timestamp);
+  // Postgres can emit a 2-digit-only UTC offset (e.g. "+00") when minutes are zero —
+  // the minutes group must be optional or a valid offset like "+00" gets missed,
+  // causing a spurious 'Z' to be appended and corrupting an already-correct timestamp.
+  const hasTzMarker = /Z$|[+-]\d{2}(:?\d{2})?$/.test(timestamp);
   return new Date(hasTzMarker ? timestamp : `${timestamp}Z`);
 }
 
