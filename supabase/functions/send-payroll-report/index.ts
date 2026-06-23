@@ -96,7 +96,7 @@ serve(async (req) => {
     )
 
     const { start, end } = getWeekRange(weekOffset)
-    const weekLabel = `${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+    const weekLabel = `${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/Chicago' })} – ${end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'America/Chicago' })}`
 
     const { data: company } = await supabaseAdmin
       .from('companies')
@@ -132,9 +132,9 @@ serve(async (req) => {
 
     const rows = (entries ?? []).map((e: any) => ({
       employee: profileMap[e.user_id] ?? 'Unknown',
-      date: new Date(e.clock_in).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }),
-      clockIn: new Date(e.clock_in).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
-      clockOut: e.clock_out ? new Date(e.clock_out).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : '—',
+      date: new Date(e.clock_in).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'America/Chicago' }),
+      clockIn: new Date(e.clock_in).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'America/Chicago' }),
+      clockOut: e.clock_out ? new Date(e.clock_out).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'America/Chicago' }) : '—',
       hours: minutesToHours(e.total_minutes ?? 0),
       project: (e.project as any)?.name ?? '—',
       notes: e.notes ?? '',
