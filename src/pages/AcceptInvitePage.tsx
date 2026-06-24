@@ -21,8 +21,8 @@ export default function AcceptInvitePage() {
       setError('Passwords do not match.');
       return;
     }
-    if (password.length < 6) {
-      setError('Password must be at least 6 characters.');
+    if (password.length < 8) {
+      setError('Password must be at least 8 characters.');
       return;
     }
     setLoading(true);
@@ -70,13 +70,9 @@ export default function AcceptInvitePage() {
 
         // Add to project members if invited to a specific project
         if (invite.project_id) {
-          const { error: projectMemberError } = await supabase
+          await supabase
             .from('project_members')
             .insert({ project_id: invite.project_id, user_id: user.id, role: 'member' });
-
-          if (projectMemberError && projectMemberError.code !== '23505') {
-            console.error('Failed to add to project_members:', projectMemberError);
-          }
         }
 
         // Update profile

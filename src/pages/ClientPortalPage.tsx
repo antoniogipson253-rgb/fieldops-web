@@ -6,6 +6,9 @@ import { useIsMobile } from '../hooks/useIsMobile';
 const statusColors: Record<string, string> = { active: '#22C55E', on_hold: '#F59E0B', completed: '#6B7280' };
 const statusLabels: Record<string, string> = { active: 'Active', on_hold: 'On Hold', completed: 'Completed' };
 
+const coStatusColors: Record<string, string> = { sent: '#378ADD', under_review: '#F97316' };
+const coStatusLabels: Record<string, string> = { sent: 'Sent', under_review: 'Under Review' };
+
 function getProgressColor(pct: number) {
   if (pct >= 100) return '#22C55E';
   if (pct >= 50) return '#F97316';
@@ -73,6 +76,7 @@ export default function ClientPortalPage() {
   const [showEditName, setShowEditName] = useState(false);
   const [editNameValue, setEditNameValue] = useState('');
   const [savingName, setSavingName] = useState(false);
+  const [showChangeOrders, setShowChangeOrders] = useState(false);
 
   const { data: user } = useQuery({
     queryKey: ['client-user'],
@@ -452,7 +456,7 @@ export default function ClientPortalPage() {
                   </span>
                 </div>
                 <button
-                  onClick={() => alert(pendingCOs.map((co: any) => `• CO #${co.co_number}: ${co.title} — ${co.status.replace('_', ' ')}${co.estimated_cost ? ` ($${co.estimated_cost.toLocaleString()})` : ''}`).join('\n'))}
+                  onClick={() => setShowChangeOrders(true)}
                   style={{ padding: '7px 16px', backgroundColor: '#F97316', border: 'none', borderRadius: 8, color: '#FFFFFF', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}
                 >
                   View Details
@@ -854,6 +858,36 @@ export default function ClientPortalPage() {
               >
                 {savingName ? 'Saving...' : 'Save'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Change Orders modal */}
+      {showChangeOrders && (
+        <div
+          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 2000, padding: 20 }}
+          onClick={() => setShowChangeOrders(false)}
+        >
+          <div style={{ backgroundColor: '#FFFFFF', borderRadius: 14, padding: isMobile ? 20 : 28, width: '100%', maxWidth: isMobile ? 'calc(100% - 32px)' : 480, maxHeight: '80vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+              <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: '#111827' }}>Pending Change Orders</h3>
+              <button onClick={() => setShowChangeOrders(false)} style={{ backgroundColor: 'transparent', border: '1px solid #E5E7EB', borderRadius: 8, color: '#6B7280', fontSize: 14, cursor: 'pointer', padding: '4px 10px' }}>✕</button>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {(pendingCOs ?? []).map((co: any) => (
+                <div key={co.id} style={{ ...card, padding: 16 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, marginBottom: 8 }}>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>CO #{co.co_number} — {co.title}</span>
+                    <span style={{ flexShrink: 0, fontSize: 11, fontWeight: 700, color: coStatusColors[co.status] ?? '#6B7280', backgroundColor: (coStatusColors[co.status] ?? '#6B7280') + '18', padding: '3px 10px', borderRadius: 20 }}>
+                      {coStatusLabels[co.status] ?? co.status}
+                    </span>
+                  </div>
+                  {co.estimated_cost != null && (
+                    <div style={{ fontSize: 13, color: '#6B7280' }}>Estimated cost: <strong style={{ color: '#111827' }}>${co.estimated_cost.toLocaleString()}</strong></div>
+                  )}
+                </div>
+              ))}
             </div>
           </div>
         </div>

@@ -78,11 +78,10 @@ export default function TimesheetPage() {
 
       const { data, error } = await supabase
         .from('time_entries')
-        .select('*, project:project_id (name)')
+        .select('*, project:project_id (name, lunch_break_minutes)')
         .eq('company_id', companyData.id)
         .gte('clock_in', start.toISOString())
         .lte('clock_in', end.toISOString())
-        .not('clock_out', 'is', null)
         .order('clock_in', { ascending: true });
 
       if (error) throw error;
@@ -134,6 +133,8 @@ export default function TimesheetPage() {
   }
 
   const totalHours = Object.values(byEmployee).reduce((sum, e) => sum + e.totalMinutes, 0);
+
+  const flaggedEntries = (entries ?? []).filter((e: any) => e.flagged || !e.clock_out);
 
   async function handleSendReport() {
     if (!companyData?.id || !payrollSettings?.recipient_email) {
@@ -226,6 +227,31 @@ export default function TimesheetPage() {
         </div>
       </div>
 
+      {flaggedEntries.length > 0 && (
+        <div style={{ backgroundColor: '#7F1D1D20', border: '1px solid #7F1D1D', borderRadius: 12, padding: '16px 20px', marginBottom: 24 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#FCA5A5', marginBottom: 10 }}>
+            ⚠ {flaggedEntries.length} Flagged Entr{flaggedEntries.length === 1 ? 'y' : 'ies'}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {flaggedEntries.map((e: any) => {
+              const isMissing = !e.clock_out;
+              const name = (e as any).profile?.full_name ?? 'Unknown';
+              const reason = isMissing ? 'Missing clock-out' : (e.flag_reason || 'Flagged');
+              return (
+                <div
+                  key={e.id}
+                  style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, padding: '8px 12px', backgroundColor: isMissing ? '#92400E20' : '#7F1D1D30', borderRadius: 8 }}
+                >
+                  <span style={{ fontSize: 13, fontWeight: 600, color: isMissing ? '#FCD34D' : '#FCA5A5' }}>{name}</span>
+                  <span style={{ fontSize: 12, color: isMissing ? '#FCD34D' : '#FCA5A5' }}>{formatDate(e.clock_in)}</span>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: isMissing ? '#FCD34D' : '#FCA5A5' }}>{reason}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {isLoading ? (
         <div style={{ color: '#F97316', padding: 24 }}>Loading...</div>
       ) : Object.keys(byEmployee).length === 0 ? (
@@ -273,26 +299,46 @@ export default function TimesheetPage() {
                     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                       <thead>
                         <tr style={{ backgroundColor: '#0D1321' }}>
-                          {['Date', 'Clock In', 'Clock Out', 'Hours', 'Project', 'Notes'].map((h) => (
+                          {['Date', 'Clock In', 'Clock Out', 'Raw Hrs', 'Lunch', 'Net Hrs', 'OT', 'Flag', 'Project', 'Notes'].map((h) => (
                             <th key={h} style={{ padding: '8px 16px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: '#6B7280', letterSpacing: 1 }}>{h}</th>
                           ))}
                         </tr>
                       </thead>
                       <tbody>
-                        {employee.entries.map((entry: any, i: number) => (
-                          <tr key={entry.id} style={{ borderTop: '1px solid #1F2937', backgroundColor: i % 2 === 0 ? 'transparent' : '#0D132120' }}>
-                            <td style={{ padding: '10px 16px', fontSize: 13 }}>{formatDate(entry.clock_in)}</td>
-                            <td style={{ padding: '10px 16px', fontSize: 13, color: '#9CA3AF' }}>{formatTime(entry.clock_in)}</td>
-                            <td style={{ padding: '10px 16px', fontSize: 13, color: '#9CA3AF' }}>{entry.clock_out ? formatTime(entry.clock_out) : '—'}</td>
-                            <td style={{ padding: '10px 16px', fontSize: 13, fontWeight: 700, color: '#22C55E' }}>{minutesToHours(entry.total_minutes ?? 0)}h</td>
-                            <td style={{ padding: '10px 16px', fontSize: 13, color: '#9CA3AF' }}>{(entry.project as any)?.name ?? '—'}</td>
-                            <td style={{ padding: '10px 16px', fontSize: 12, color: '#6B7280' }}>{entry.notes || '—'}</td>
-                          </tr>
-                        ))}
+                        {employee.entries.map((entry: any, i: number) => {
+                          const lunchBreakMinutes = (entry.project as any)?.lunch_break_minutes ?? 0;
+                          const rawMinutes = entry.total_minutes ?? 0;
+                          const lunchMinutes = rawMinutes > 0 && lunchBreakMinutes > 0 ? lunchBreakMinutes : 0;
+                          const netMinutes = Math.max(0, rawMinutes - lunchMinutes);
+                          const rawHours = (rawMinutes / 60).toFixed(2);
+                          const lunchDeduction = lunchMinutes > 0 ? `-${(lunchMinutes / 60).toFixed(2)}` : '—';
+                          const netHours = (netMinutes / 60).toFixed(2);
+                          const isOT = netMinutes > 8 * 60;
+                          const isMissingClockOut = !entry.clock_out;
+                          const flagReason = isMissingClockOut ? 'Missing clock-out' : (entry.flagged ? (entry.flag_reason || 'Flagged') : '');
+                          return (
+                            <tr key={entry.id} style={{ borderTop: '1px solid #1F2937', backgroundColor: i % 2 === 0 ? 'transparent' : '#0D132120' }}>
+                              <td style={{ padding: '10px 16px', fontSize: 13 }}>{formatDate(entry.clock_in)}</td>
+                              <td style={{ padding: '10px 16px', fontSize: 13, color: '#9CA3AF' }}>{formatTime(entry.clock_in)}</td>
+                              <td style={{ padding: '10px 16px', fontSize: 13, color: isMissingClockOut ? '#EF4444' : '#9CA3AF', fontWeight: isMissingClockOut ? 700 : 400 }}>
+                                {isMissingClockOut ? 'MISSING' : formatTime(entry.clock_out)}
+                              </td>
+                              <td style={{ padding: '10px 16px', fontSize: 13, color: '#9CA3AF' }}>{isMissingClockOut ? '—' : `${rawHours}h`}</td>
+                              <td style={{ padding: '10px 16px', fontSize: 13, color: lunchDeduction !== '—' ? '#EF4444' : '#6B7280' }}>
+                                {isMissingClockOut ? '—' : (lunchDeduction === '—' ? '—' : `${lunchDeduction}h`)}
+                              </td>
+                              <td style={{ padding: '10px 16px', fontSize: 13, fontWeight: 700, color: '#22C55E' }}>{isMissingClockOut ? '—' : `${netHours}h`}</td>
+                              <td style={{ padding: '10px 16px', fontSize: 12, fontWeight: 700, color: '#F97316', textAlign: 'center' }}>{isOT ? 'OT' : ''}</td>
+                              <td style={{ padding: '10px 16px', fontSize: 12, color: '#EF4444', fontWeight: flagReason ? 700 : 400 }}>{flagReason}</td>
+                              <td style={{ padding: '10px 16px', fontSize: 13, color: '#9CA3AF' }}>{(entry.project as any)?.name ?? '—'}</td>
+                              <td style={{ padding: '10px 16px', fontSize: 12, color: '#6B7280' }}>{entry.notes || '—'}</td>
+                            </tr>
+                          );
+                        })}
                         <tr style={{ borderTop: '2px solid #374151', backgroundColor: '#F9731608' }}>
                           <td colSpan={3} style={{ padding: '10px 16px', fontSize: 13, fontWeight: 700, color: '#F97316' }}>Subtotal</td>
-                          <td style={{ padding: '10px 16px', fontSize: 14, fontWeight: 900, color: '#F97316' }}>{minutesToHours(employee.totalMinutes)}h</td>
-                          <td colSpan={2} style={{ padding: '10px 16px', fontSize: 12, color: '#6B7280' }}>
+                          <td colSpan={3} style={{ padding: '10px 16px', fontSize: 14, fontWeight: 900, color: '#F97316' }}>{minutesToHours(employee.totalMinutes)}h</td>
+                          <td colSpan={4} style={{ padding: '10px 16px', fontSize: 12, color: '#6B7280' }}>
                             {regularHours}h regular{overtimeHours > 0 ? ` · ${overtimeHours}h overtime` : ''}
                           </td>
                         </tr>

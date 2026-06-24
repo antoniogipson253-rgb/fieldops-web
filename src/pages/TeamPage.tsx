@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useIsAdmin } from '../lib/useIsAdmin';
 import { useIsMobile } from '../hooks/useIsMobile';
@@ -59,9 +59,9 @@ export default function TeamPage() {
   const [addToProjectClientId, setAddToProjectClientId] = useState<string | null>(null);
   const [addToProjectId, setAddToProjectId] = useState('');
 
-  useState(() => {
+  useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setCurrentUserId(data.user?.id ?? null));
-  });
+  }, []);
 
   const { data: companyMembers, isLoading } = useQuery({
     queryKey: ['web-company-members'],
@@ -145,8 +145,6 @@ export default function TeamPage() {
         .select('client_id, project_id')
         .in('project_id', companyProjects.map((p: any) => p.id));
 
-      console.log('[allClients] client_projects raw:', cpRows, 'error:', cpError);
-
       if (cpError) throw cpError;
       if (!cpRows?.length) return [];
 
@@ -158,8 +156,6 @@ export default function TeamPage() {
         supabase.from('profiles').select('id, full_name').in('id', clientIds),
         supabase.from('projects').select('id, name').in('id', projectIds),
       ]);
-
-      console.log('[allClients] profiles:', profilesRes.data, 'projects:', projectsRes.data);
 
       const profileMap: Record<string, any> = Object.fromEntries(
         (profilesRes.data ?? []).map((p: any) => [p.id, p])

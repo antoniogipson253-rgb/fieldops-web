@@ -415,8 +415,6 @@ export default function ProjectDetailPage() {
         .eq('email', inviteEmail.toLowerCase().trim())
         .maybeSingle();
 
-      console.log('[handleInviteClient] profile lookup result:', existingProfile, 'error:', profileLookupError);
-
       // Surface RLS / query errors immediately — don't silently fall through to the invite flow
       if (profileLookupError) throw profileLookupError;
 
@@ -492,8 +490,6 @@ async function handleSaveTask() {
       due_date: editTaskDueDate || null,
       assigned_to: editTaskAssignee && editTaskAssignee.trim() !== '' ? editTaskAssignee : null,
     };
-
-    console.log('Task update payload:', JSON.stringify(updatePayload));
 
     const { error } = await supabase
       .from('tasks')

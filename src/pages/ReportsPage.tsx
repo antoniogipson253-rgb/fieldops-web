@@ -21,7 +21,7 @@ export default function ReportsPage() {
   const reportLinks = [
     {
       title: 'Payroll Reports',
-      description: 'View and configure automated weekly payroll reports, lunch deductions, and flagged clock-ins.',
+      description: 'Configure automated weekly payroll emails and view timesheet hours, lunch deductions, net hours, flags, and missing clock-outs.',
       action: () => navigate('/payroll'),
       accent: '#22C55E',
     },
