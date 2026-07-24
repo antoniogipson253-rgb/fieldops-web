@@ -76,15 +76,25 @@ serve(async (req) => {
     ` : `
       <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 32px; background: #0A0F1E; color: #FFFFFF; border-radius: 16px;">
         <h1 style="color: #F97316; font-size: 28px; letter-spacing: 4px; margin-bottom: 8px;">FIELDOPS</h1>
-        <p style="color: #6B7280; font-size: 13px; margin-bottom: 32px;">PRO DASHBOARD</p>
+        <p style="color: #6B7280; font-size: 13px; margin-bottom: 32px;">PRO</p>
         <h2 style="font-size: 20px; margin-bottom: 16px;">You have been invited!</h2>
-        <p style="color: #9CA3AF; font-size: 15px; line-height: 1.6; margin-bottom: 24px;">
-          You have been invited to join <strong style="color: #F97316;">${companyName}</strong> on FieldOps as a <strong>${role}</strong>.
+        <p style="color: #9CA3AF; font-size: 15px; line-height: 1.6; margin-bottom: 8px;">
+          You have been invited to join <strong style="color: #F97316;">${companyName}</strong> on FieldOps as a <strong style="color: #FFFFFF;">${role}</strong>.
         </p>
-        <a href="https://app.fieldopspro.org/accept-invite" style="display: inline-block; padding: 14px 32px; background: #F97316; color: #0A0F1E; font-weight: 900; font-size: 15px; text-decoration: none; border-radius: 10px; letter-spacing: 2px;">
-          ACCEPT INVITE
+        <p style="color: #9CA3AF; font-size: 14px; line-height: 1.6; margin-bottom: 28px;">
+          You should have received a separate email with a secure confirmation link. Click that link first to set your password, then download the <strong style="color: #F97316;">FieldOps Pro</strong> mobile app to get started.
+        </p>
+        <p style="color: #6B7280; font-size: 13px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 12px;">Download the App</p>
+        <a href="https://apps.apple.com/app/id6767338478" style="display: inline-block; padding: 12px 24px; background: #F97316; color: #FFFFFF; font-weight: 900; font-size: 13px; text-decoration: none; border-radius: 8px; letter-spacing: 1px; margin-bottom: 28px;">
+          🍎 Download on the App Store
         </a>
-        <p style="color: #374151; font-size: 12px; margin-top: 32px;">Questions? Email us at fieldops.pro1@gmail.com</p>
+        <!-- TODO: Add Google Play button once Android app is published.
+        <a href="https://play.google.com/store/apps/details?id=com.fieldopspro.app" style="display: inline-block; padding: 12px 20px; background: transparent; border: 1px solid #374151; color: #9CA3AF; font-weight: 700; font-size: 13px; text-decoration: none; border-radius: 8px; letter-spacing: 1px;">
+          ▶ Google Play
+        </a>
+        -->
+        <p style="color: #4B5563; font-size: 12px; margin-bottom: 4px;">Log in to the mobile app using your email and the password you create when you click the confirmation link.</p>
+        <p style="color: #374151; font-size: 12px; margin-top: 24px;">Questions? Email us at fieldops.pro1@gmail.com</p>
       </div>
     `
 
