@@ -196,7 +196,7 @@ export default function ProjectDetailPage() {
     setImportMode(null);
     setPastedText('');
     setParsedTasks([]);
-    setManualTasks([{ title: '', description: '', priority: 'medium', dueDate: '' }]);
+    setManualTasks([{ title: '', description: '', priority: 'medium', dueDate: '', checklistItems: [], newItemDraft: '' }]);
     setImportFormat('tasks');
     setParsedChecklistRows([]);
   }
