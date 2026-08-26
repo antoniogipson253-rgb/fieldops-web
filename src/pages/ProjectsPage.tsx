@@ -15,6 +15,7 @@ export default function ProjectsPage() {
   const [newName, setNewName] = useState('');
   const [newDescription, setNewDescription] = useState('');
   const [newStatus, setNewStatus] = useState('active');
+  const [newProjectType, setNewProjectType] = useState<'regular' | 'checklist'>('regular');
   const [creating, setCreating] = useState(false);
 
   const { data: projects, isLoading } = useQuery({
@@ -77,6 +78,7 @@ export default function ProjectsPage() {
           name: newName.trim(),
           description: newDescription.trim() || null,
           status: newStatus,
+          project_type: newProjectType,
           created_by: user!.id,
         })
         .select()
@@ -94,6 +96,7 @@ export default function ProjectsPage() {
       setNewName('');
       setNewDescription('');
       setNewStatus('active');
+      setNewProjectType('regular');
       navigate(`/projects/${project.id}`);
     } catch (e: any) {
       alert(e.message);
@@ -175,8 +178,39 @@ export default function ProjectsPage() {
                 <option value="completed">Completed</option>
               </select>
             </div>
+            <div style={{ marginBottom: 24 }}>
+              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#6B7280', letterSpacing: 2, marginBottom: 8 }}>PROJECT TYPE</label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <button
+                  type="button"
+                  onClick={() => setNewProjectType('regular')}
+                  style={{
+                    padding: 16, borderRadius: 12, cursor: 'pointer', textAlign: 'left',
+                    backgroundColor: newProjectType === 'regular' ? '#F9731615' : '#1F2937',
+                    border: `1px solid ${newProjectType === 'regular' ? '#F97316' : '#374151'}`,
+                  }}
+                >
+                  <div style={{ fontSize: 22, marginBottom: 6 }}>📋</div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: '#FFFFFF', marginBottom: 2 }}>Regular Project</div>
+                  <div style={{ fontSize: 11, color: '#6B7280' }}>Standard tasks and folders</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNewProjectType('checklist')}
+                  style={{
+                    padding: 16, borderRadius: 12, cursor: 'pointer', textAlign: 'left',
+                    backgroundColor: newProjectType === 'checklist' ? '#F9731615' : '#1F2937',
+                    border: `1px solid ${newProjectType === 'checklist' ? '#F97316' : '#374151'}`,
+                  }}
+                >
+                  <div style={{ fontSize: 22, marginBottom: 6 }}>✅</div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: '#FFFFFF', marginBottom: 2 }}>Tasks + Checklist</div>
+                  <div style={{ fontSize: 11, color: '#6B7280' }}>Tasks carry a parts checklist</div>
+                </button>
+              </div>
+            </div>
             <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={() => { setShowCreate(false); setNewName(''); setNewDescription(''); }} style={{ flex: 1, padding: '12px', backgroundColor: 'transparent', border: '1px solid #374151', borderRadius: 10, color: '#6B7280', fontSize: 14, cursor: 'pointer' }}>Cancel</button>
+              <button onClick={() => { setShowCreate(false); setNewName(''); setNewDescription(''); setNewProjectType('regular'); }} style={{ flex: 1, padding: '12px', backgroundColor: 'transparent', border: '1px solid #374151', borderRadius: 10, color: '#6B7280', fontSize: 14, cursor: 'pointer' }}>Cancel</button>
               <button onClick={handleCreate} disabled={creating || !newName.trim()} style={{ flex: 2, padding: '12px', backgroundColor: creating || !newName.trim() ? '#374151' : '#F97316', border: 'none', borderRadius: 10, color: creating || !newName.trim() ? '#6B7280' : '#0A0F1E', fontSize: 14, fontWeight: 800, cursor: creating || !newName.trim() ? 'not-allowed' : 'pointer' }}>
                 {creating ? 'Creating...' : 'Create Project'}
               </button>

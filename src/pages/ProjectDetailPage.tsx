@@ -10,6 +10,16 @@ import { ProjectChangeOrdersTab } from './tabs/ProjectChangeOrdersTab';
 import { ProjectRFITab } from './tabs/ProjectRFITab';
 import { ProjectClientMessagesTab } from './tabs/ProjectClientMessagesTab';
 
+// The checklist-completion DB trigger raises errcode 'CHK01' when a checklist-type
+// task can't be marked complete (no items yet, or items still unresolved) — surface
+// that distinctly from any other update failure on the same mutation.
+function describeTaskError(e: any): string {
+  if (e?.code === 'CHK01') {
+    return `Checklist incomplete — ${e.message}`;
+  }
+  return e?.message ?? 'Something went wrong.';
+}
+
 export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -37,6 +47,8 @@ export default function ProjectDetailPage() {
   const [importStep, setImportStep] = useState<'input' | 'preview' | 'done'>('input');
   const [importing, setImporting] = useState(false);
   const [manualTasks, setManualTasks] = useState([{ title: '', description: '', priority: 'medium', dueDate: '' }]);
+  const [importFormat, setImportFormat] = useState<'tasks' | 'checklist'>('tasks');
+  const [parsedChecklistRows, setParsedChecklistRows] = useState<{ taskName: string; itemText: string; valid: boolean; reason?: string }[]>([]);
 
   const [showEditProject, setShowEditProject] = useState(false);
   const [editName, setEditName] = useState('');
@@ -44,6 +56,9 @@ export default function ProjectDetailPage() {
   const [editStatus, setEditStatus] = useState('active');
   const [savingProject, setSavingProject] = useState(false);
   const [editClientPhotosEnabled, setEditClientPhotosEnabled] = useState(false);
+
+  const [showConvertConfirm, setShowConvertConfirm] = useState(false);
+  const [converting, setConverting] = useState(false);
 
   const [showInvite, setShowInvite] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
@@ -59,6 +74,12 @@ export default function ProjectDetailPage() {
   const [viewTaskPhotos, setViewTaskPhotos] = useState<any[]>([]);
   const [viewingPhoto, setViewingPhoto] = useState<string | null>(null);
   const [photosLoading, setPhotosLoading] = useState(false);
+
+  const [viewTaskChecklist, setViewTaskChecklist] = useState<any[]>([]);
+  const [checklistLoading, setChecklistLoading] = useState(false);
+  const [newChecklistItemText, setNewChecklistItemText] = useState('');
+  const [addingChecklistItem, setAddingChecklistItem] = useState(false);
+  const CHECKLIST_ITEM_CAP = 45;
 
   const [selectedTask, setSelectedTask] = useState<any>(null);
   const [editTaskTitle, setEditTaskTitle] = useState('');
@@ -146,6 +167,7 @@ export default function ProjectDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['web-all-tasks'] });
       invalidateDashboard();
     },
+    onError: (error: any) => alert(describeTaskError(error)),
   });
 
   const totalTasks = folders?.reduce((sum, f) => sum + (f.task_count ?? 0), 0) ?? 0;
@@ -175,6 +197,8 @@ export default function ProjectDetailPage() {
     setPastedText('');
     setParsedTasks([]);
     setManualTasks([{ title: '', description: '', priority: 'medium', dueDate: '' }]);
+    setImportFormat('tasks');
+    setParsedChecklistRows([]);
   }
 
   async function handleExportPDF() {
@@ -330,13 +354,88 @@ export default function ProjectDetailPage() {
     } finally {
       setPhotosLoading(false);
     }
+
+    if (project?.project_type === 'checklist') {
+      await refreshChecklist(task.id);
+    } else {
+      setViewTaskChecklist([]);
+    }
   }
 
   function closeViewTask() {
     setViewTask(null);
     setViewTaskPhotos([]);
     setViewingPhoto(null);
+    setViewTaskChecklist([]);
+    setNewChecklistItemText('');
   }
+
+  async function refreshChecklist(taskId: string) {
+    setChecklistLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('checklist_items')
+        .select('*')
+        .eq('task_id', taskId)
+        .order('sort_order', { ascending: true })
+        .order('created_at', { ascending: true });
+      if (error) throw error;
+      setViewTaskChecklist(data ?? []);
+    } catch (e: any) {
+      alert(e.message);
+    } finally {
+      setChecklistLoading(false);
+    }
+  }
+
+  async function handleAddChecklistItem() {
+    if (!viewTask || !newChecklistItemText.trim()) return;
+    if (viewTaskChecklist.length >= CHECKLIST_ITEM_CAP) return;
+    setAddingChecklistItem(true);
+    try {
+      const { error } = await supabase.from('checklist_items').insert({
+        task_id: viewTask.id,
+        item_text: newChecklistItemText.trim(),
+        sort_order: viewTaskChecklist.length,
+      });
+      if (error) throw error;
+      setNewChecklistItemText('');
+      await refreshChecklist(viewTask.id);
+    } catch (e: any) {
+      alert(e.message);
+    } finally {
+      setAddingChecklistItem(false);
+    }
+  }
+
+  async function handleToggleChecklistDone(item: any) {
+    try {
+      const nextStatus = item.status === 'done' ? 'not_started' : 'done';
+      const { error } = await supabase.from('checklist_items').update({ status: nextStatus }).eq('id', item.id);
+      if (error) throw error;
+      await refreshChecklist(item.task_id);
+    } catch (e: any) {
+      alert(e.message);
+    }
+  }
+
+  async function handleToggleChecklistMissingPart(item: any) {
+    try {
+      const nextStatus = item.status === 'missing_part' ? 'part_received' : 'missing_part';
+      const { error } = await supabase.from('checklist_items').update({ status: nextStatus }).eq('id', item.id);
+      if (error) throw error;
+      await refreshChecklist(item.task_id);
+    } catch (e: any) {
+      alert(e.message);
+    }
+  }
+
+  const checklistStatusColors: Record<string, string> = {
+    not_started: '#6B7280', done: '#22C55E', missing_part: '#EF4444', part_received: '#3B82F6',
+  };
+  const checklistStatusLabels: Record<string, string> = {
+    not_started: 'Not Started', done: 'Done', missing_part: "Missing Part", part_received: 'Part Received',
+  };
 
   async function handleCreateFolder() {
     if (!newFolderName.trim()) return;
@@ -381,6 +480,19 @@ export default function ProjectDetailPage() {
       setShowEditProject(false);
     } catch (e: any) { alert(e.message); }
     finally { setSavingProject(false); }
+  }
+
+  async function handleConvertToChecklist() {
+    setConverting(true);
+    try {
+      const { error } = await supabase.rpc('convert_project_to_checklist', { p_project_id: id });
+      if (error) throw error;
+      queryClient.invalidateQueries({ queryKey: ['web-project', id] });
+      queryClient.invalidateQueries({ queryKey: ['web-projects'] });
+      setShowConvertConfirm(false);
+      setShowEditProject(false);
+    } catch (e: any) { alert(e.message); }
+    finally { setConverting(false); }
   }
 
   async function handleInvite() {
@@ -505,7 +617,7 @@ async function handleSaveTask() {
     invalidateDashboard();
     setSelectedTask(null);
   } catch (e: any) {
-    alert(e.message);
+    alert(describeTaskError(e));
   } finally {
     setSavingTask(false);
   }
@@ -520,7 +632,7 @@ async function handleSaveTask() {
       queryClient.invalidateQueries({ queryKey: ['web-calendar-tasks'] });
       queryClient.invalidateQueries({ queryKey: ['web-all-tasks'] });
       invalidateDashboard();
-    } catch (e: any) { alert(e.message); }
+    } catch (e: any) { alert(describeTaskError(e)); }
   }
 
   async function handleRestoreTask(task: any) {
@@ -622,6 +734,110 @@ async function handleSaveTask() {
       })
     : [];
 
+  const pastedChecklistRows = pastedText.trim()
+    ? pastedText.trim().split('\n').filter(l => l.trim()).slice(0, 20).map(line => {
+        const cols = line.split('\t').map(c => c.trim().replace(/^"|"$/g, ''));
+        return { taskName: cols[0] ?? '', itemText: cols[1] ?? '' };
+      })
+    : [];
+
+  function handleChecklistPastePreview() {
+    if (!pastedText.trim()) return;
+    const lines = pastedText.trim().split('\n').filter(l => l.trim());
+    const counts: Record<string, number> = {};
+    const parsed = lines.slice(0, 500).map((line) => {
+      const cols = line.split('\t').map(c => c.trim().replace(/^"|"$/g, ''));
+      const taskName = cols[0] ?? '';
+      const itemText = cols[1] ?? '';
+      if (!taskName || !itemText) {
+        return { taskName, itemText, valid: false, reason: 'Missing task name or checklist item text' };
+      }
+      const key = taskName.toLowerCase();
+      counts[key] = (counts[key] ?? 0) + 1;
+      if (counts[key] > CHECKLIST_ITEM_CAP) {
+        return { taskName, itemText, valid: false, reason: `Exceeds ${CHECKLIST_ITEM_CAP}-item cap for "${taskName}"` };
+      }
+      return { taskName, itemText, valid: true };
+    });
+    setParsedChecklistRows(parsed);
+    setImportStep('preview');
+  }
+
+  async function handleChecklistImport() {
+    const validRows = parsedChecklistRows.filter((r) => r.valid);
+    if (!validRows.length) return;
+    setImporting(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+
+      const groupOrder: string[] = [];
+      const groups = new Map<string, { taskName: string; items: string[] }>();
+      for (const row of validRows) {
+        const key = row.taskName.toLowerCase();
+        if (!groups.has(key)) { groups.set(key, { taskName: row.taskName, items: [] }); groupOrder.push(key); }
+        groups.get(key)!.items.push(row.itemText);
+      }
+
+      const { data: existingTasks, error: existingErr } = await supabase
+        .from('tasks')
+        .select('id, title')
+        .eq('project_id', id);
+      if (existingErr) throw existingErr;
+      const existingByTitle = new Map((existingTasks ?? []).map((t: any) => [t.title.toLowerCase(), t.id]));
+
+      const skipped: string[] = [];
+
+      for (const key of groupOrder) {
+        const group = groups.get(key)!;
+        let taskId = existingByTitle.get(key);
+
+        if (!taskId) {
+          const { data: newTask, error: taskErr } = await supabase
+            .from('tasks')
+            .insert({ project_id: id, folder_id: selectedFolder || null, title: group.taskName, status: 'open', created_by: user!.id })
+            .select('id')
+            .single();
+          if (taskErr) throw taskErr;
+          taskId = newTask.id;
+        }
+
+        const { count: existingCount, error: countErr } = await supabase
+          .from('checklist_items')
+          .select('id', { count: 'exact', head: true })
+          .eq('task_id', taskId);
+        if (countErr) throw countErr;
+
+        const remainingCapacity = Math.max(0, CHECKLIST_ITEM_CAP - (existingCount ?? 0));
+        const itemsToInsert = group.items.slice(0, remainingCapacity);
+        const droppedForCap = group.items.slice(remainingCapacity);
+        if (droppedForCap.length > 0) {
+          skipped.push(`${droppedForCap.length} item(s) for "${group.taskName}" (already at the ${CHECKLIST_ITEM_CAP}-item cap)`);
+        }
+
+        if (itemsToInsert.length > 0) {
+          const { error: itemsErr } = await supabase.from('checklist_items').insert(
+            itemsToInsert.map((text, i) => ({ task_id: taskId, item_text: text, sort_order: (existingCount ?? 0) + i }))
+          );
+          if (itemsErr) throw itemsErr;
+        }
+      }
+
+      queryClient.invalidateQueries({ queryKey: ['web-folder-tasks', id] });
+      queryClient.invalidateQueries({ queryKey: ['web-folders', id] });
+      queryClient.invalidateQueries({ queryKey: ['web-calendar-tasks'] });
+      invalidateDashboard();
+
+      if (skipped.length > 0) {
+        alert(`Imported, but some items were skipped:\n${skipped.join('\n')}`);
+      }
+      setImportStep('done');
+    } catch (e: any) {
+      alert(e.message);
+    } finally {
+      setImporting(false);
+    }
+  }
+
   const statusColors: Record<string, string> = { open: '#6B7280', in_progress: '#F97316', completed: '#22C55E', active: '#22C55E', on_hold: '#F97316' };
   const statusLabels: Record<string, string> = { open: 'Open', in_progress: 'In Progress', completed: 'Done', active: 'Active', on_hold: 'On Hold' };
   const priorityColors: Record<string, string> = { low: '#6B7280', medium: '#F59E0B', high: '#EF4444' };
@@ -667,6 +883,11 @@ async function handleSaveTask() {
           {project?.status && (
             <span style={{ display: 'inline-block', marginTop: 8, fontSize: 12, fontWeight: 700, color: statusColors[project.status], backgroundColor: statusColors[project.status] + '20', padding: '3px 10px', borderRadius: 20 }}>
               {statusLabels[project.status]}
+            </span>
+          )}
+          {project?.project_type === 'checklist' && (
+            <span style={{ display: 'inline-block', marginTop: 8, marginLeft: 8, fontSize: 12, fontWeight: 700, color: '#3B82F6', backgroundColor: '#3B82F620', padding: '3px 10px', borderRadius: 20 }}>
+              ✅ Checklist Project
             </span>
           )}
         </div>
@@ -823,9 +1044,35 @@ async function handleSaveTask() {
               </button>
             </div>
           )}
+          {isAdmin && project?.project_type === 'regular' && (
+            <div style={{ marginBottom: 20, padding: 16, backgroundColor: '#7F1D1D15', border: '1px solid #EF444440', borderRadius: 10 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#EF4444', letterSpacing: 2, marginBottom: 8 }}>DANGER ZONE</div>
+              <div style={{ fontSize: 13, color: '#9CA3AF', marginBottom: 12 }}>Switch this project to Tasks + Checklist mode. Existing tasks are kept — this only unlocks per-task checklists.</div>
+              <button onClick={() => setShowConvertConfirm(true)} style={{ padding: '10px 16px', backgroundColor: 'transparent', border: '1px solid #EF4444', borderRadius: 8, color: '#EF4444', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Convert to Tasks + Checklist →</button>
+            </div>
+          )}
           <div style={{ display: 'flex', gap: 10 }}>
             <button onClick={() => setShowEditProject(false)} style={{ padding: '10px 20px', backgroundColor: 'transparent', border: '1px solid #374151', borderRadius: 10, color: '#6B7280', fontSize: 14, cursor: 'pointer' }}>Cancel</button>
             <button onClick={handleSaveProject} disabled={savingProject} style={{ padding: '10px 24px', backgroundColor: '#F97316', border: 'none', borderRadius: 10, color: '#0A0F1E', fontSize: 14, fontWeight: 800, cursor: 'pointer' }}>{savingProject ? 'Saving...' : 'Save Changes'}</button>
+          </div>
+        </div>
+      )}
+
+      {/* Convert to Checklist Confirm Modal */}
+      {showConvertConfirm && isAdmin && (
+        <div style={modalOverlay} onClick={() => !converting && setShowConvertConfirm(false)}>
+          <div style={{ ...modalBox, maxWidth: 460, border: '1px solid #EF4444' }} onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ margin: '0 0 12px 0', fontSize: 18, fontWeight: 800, color: '#EF4444' }}>⚠ Convert to Tasks + Checklist</h3>
+            <p style={{ fontSize: 14, color: '#D1D5DB', lineHeight: 1.6, marginBottom: 12 }}>
+              This is <strong>permanent and cannot be undone</strong>. Once converted, this project cannot be switched back to a Regular Project — for any user, at any time.
+            </p>
+            <p style={{ fontSize: 14, color: '#D1D5DB', lineHeight: 1.6, marginBottom: 24 }}>
+              Existing tasks will not be deleted or changed — they'll simply become eligible to have checklists added, and can no longer be marked complete until their checklist items are resolved.
+            </p>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={() => setShowConvertConfirm(false)} disabled={converting} style={{ flex: 1, padding: '12px', backgroundColor: 'transparent', border: '1px solid #374151', borderRadius: 10, color: '#6B7280', fontSize: 14, cursor: 'pointer' }}>Cancel</button>
+              <button onClick={handleConvertToChecklist} disabled={converting} style={{ flex: 2, padding: '12px', backgroundColor: '#EF4444', border: 'none', borderRadius: 10, color: '#FFFFFF', fontSize: 14, fontWeight: 800, cursor: 'pointer' }}>{converting ? 'Converting...' : 'Yes, Convert Permanently'}</button>
+            </div>
           </div>
         </div>
       )}
@@ -883,6 +1130,61 @@ async function handleSaveTask() {
                 </div>
               )}
             </div>
+            {project?.project_type === 'checklist' && (
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#6B7280', letterSpacing: 2 }}>CHECKLIST</div>
+                  <div style={{ fontSize: 12, color: '#4B5563' }}>{viewTaskChecklist.length}/{CHECKLIST_ITEM_CAP}</div>
+                </div>
+                {checklistLoading ? (
+                  <div style={{ color: '#F97316', fontSize: 13 }}>Loading checklist...</div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+                    {viewTaskChecklist.length === 0 && (
+                      <div style={{ padding: '12px 0', fontSize: 13, color: '#4B5563' }}>No checklist items yet — add at least one before this task can be marked complete.</div>
+                    )}
+                    {viewTaskChecklist.map((item) => (
+                      <div key={item.id} style={{ backgroundColor: '#0D1321', border: '1px solid #1F2937', borderRadius: 8, padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                        <div style={{ flex: 1, minWidth: 140 }}>
+                          <div style={{ fontSize: 13, color: '#FFFFFF', marginBottom: 4 }}>{item.item_text}</div>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: checklistStatusColors[item.status], backgroundColor: checklistStatusColors[item.status] + '20', padding: '2px 8px', borderRadius: 12 }}>
+                            {checklistStatusLabels[item.status]}
+                          </span>
+                        </div>
+                        {canEdit && (
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <button onClick={() => handleToggleChecklistDone(item)} style={{ padding: '6px 10px', backgroundColor: item.status === 'done' ? '#22C55E20' : '#1F2937', border: `1px solid ${item.status === 'done' ? '#22C55E' : '#374151'}`, borderRadius: 6, color: item.status === 'done' ? '#22C55E' : '#9CA3AF', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+                              {item.status === 'done' ? '✓ Done' : 'Mark Done'}
+                            </button>
+                            <button onClick={() => handleToggleChecklistMissingPart(item)} style={{ padding: '6px 10px', backgroundColor: item.status === 'missing_part' ? '#EF444420' : '#1F2937', border: `1px solid ${item.status === 'missing_part' ? '#EF4444' : '#374151'}`, borderRadius: 6, color: item.status === 'missing_part' ? '#EF4444' : '#9CA3AF', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+                              {item.status === 'missing_part' ? 'Now Have Part' : "Don't Have Part"}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {canEdit && (
+                  viewTaskChecklist.length >= CHECKLIST_ITEM_CAP ? (
+                    <div style={{ fontSize: 12, color: '#F59E0B' }}>Checklist item limit reached ({CHECKLIST_ITEM_CAP} max).</div>
+                  ) : (
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <input
+                        value={newChecklistItemText}
+                        onChange={(e) => setNewChecklistItemText(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleAddChecklistItem()}
+                        placeholder="Add checklist item..."
+                        style={{ flex: 1, padding: '8px 12px', backgroundColor: '#1F2937', border: '1px solid #374151', borderRadius: 8, color: '#FFFFFF', fontSize: 13, outline: 'none' }}
+                      />
+                      <button onClick={handleAddChecklistItem} disabled={addingChecklistItem || !newChecklistItemText.trim()} style={{ padding: '8px 16px', backgroundColor: !newChecklistItemText.trim() || addingChecklistItem ? '#374151' : '#F97316', border: 'none', borderRadius: 8, color: !newChecklistItemText.trim() || addingChecklistItem ? '#6B7280' : '#0A0F1E', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                        {addingChecklistItem ? 'Adding...' : '+ Add'}
+                      </button>
+                    </div>
+                  )
+                )}
+              </div>
+            )}
             <div style={{ marginBottom: 20 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: '#6B7280', letterSpacing: 2, marginBottom: 12 }}>PHOTOS {viewTaskPhotos.length > 0 ? `(${viewTaskPhotos.length})` : ''}</div>
               {photosLoading ? (
@@ -1041,60 +1343,120 @@ async function handleSaveTask() {
           {importMode === 'paste' && importStep === 'input' && (
             <>
               <button onClick={() => setImportMode(null)} style={{ backgroundColor: 'transparent', border: 'none', color: '#F97316', fontSize: 13, cursor: 'pointer', padding: 0, marginBottom: 14 }}>← Back</button>
-              <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 10 }}>Copy cells from Excel → click the table below → press <strong style={{ color: '#FFFFFF' }}>Ctrl+V</strong></div>
-              <div style={{ overflowX: 'auto', borderRadius: 8, border: `2px solid ${pastedText ? '#22C55E' : '#374151'}`, cursor: 'text', outline: 'none', position: 'relative' }} tabIndex={0} onPaste={(e) => { e.preventDefault(); const text = e.clipboardData.getData('text'); setPastedText(text); }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 600 }}>
-                  <thead>
-                    <tr style={{ backgroundColor: '#1A2235' }}>
-                      <th style={{ width: 36, padding: '9px 8px', textAlign: 'center', fontSize: 11, color: '#4B5563', borderRight: '1px solid #2D3748', borderBottom: '2px solid #374151' }}></th>
-                      {[{ label: 'A — Task Name', required: true }, { label: 'B — Description', required: false }, { label: 'C — Priority', required: false }, { label: 'D — Due Date (YYYY-MM-DD)', required: false }].map((col, ci) => (
-                        <th key={ci} style={{ padding: '9px 12px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: col.required ? '#F97316' : '#9CA3AF', borderRight: ci < 3 ? '1px solid #2D3748' : 'none', borderBottom: '2px solid #374151', whiteSpace: 'nowrap' }}>
-                          {col.label}{col.required && <span style={{ color: '#EF4444', marginLeft: 2 }}>*</span>}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {pastedRows.length > 0
-                      ? pastedRows.map((row, i) => (
-                          <tr key={i} style={{ backgroundColor: i % 2 === 0 ? '#111827' : '#0D1321', borderBottom: '1px solid #1E2A3A' }}>
-                            <td style={{ padding: '7px 8px', textAlign: 'center', fontSize: 11, color: '#4B5563', borderRight: '1px solid #1E2A3A', userSelect: 'none' }}>{i + 1}</td>
-                            <td style={{ padding: '7px 12px', fontSize: 13, color: row.title ? '#FFFFFF' : '#374151', borderRight: '1px solid #1E2A3A' }}>{row.title || ''}</td>
-                            <td style={{ padding: '7px 12px', fontSize: 13, color: row.description ? '#D1D5DB' : '#374151', borderRight: '1px solid #1E2A3A' }}>{row.description || ''}</td>
-                            <td style={{ padding: '7px 12px', fontSize: 13, color: row.priority === 'high' ? '#EF4444' : row.priority === 'low' ? '#6B7280' : row.priority ? '#F59E0B' : '#374151', borderRight: '1px solid #1E2A3A' }}>{row.priority || ''}</td>
-                            <td style={{ padding: '7px 12px', fontSize: 13, color: row.dueDate ? '#D1D5DB' : '#374151' }}>{row.dueDate || ''}</td>
-                          </tr>
-                        ))
-                      : [1, 2, 3, 4, 5, 6, 7, 8].map((row) => (
-                          <tr key={row} style={{ backgroundColor: row % 2 === 0 ? '#0D1321' : '#111827', borderBottom: '1px solid #1E2A3A' }}>
-                            <td style={{ padding: '7px 8px', textAlign: 'center', fontSize: 11, color: '#374151', borderRight: '1px solid #1E2A3A', userSelect: 'none' }}>{row}</td>
-                            <td style={{ padding: '7px 12px', borderRight: '1px solid #1E2A3A', height: 34 }}></td>
-                            <td style={{ padding: '7px 12px', borderRight: '1px solid #1E2A3A' }}></td>
-                            <td style={{ padding: '7px 12px', borderRight: '1px solid #1E2A3A' }}></td>
-                            <td style={{ padding: '7px 12px' }}></td>
-                          </tr>
-                        ))
-                    }
-                  </tbody>
-                </table>
-                {!pastedText && (
-                  <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
-                    <div style={{ backgroundColor: '#1A2235CC', borderRadius: 8, padding: '10px 20px', fontSize: 13, color: '#9CA3AF', fontWeight: 600, textAlign: 'center' }}>
-                      👆 Click here then press Ctrl+V to paste your Excel data
-                    </div>
+              {project?.project_type === 'checklist' && (
+                <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+                  <button onClick={() => { setImportFormat('tasks'); setPastedText(''); }} style={{ padding: '8px 14px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', backgroundColor: importFormat === 'tasks' ? '#F9731620' : '#1F2937', border: `1px solid ${importFormat === 'tasks' ? '#F97316' : '#374151'}`, color: importFormat === 'tasks' ? '#F97316' : '#9CA3AF' }}>Tasks Only</button>
+                  <button onClick={() => { setImportFormat('checklist'); setPastedText(''); }} style={{ padding: '8px 14px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', backgroundColor: importFormat === 'checklist' ? '#F9731620' : '#1F2937', border: `1px solid ${importFormat === 'checklist' ? '#F97316' : '#374151'}`, color: importFormat === 'checklist' ? '#F97316' : '#9CA3AF' }}>Tasks + Checklist Items</button>
+                </div>
+              )}
+              {importFormat === 'tasks' ? (
+                <>
+                  <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 10 }}>Copy cells from Excel → click the table below → press <strong style={{ color: '#FFFFFF' }}>Ctrl+V</strong></div>
+                  <div style={{ overflowX: 'auto', borderRadius: 8, border: `2px solid ${pastedText ? '#22C55E' : '#374151'}`, cursor: 'text', outline: 'none', position: 'relative' }} tabIndex={0} onPaste={(e) => { e.preventDefault(); const text = e.clipboardData.getData('text'); setPastedText(text); }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 600 }}>
+                      <thead>
+                        <tr style={{ backgroundColor: '#1A2235' }}>
+                          <th style={{ width: 36, padding: '9px 8px', textAlign: 'center', fontSize: 11, color: '#4B5563', borderRight: '1px solid #2D3748', borderBottom: '2px solid #374151' }}></th>
+                          {[{ label: 'A — Task Name', required: true }, { label: 'B — Description', required: false }, { label: 'C — Priority', required: false }, { label: 'D — Due Date (YYYY-MM-DD)', required: false }].map((col, ci) => (
+                            <th key={ci} style={{ padding: '9px 12px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: col.required ? '#F97316' : '#9CA3AF', borderRight: ci < 3 ? '1px solid #2D3748' : 'none', borderBottom: '2px solid #374151', whiteSpace: 'nowrap' }}>
+                              {col.label}{col.required && <span style={{ color: '#EF4444', marginLeft: 2 }}>*</span>}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pastedRows.length > 0
+                          ? pastedRows.map((row, i) => (
+                              <tr key={i} style={{ backgroundColor: i % 2 === 0 ? '#111827' : '#0D1321', borderBottom: '1px solid #1E2A3A' }}>
+                                <td style={{ padding: '7px 8px', textAlign: 'center', fontSize: 11, color: '#4B5563', borderRight: '1px solid #1E2A3A', userSelect: 'none' }}>{i + 1}</td>
+                                <td style={{ padding: '7px 12px', fontSize: 13, color: row.title ? '#FFFFFF' : '#374151', borderRight: '1px solid #1E2A3A' }}>{row.title || ''}</td>
+                                <td style={{ padding: '7px 12px', fontSize: 13, color: row.description ? '#D1D5DB' : '#374151', borderRight: '1px solid #1E2A3A' }}>{row.description || ''}</td>
+                                <td style={{ padding: '7px 12px', fontSize: 13, color: row.priority === 'high' ? '#EF4444' : row.priority === 'low' ? '#6B7280' : row.priority ? '#F59E0B' : '#374151', borderRight: '1px solid #1E2A3A' }}>{row.priority || ''}</td>
+                                <td style={{ padding: '7px 12px', fontSize: 13, color: row.dueDate ? '#D1D5DB' : '#374151' }}>{row.dueDate || ''}</td>
+                              </tr>
+                            ))
+                          : [1, 2, 3, 4, 5, 6, 7, 8].map((row) => (
+                              <tr key={row} style={{ backgroundColor: row % 2 === 0 ? '#0D1321' : '#111827', borderBottom: '1px solid #1E2A3A' }}>
+                                <td style={{ padding: '7px 8px', textAlign: 'center', fontSize: 11, color: '#374151', borderRight: '1px solid #1E2A3A', userSelect: 'none' }}>{row}</td>
+                                <td style={{ padding: '7px 12px', borderRight: '1px solid #1E2A3A', height: 34 }}></td>
+                                <td style={{ padding: '7px 12px', borderRight: '1px solid #1E2A3A' }}></td>
+                                <td style={{ padding: '7px 12px', borderRight: '1px solid #1E2A3A' }}></td>
+                                <td style={{ padding: '7px 12px' }}></td>
+                              </tr>
+                            ))
+                        }
+                      </tbody>
+                    </table>
+                    {!pastedText && (
+                      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+                        <div style={{ backgroundColor: '#1A2235CC', borderRadius: 8, padding: '10px 20px', fontSize: 13, color: '#9CA3AF', fontWeight: 600, textAlign: 'center' }}>
+                          👆 Click here then press Ctrl+V to paste your Excel data
+                        </div>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-              <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 10 }}>
-                {pastedText ? <span style={{ fontSize: 12, color: '#22C55E', fontWeight: 600 }}>✅ {pastedText.trim().split('\n').filter(l => l.trim()).length} rows detected</span> : <span style={{ fontSize: 12, color: '#6B7280' }}>Click the table and paste with Ctrl+V</span>}
-                {pastedText && <button onClick={() => setPastedText('')} style={{ padding: '4px 10px', backgroundColor: 'transparent', border: '1px solid #374151', borderRadius: 6, color: '#6B7280', fontSize: 11, cursor: 'pointer' }}>Clear</button>}
-              </div>
-              <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
-                <button onClick={handlePastePreview} disabled={!pastedText.trim()} style={{ padding: '10px 24px', backgroundColor: pastedText.trim() ? '#F97316' : '#374151', border: 'none', borderRadius: 10, color: pastedText.trim() ? '#0A0F1E' : '#6B7280', fontSize: 14, fontWeight: 700, cursor: pastedText.trim() ? 'pointer' : 'not-allowed' }}>Preview Tasks →</button>
-              </div>
+                  <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 10 }}>
+                    {pastedText ? <span style={{ fontSize: 12, color: '#22C55E', fontWeight: 600 }}>✅ {pastedText.trim().split('\n').filter(l => l.trim()).length} rows detected</span> : <span style={{ fontSize: 12, color: '#6B7280' }}>Click the table and paste with Ctrl+V</span>}
+                    {pastedText && <button onClick={() => setPastedText('')} style={{ padding: '4px 10px', backgroundColor: 'transparent', border: '1px solid #374151', borderRadius: 6, color: '#6B7280', fontSize: 11, cursor: 'pointer' }}>Clear</button>}
+                  </div>
+                  <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
+                    <button onClick={handlePastePreview} disabled={!pastedText.trim()} style={{ padding: '10px 24px', backgroundColor: pastedText.trim() ? '#F97316' : '#374151', border: 'none', borderRadius: 10, color: pastedText.trim() ? '#0A0F1E' : '#6B7280', fontSize: 14, fontWeight: 700, cursor: pastedText.trim() ? 'pointer' : 'not-allowed' }}>Preview Tasks →</button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 10 }}>Two columns: Task name, then Checklist Item. Repeat the task name on each row that adds another item to it. Copy from Excel → click the table below → press <strong style={{ color: '#FFFFFF' }}>Ctrl+V</strong></div>
+                  <div style={{ overflowX: 'auto', borderRadius: 8, border: `2px solid ${pastedText ? '#22C55E' : '#374151'}`, cursor: 'text', outline: 'none', position: 'relative' }} tabIndex={0} onPaste={(e) => { e.preventDefault(); const text = e.clipboardData.getData('text'); setPastedText(text); }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 500 }}>
+                      <thead>
+                        <tr style={{ backgroundColor: '#1A2235' }}>
+                          <th style={{ width: 36, padding: '9px 8px', textAlign: 'center', fontSize: 11, color: '#4B5563', borderRight: '1px solid #2D3748', borderBottom: '2px solid #374151' }}></th>
+                          {[{ label: 'A — Task Name', required: true }, { label: 'B — Checklist Item', required: true }].map((col, ci) => (
+                            <th key={ci} style={{ padding: '9px 12px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: '#F97316', borderRight: ci < 1 ? '1px solid #2D3748' : 'none', borderBottom: '2px solid #374151', whiteSpace: 'nowrap' }}>
+                              {col.label}<span style={{ color: '#EF4444', marginLeft: 2 }}>*</span>
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pastedChecklistRows.length > 0
+                          ? pastedChecklistRows.map((row, i) => (
+                              <tr key={i} style={{ backgroundColor: i % 2 === 0 ? '#111827' : '#0D1321', borderBottom: '1px solid #1E2A3A' }}>
+                                <td style={{ padding: '7px 8px', textAlign: 'center', fontSize: 11, color: '#4B5563', borderRight: '1px solid #1E2A3A', userSelect: 'none' }}>{i + 1}</td>
+                                <td style={{ padding: '7px 12px', fontSize: 13, color: row.taskName ? '#FFFFFF' : '#374151', borderRight: '1px solid #1E2A3A' }}>{row.taskName || ''}</td>
+                                <td style={{ padding: '7px 12px', fontSize: 13, color: row.itemText ? '#D1D5DB' : '#374151' }}>{row.itemText || ''}</td>
+                              </tr>
+                            ))
+                          : [1, 2, 3, 4, 5, 6, 7, 8].map((row) => (
+                              <tr key={row} style={{ backgroundColor: row % 2 === 0 ? '#0D1321' : '#111827', borderBottom: '1px solid #1E2A3A' }}>
+                                <td style={{ padding: '7px 8px', textAlign: 'center', fontSize: 11, color: '#374151', borderRight: '1px solid #1E2A3A', userSelect: 'none' }}>{row}</td>
+                                <td style={{ padding: '7px 12px', borderRight: '1px solid #1E2A3A', height: 34 }}></td>
+                                <td style={{ padding: '7px 12px' }}></td>
+                              </tr>
+                            ))
+                        }
+                      </tbody>
+                    </table>
+                    {!pastedText && (
+                      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+                        <div style={{ backgroundColor: '#1A2235CC', borderRadius: 8, padding: '10px 20px', fontSize: 13, color: '#9CA3AF', fontWeight: 600, textAlign: 'center' }}>
+                          👆 Click here then press Ctrl+V to paste your Excel data
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 10 }}>
+                    {pastedText ? <span style={{ fontSize: 12, color: '#22C55E', fontWeight: 600 }}>✅ {pastedText.trim().split('\n').filter(l => l.trim()).length} rows detected</span> : <span style={{ fontSize: 12, color: '#6B7280' }}>Click the table and paste with Ctrl+V</span>}
+                    {pastedText && <button onClick={() => setPastedText('')} style={{ padding: '4px 10px', backgroundColor: 'transparent', border: '1px solid #374151', borderRadius: 6, color: '#6B7280', fontSize: 11, cursor: 'pointer' }}>Clear</button>}
+                  </div>
+                  <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
+                    <button onClick={handleChecklistPastePreview} disabled={!pastedText.trim()} style={{ padding: '10px 24px', backgroundColor: pastedText.trim() ? '#F97316' : '#374151', border: 'none', borderRadius: 10, color: pastedText.trim() ? '#0A0F1E' : '#6B7280', fontSize: 14, fontWeight: 700, cursor: pastedText.trim() ? 'pointer' : 'not-allowed' }}>Preview →</button>
+                  </div>
+                </>
+              )}
             </>
           )}
-          {importStep === 'preview' && (
+          {importStep === 'preview' && importFormat === 'tasks' && (
             <>
               <div style={{ display: 'flex', gap: 24, marginBottom: 16 }}>
                 <div style={{ textAlign: 'center' }}><div style={{ fontSize: 28, fontWeight: 900, color: '#22C55E' }}>{validCount}</div><div style={{ fontSize: 12, color: '#6B7280' }}>Ready</div></div>
@@ -1130,10 +1492,48 @@ async function handleSaveTask() {
               </div>
             </>
           )}
+          {importStep === 'preview' && importFormat === 'checklist' && (
+            <>
+              <div style={{ display: 'flex', gap: 24, marginBottom: 16 }}>
+                <div style={{ textAlign: 'center' }}><div style={{ fontSize: 28, fontWeight: 900, color: '#22C55E' }}>{parsedChecklistRows.filter(r => r.valid).length}</div><div style={{ fontSize: 12, color: '#6B7280' }}>Ready</div></div>
+                <div style={{ textAlign: 'center' }}><div style={{ fontSize: 28, fontWeight: 900, color: '#EF4444' }}>{parsedChecklistRows.filter(r => !r.valid).length}</div><div style={{ fontSize: 12, color: '#6B7280' }}>Skipped</div></div>
+              </div>
+              <div style={{ overflowX: 'auto', borderRadius: 8, border: '1px solid #374151', marginBottom: 16 }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ backgroundColor: '#1A2235' }}>
+                      {['Task Name', 'Checklist Item', 'Status'].map((h, i) => (
+                        <th key={i} style={{ padding: '8px 12px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: '#6B7280', borderBottom: '1px solid #374151', borderRight: i < 2 ? '1px solid #2D3748' : 'none' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {parsedChecklistRows.map((row, i) => (
+                      <tr key={i} style={{ backgroundColor: row.valid ? (i % 2 === 0 ? '#111827' : '#0D1321') : '#2D1515', borderBottom: '1px solid #1E2A3A' }}>
+                        <td style={{ padding: '7px 12px', fontSize: 13, color: row.valid ? '#FFFFFF' : '#6B7280', borderRight: '1px solid #1E2A3A' }}>{row.taskName || '(empty)'}</td>
+                        <td style={{ padding: '7px 12px', fontSize: 13, color: row.valid ? '#D1D5DB' : '#6B7280', borderRight: '1px solid #1E2A3A' }}>{row.itemText || '(empty)'}</td>
+                        <td style={{ padding: '7px 12px', fontSize: 11, fontWeight: 700 }}>{row.valid ? <span style={{ color: '#22C55E' }}>✅ Ready</span> : <span style={{ color: '#EF4444' }} title={row.reason}>⏭ {row.reason ?? 'Skip'}</span>}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button onClick={() => setImportStep('input')} style={{ padding: '10px 20px', backgroundColor: 'transparent', border: '1px solid #374151', borderRadius: 10, color: '#6B7280', fontSize: 14, cursor: 'pointer' }}>← Edit</button>
+                <button onClick={handleChecklistImport} disabled={importing || parsedChecklistRows.filter(r => r.valid).length === 0} style={{ flex: 1, padding: '10px 24px', backgroundColor: importing || parsedChecklistRows.filter(r => r.valid).length === 0 ? '#374151' : '#F97316', border: 'none', borderRadius: 10, color: importing || parsedChecklistRows.filter(r => r.valid).length === 0 ? '#6B7280' : '#0A0F1E', fontSize: 14, fontWeight: 800, cursor: importing || parsedChecklistRows.filter(r => r.valid).length === 0 ? 'not-allowed' : 'pointer' }}>
+                  {importing ? 'Importing...' : `Import ${parsedChecklistRows.filter(r => r.valid).length} Items`}
+                </button>
+              </div>
+            </>
+          )}
           {importStep === 'done' && (
             <div style={{ textAlign: 'center', padding: '20px 0' }}>
               <div style={{ fontSize: 48, marginBottom: 12 }}>✅</div>
-              <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>{parsedTasks.filter(t => t.valid !== false).length} Tasks Added!</div>
+              <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>
+                {importFormat === 'checklist'
+                  ? `${parsedChecklistRows.filter(r => r.valid).length} Checklist Items Added!`
+                  : `${parsedTasks.filter(t => t.valid !== false).length} Tasks Added!`}
+              </div>
               <button onClick={resetImport} style={{ padding: '10px 24px', backgroundColor: '#F97316', border: 'none', borderRadius: 10, color: '#0A0F1E', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>Done</button>
             </div>
           )}
