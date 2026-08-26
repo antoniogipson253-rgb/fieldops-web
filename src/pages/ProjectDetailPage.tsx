@@ -44,11 +44,19 @@ export default function ProjectDetailPage() {
   const [importMode, setImportMode] = useState<'paste' | 'manual' | null>(null);
   const [pastedText, setPastedText] = useState('');
   const [parsedTasks, setParsedTasks] = useState<any[]>([]);
-  const [importStep, setImportStep] = useState<'input' | 'preview' | 'done'>('input');
+  const [importStep, setImportStep] = useState<'input' | 'preview' | 'done' | 'assign-checklist'>('input');
   const [importing, setImporting] = useState(false);
   const [manualTasks, setManualTasks] = useState([{ title: '', description: '', priority: 'medium', dueDate: '', checklistItems: [] as string[], newItemDraft: '' }]);
-  const [importFormat, setImportFormat] = useState<'tasks' | 'checklist'>('tasks');
-  const [parsedChecklistRows, setParsedChecklistRows] = useState<{ taskName: string; itemText: string; valid: boolean; reason?: string }[]>([]);
+
+  // Post-import checklist assignment (checklist-type projects only): after tasks are
+  // created via paste import, the user picks one task at a time from a dropdown and
+  // types/pastes its checklist items — the task is always explicit, never inferred
+  // from pasted text, so there's no row-to-task grouping logic left to get wrong.
+  const [assignableTasks, setAssignableTasks] = useState<{ id: string; title: string }[]>([]);
+  const [assignTasksLoading, setAssignTasksLoading] = useState(false);
+  const [selectedAssignTaskId, setSelectedAssignTaskId] = useState('');
+  const [assignItemsText, setAssignItemsText] = useState('');
+  const [assignSaving, setAssignSaving] = useState(false);
 
   const [showEditProject, setShowEditProject] = useState(false);
   const [editName, setEditName] = useState('');
@@ -197,8 +205,9 @@ export default function ProjectDetailPage() {
     setPastedText('');
     setParsedTasks([]);
     setManualTasks([{ title: '', description: '', priority: 'medium', dueDate: '', checklistItems: [], newItemDraft: '' }]);
-    setImportFormat('tasks');
-    setParsedChecklistRows([]);
+    setAssignableTasks([]);
+    setSelectedAssignTaskId('');
+    setAssignItemsText('');
   }
 
   async function handleExportPDF() {
@@ -669,8 +678,7 @@ async function handleSaveTask() {
       const isChecklistProject = project?.project_type === 'checklist';
 
       if (isChecklistProject) {
-        // Insert one task at a time so we get each task's id back to attach its checklist items,
-        // matching the pattern used in handleChecklistImport.
+        // Insert one task at a time so we get each task's id back to attach its checklist items.
         for (const t of validTasks) {
           const { data: newTask, error: taskErr } = await supabase
             .from('tasks')
@@ -751,7 +759,13 @@ async function handleSaveTask() {
       queryClient.invalidateQueries({ queryKey: ['web-folders', id] });
       queryClient.invalidateQueries({ queryKey: ['web-calendar-tasks'] });
       invalidateDashboard();
-      setImportStep('done');
+
+      if (project?.project_type === 'checklist') {
+        await loadAssignableTasks();
+        setImportStep('assign-checklist');
+      } else {
+        setImportStep('done');
+      }
     } catch (e: any) { alert(e.message); }
     finally { setImporting(false); }
   }
@@ -763,107 +777,77 @@ async function handleSaveTask() {
       })
     : [];
 
-  const pastedChecklistRows = pastedText.trim()
-    ? pastedText.trim().split('\n').filter(l => l.trim()).slice(0, 20).map(line => {
-        const cols = line.split('\t').map(c => c.trim().replace(/^"|"$/g, ''));
-        return { taskName: cols[0] ?? '', itemText: cols[1] ?? '' };
-      })
-    : [];
-
-  function handleChecklistPastePreview() {
-    if (!pastedText.trim()) return;
-    const lines = pastedText.trim().split('\n').filter(l => l.trim());
-    const counts: Record<string, number> = {};
-    const parsed = lines.slice(0, 500).map((line) => {
-      const cols = line.split('\t').map(c => c.trim().replace(/^"|"$/g, ''));
-      const taskName = cols[0] ?? '';
-      const itemText = cols[1] ?? '';
-      if (!taskName || !itemText) {
-        return { taskName, itemText, valid: false, reason: 'Missing task name or checklist item text' };
-      }
-      const key = taskName.toLowerCase();
-      counts[key] = (counts[key] ?? 0) + 1;
-      if (counts[key] > CHECKLIST_ITEM_CAP) {
-        return { taskName, itemText, valid: false, reason: `Exceeds ${CHECKLIST_ITEM_CAP}-item cap for "${taskName}"` };
-      }
-      return { taskName, itemText, valid: true };
-    });
-    setParsedChecklistRows(parsed);
-    setImportStep('preview');
-  }
-
-  async function handleChecklistImport() {
-    const validRows = parsedChecklistRows.filter((r) => r.valid);
-    if (!validRows.length) return;
-    setImporting(true);
+  // Tasks without a checklist yet, eligible to be picked in the post-import assignment dropdown.
+  async function loadAssignableTasks() {
+    setAssignTasksLoading(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-
-      const groupOrder: string[] = [];
-      const groups = new Map<string, { taskName: string; items: string[] }>();
-      for (const row of validRows) {
-        const key = row.taskName.toLowerCase();
-        if (!groups.has(key)) { groups.set(key, { taskName: row.taskName, items: [] }); groupOrder.push(key); }
-        groups.get(key)!.items.push(row.itemText);
-      }
-
-      const { data: existingTasks, error: existingErr } = await supabase
+      const { data: allTasks, error: tasksErr } = await supabase
         .from('tasks')
         .select('id, title')
-        .eq('project_id', id);
-      if (existingErr) throw existingErr;
-      const existingByTitle = new Map((existingTasks ?? []).map((t: any) => [t.title.toLowerCase(), t.id]));
+        .eq('project_id', id)
+        .eq('archived', false)
+        .order('created_at', { ascending: true });
+      if (tasksErr) throw tasksErr;
 
-      const skipped: string[] = [];
+      const taskIds = (allTasks ?? []).map((t: any) => t.id);
+      const { data: existingItems, error: itemsErr } = await supabase
+        .from('checklist_items')
+        .select('task_id')
+        .in('task_id', taskIds.length > 0 ? taskIds : ['00000000-0000-0000-0000-000000000000']);
+      if (itemsErr) throw itemsErr;
 
-      for (const key of groupOrder) {
-        const group = groups.get(key)!;
-        let taskId = existingByTitle.get(key);
-
-        if (!taskId) {
-          const { data: newTask, error: taskErr } = await supabase
-            .from('tasks')
-            .insert({ project_id: id, folder_id: selectedFolder || null, title: group.taskName, status: 'open', created_by: user!.id })
-            .select('id')
-            .single();
-          if (taskErr) throw taskErr;
-          taskId = newTask.id;
-        }
-
-        const { count: existingCount, error: countErr } = await supabase
-          .from('checklist_items')
-          .select('id', { count: 'exact', head: true })
-          .eq('task_id', taskId);
-        if (countErr) throw countErr;
-
-        const remainingCapacity = Math.max(0, CHECKLIST_ITEM_CAP - (existingCount ?? 0));
-        const itemsToInsert = group.items.slice(0, remainingCapacity);
-        const droppedForCap = group.items.slice(remainingCapacity);
-        if (droppedForCap.length > 0) {
-          skipped.push(`${droppedForCap.length} item(s) for "${group.taskName}" (already at the ${CHECKLIST_ITEM_CAP}-item cap)`);
-        }
-
-        if (itemsToInsert.length > 0) {
-          const { error: itemsErr } = await supabase.from('checklist_items').insert(
-            itemsToInsert.map((text, i) => ({ task_id: taskId, item_text: text, sort_order: (existingCount ?? 0) + i }))
-          );
-          if (itemsErr) throw itemsErr;
-        }
-      }
-
-      queryClient.invalidateQueries({ queryKey: ['web-folder-tasks', id] });
-      queryClient.invalidateQueries({ queryKey: ['web-folders', id] });
-      queryClient.invalidateQueries({ queryKey: ['web-calendar-tasks'] });
-      invalidateDashboard();
-
-      if (skipped.length > 0) {
-        alert(`Imported, but some items were skipped:\n${skipped.join('\n')}`);
-      }
-      setImportStep('done');
+      const withChecklist = new Set((existingItems ?? []).map((r: any) => r.task_id));
+      const withoutChecklist = (allTasks ?? []).filter((t: any) => !withChecklist.has(t.id));
+      setAssignableTasks(withoutChecklist);
+      setSelectedAssignTaskId((prev) => (withoutChecklist.some((t: any) => t.id === prev) ? prev : (withoutChecklist[0]?.id ?? '')));
     } catch (e: any) {
       alert(e.message);
     } finally {
-      setImporting(false);
+      setAssignTasksLoading(false);
+    }
+  }
+
+  // Inserts each non-empty line as a checklist_items row for taskId, capped at
+  // CHECKLIST_ITEM_CAP (task_id is explicit here, never inferred from pasted text).
+  async function commitAssignDraft(taskId: string, text: string) {
+    const lines = text.split('\n').map((l) => l.trim()).filter(Boolean).slice(0, CHECKLIST_ITEM_CAP);
+    if (lines.length === 0) return;
+    const { error } = await supabase.from('checklist_items').insert(
+      lines.map((itemText, i) => ({ task_id: taskId, item_text: itemText, sort_order: i }))
+    );
+    if (error) throw error;
+  }
+
+  async function handleAssignTaskChange(newTaskId: string) {
+    setAssignSaving(true);
+    try {
+      if (selectedAssignTaskId && assignItemsText.trim()) {
+        await commitAssignDraft(selectedAssignTaskId, assignItemsText);
+      }
+      setAssignItemsText('');
+      setSelectedAssignTaskId(newTaskId);
+      await loadAssignableTasks();
+    } catch (e: any) {
+      alert(e.message);
+    } finally {
+      setAssignSaving(false);
+    }
+  }
+
+  async function handleFinishAssignChecklist() {
+    setAssignSaving(true);
+    try {
+      if (selectedAssignTaskId && assignItemsText.trim()) {
+        await commitAssignDraft(selectedAssignTaskId, assignItemsText);
+      }
+      queryClient.invalidateQueries({ queryKey: ['web-folder-tasks', id] });
+      queryClient.invalidateQueries({ queryKey: ['web-folders', id] });
+      invalidateDashboard();
+      resetImport();
+    } catch (e: any) {
+      alert(e.message);
+    } finally {
+      setAssignSaving(false);
     }
   }
 
@@ -871,6 +855,7 @@ async function handleSaveTask() {
   const statusLabels: Record<string, string> = { open: 'Open', in_progress: 'In Progress', completed: 'Done', active: 'Active', on_hold: 'On Hold' };
   const priorityColors: Record<string, string> = { low: '#6B7280', medium: '#F59E0B', high: '#EF4444' };
   const validCount = parsedTasks.filter((t) => t.valid).length;
+  const assignLineCount = assignItemsText.split('\n').map((l) => l.trim()).filter(Boolean).length;
   const progressColor = getProgressColor(projectProgress);
 
   const inputStyle: React.CSSProperties = {
@@ -1419,120 +1404,60 @@ async function handleSaveTask() {
           {importMode === 'paste' && importStep === 'input' && (
             <>
               <button onClick={() => setImportMode(null)} style={{ backgroundColor: 'transparent', border: 'none', color: '#F97316', fontSize: 13, cursor: 'pointer', padding: 0, marginBottom: 14 }}>← Back</button>
-              {project?.project_type === 'checklist' && (
-                <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
-                  <button onClick={() => { setImportFormat('tasks'); setPastedText(''); }} style={{ padding: '8px 14px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', backgroundColor: importFormat === 'tasks' ? '#F9731620' : '#1F2937', border: `1px solid ${importFormat === 'tasks' ? '#F97316' : '#374151'}`, color: importFormat === 'tasks' ? '#F97316' : '#9CA3AF' }}>Tasks Only</button>
-                  <button onClick={() => { setImportFormat('checklist'); setPastedText(''); }} style={{ padding: '8px 14px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', backgroundColor: importFormat === 'checklist' ? '#F9731620' : '#1F2937', border: `1px solid ${importFormat === 'checklist' ? '#F97316' : '#374151'}`, color: importFormat === 'checklist' ? '#F97316' : '#9CA3AF' }}>Tasks + Checklist Items</button>
-                </div>
-              )}
-              {importFormat === 'tasks' ? (
-                <>
-                  <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 10 }}>Copy cells from Excel → click the table below → press <strong style={{ color: '#FFFFFF' }}>Ctrl+V</strong></div>
-                  <div style={{ overflowX: 'auto', borderRadius: 8, border: `2px solid ${pastedText ? '#22C55E' : '#374151'}`, cursor: 'text', outline: 'none', position: 'relative' }} tabIndex={0} onPaste={(e) => { e.preventDefault(); const text = e.clipboardData.getData('text'); setPastedText(text); }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 600 }}>
-                      <thead>
-                        <tr style={{ backgroundColor: '#1A2235' }}>
-                          <th style={{ width: 36, padding: '9px 8px', textAlign: 'center', fontSize: 11, color: '#4B5563', borderRight: '1px solid #2D3748', borderBottom: '2px solid #374151' }}></th>
-                          {[{ label: 'A — Task Name', required: true }, { label: 'B — Description', required: false }, { label: 'C — Priority', required: false }, { label: 'D — Due Date (YYYY-MM-DD)', required: false }].map((col, ci) => (
-                            <th key={ci} style={{ padding: '9px 12px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: col.required ? '#F97316' : '#9CA3AF', borderRight: ci < 3 ? '1px solid #2D3748' : 'none', borderBottom: '2px solid #374151', whiteSpace: 'nowrap' }}>
-                              {col.label}{col.required && <span style={{ color: '#EF4444', marginLeft: 2 }}>*</span>}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {pastedRows.length > 0
-                          ? pastedRows.map((row, i) => (
-                              <tr key={i} style={{ backgroundColor: i % 2 === 0 ? '#111827' : '#0D1321', borderBottom: '1px solid #1E2A3A' }}>
-                                <td style={{ padding: '7px 8px', textAlign: 'center', fontSize: 11, color: '#4B5563', borderRight: '1px solid #1E2A3A', userSelect: 'none' }}>{i + 1}</td>
-                                <td style={{ padding: '7px 12px', fontSize: 13, color: row.title ? '#FFFFFF' : '#374151', borderRight: '1px solid #1E2A3A' }}>{row.title || ''}</td>
-                                <td style={{ padding: '7px 12px', fontSize: 13, color: row.description ? '#D1D5DB' : '#374151', borderRight: '1px solid #1E2A3A' }}>{row.description || ''}</td>
-                                <td style={{ padding: '7px 12px', fontSize: 13, color: row.priority === 'high' ? '#EF4444' : row.priority === 'low' ? '#6B7280' : row.priority ? '#F59E0B' : '#374151', borderRight: '1px solid #1E2A3A' }}>{row.priority || ''}</td>
-                                <td style={{ padding: '7px 12px', fontSize: 13, color: row.dueDate ? '#D1D5DB' : '#374151' }}>{row.dueDate || ''}</td>
-                              </tr>
-                            ))
-                          : [1, 2, 3, 4, 5, 6, 7, 8].map((row) => (
-                              <tr key={row} style={{ backgroundColor: row % 2 === 0 ? '#0D1321' : '#111827', borderBottom: '1px solid #1E2A3A' }}>
-                                <td style={{ padding: '7px 8px', textAlign: 'center', fontSize: 11, color: '#374151', borderRight: '1px solid #1E2A3A', userSelect: 'none' }}>{row}</td>
-                                <td style={{ padding: '7px 12px', borderRight: '1px solid #1E2A3A', height: 34 }}></td>
-                                <td style={{ padding: '7px 12px', borderRight: '1px solid #1E2A3A' }}></td>
-                                <td style={{ padding: '7px 12px', borderRight: '1px solid #1E2A3A' }}></td>
-                                <td style={{ padding: '7px 12px' }}></td>
-                              </tr>
-                            ))
-                        }
-                      </tbody>
-                    </table>
-                    {!pastedText && (
-                      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
-                        <div style={{ backgroundColor: '#1A2235CC', borderRadius: 8, padding: '10px 20px', fontSize: 13, color: '#9CA3AF', fontWeight: 600, textAlign: 'center' }}>
-                          👆 Click here then press Ctrl+V to paste your Excel data
-                        </div>
-                      </div>
-                    )}
+              <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 10 }}>Copy cells from Excel → click the table below → press <strong style={{ color: '#FFFFFF' }}>Ctrl+V</strong></div>
+              <div style={{ overflowX: 'auto', borderRadius: 8, border: `2px solid ${pastedText ? '#22C55E' : '#374151'}`, cursor: 'text', outline: 'none', position: 'relative' }} tabIndex={0} onPaste={(e) => { e.preventDefault(); const text = e.clipboardData.getData('text'); setPastedText(text); }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 600 }}>
+                  <thead>
+                    <tr style={{ backgroundColor: '#1A2235' }}>
+                      <th style={{ width: 36, padding: '9px 8px', textAlign: 'center', fontSize: 11, color: '#4B5563', borderRight: '1px solid #2D3748', borderBottom: '2px solid #374151' }}></th>
+                      {[{ label: 'A — Task Name', required: true }, { label: 'B — Description', required: false }, { label: 'C — Priority', required: false }, { label: 'D — Due Date (YYYY-MM-DD)', required: false }].map((col, ci) => (
+                        <th key={ci} style={{ padding: '9px 12px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: col.required ? '#F97316' : '#9CA3AF', borderRight: ci < 3 ? '1px solid #2D3748' : 'none', borderBottom: '2px solid #374151', whiteSpace: 'nowrap' }}>
+                          {col.label}{col.required && <span style={{ color: '#EF4444', marginLeft: 2 }}>*</span>}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pastedRows.length > 0
+                      ? pastedRows.map((row, i) => (
+                          <tr key={i} style={{ backgroundColor: i % 2 === 0 ? '#111827' : '#0D1321', borderBottom: '1px solid #1E2A3A' }}>
+                            <td style={{ padding: '7px 8px', textAlign: 'center', fontSize: 11, color: '#4B5563', borderRight: '1px solid #1E2A3A', userSelect: 'none' }}>{i + 1}</td>
+                            <td style={{ padding: '7px 12px', fontSize: 13, color: row.title ? '#FFFFFF' : '#374151', borderRight: '1px solid #1E2A3A' }}>{row.title || ''}</td>
+                            <td style={{ padding: '7px 12px', fontSize: 13, color: row.description ? '#D1D5DB' : '#374151', borderRight: '1px solid #1E2A3A' }}>{row.description || ''}</td>
+                            <td style={{ padding: '7px 12px', fontSize: 13, color: row.priority === 'high' ? '#EF4444' : row.priority === 'low' ? '#6B7280' : row.priority ? '#F59E0B' : '#374151', borderRight: '1px solid #1E2A3A' }}>{row.priority || ''}</td>
+                            <td style={{ padding: '7px 12px', fontSize: 13, color: row.dueDate ? '#D1D5DB' : '#374151' }}>{row.dueDate || ''}</td>
+                          </tr>
+                        ))
+                      : [1, 2, 3, 4, 5, 6, 7, 8].map((row) => (
+                          <tr key={row} style={{ backgroundColor: row % 2 === 0 ? '#0D1321' : '#111827', borderBottom: '1px solid #1E2A3A' }}>
+                            <td style={{ padding: '7px 8px', textAlign: 'center', fontSize: 11, color: '#374151', borderRight: '1px solid #1E2A3A', userSelect: 'none' }}>{row}</td>
+                            <td style={{ padding: '7px 12px', borderRight: '1px solid #1E2A3A', height: 34 }}></td>
+                            <td style={{ padding: '7px 12px', borderRight: '1px solid #1E2A3A' }}></td>
+                            <td style={{ padding: '7px 12px', borderRight: '1px solid #1E2A3A' }}></td>
+                            <td style={{ padding: '7px 12px' }}></td>
+                          </tr>
+                        ))
+                    }
+                  </tbody>
+                </table>
+                {!pastedText && (
+                  <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+                    <div style={{ backgroundColor: '#1A2235CC', borderRadius: 8, padding: '10px 20px', fontSize: 13, color: '#9CA3AF', fontWeight: 600, textAlign: 'center' }}>
+                      👆 Click here then press Ctrl+V to paste your Excel data
+                    </div>
                   </div>
-                  <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 10 }}>
-                    {pastedText ? <span style={{ fontSize: 12, color: '#22C55E', fontWeight: 600 }}>✅ {pastedText.trim().split('\n').filter(l => l.trim()).length} rows detected</span> : <span style={{ fontSize: 12, color: '#6B7280' }}>Click the table and paste with Ctrl+V</span>}
-                    {pastedText && <button onClick={() => setPastedText('')} style={{ padding: '4px 10px', backgroundColor: 'transparent', border: '1px solid #374151', borderRadius: 6, color: '#6B7280', fontSize: 11, cursor: 'pointer' }}>Clear</button>}
-                  </div>
-                  <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
-                    <button onClick={handlePastePreview} disabled={!pastedText.trim()} style={{ padding: '10px 24px', backgroundColor: pastedText.trim() ? '#F97316' : '#374151', border: 'none', borderRadius: 10, color: pastedText.trim() ? '#0A0F1E' : '#6B7280', fontSize: 14, fontWeight: 700, cursor: pastedText.trim() ? 'pointer' : 'not-allowed' }}>Preview Tasks →</button>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 10 }}>Two columns: Task name, then Checklist Item. Repeat the task name on each row that adds another item to it. Copy from Excel → click the table below → press <strong style={{ color: '#FFFFFF' }}>Ctrl+V</strong></div>
-                  <div style={{ overflowX: 'auto', borderRadius: 8, border: `2px solid ${pastedText ? '#22C55E' : '#374151'}`, cursor: 'text', outline: 'none', position: 'relative' }} tabIndex={0} onPaste={(e) => { e.preventDefault(); const text = e.clipboardData.getData('text'); setPastedText(text); }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 500 }}>
-                      <thead>
-                        <tr style={{ backgroundColor: '#1A2235' }}>
-                          <th style={{ width: 36, padding: '9px 8px', textAlign: 'center', fontSize: 11, color: '#4B5563', borderRight: '1px solid #2D3748', borderBottom: '2px solid #374151' }}></th>
-                          {[{ label: 'A — Task Name', required: true }, { label: 'B — Checklist Item', required: true }].map((col, ci) => (
-                            <th key={ci} style={{ padding: '9px 12px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: '#F97316', borderRight: ci < 1 ? '1px solid #2D3748' : 'none', borderBottom: '2px solid #374151', whiteSpace: 'nowrap' }}>
-                              {col.label}<span style={{ color: '#EF4444', marginLeft: 2 }}>*</span>
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {pastedChecklistRows.length > 0
-                          ? pastedChecklistRows.map((row, i) => (
-                              <tr key={i} style={{ backgroundColor: i % 2 === 0 ? '#111827' : '#0D1321', borderBottom: '1px solid #1E2A3A' }}>
-                                <td style={{ padding: '7px 8px', textAlign: 'center', fontSize: 11, color: '#4B5563', borderRight: '1px solid #1E2A3A', userSelect: 'none' }}>{i + 1}</td>
-                                <td style={{ padding: '7px 12px', fontSize: 13, color: row.taskName ? '#FFFFFF' : '#374151', borderRight: '1px solid #1E2A3A' }}>{row.taskName || ''}</td>
-                                <td style={{ padding: '7px 12px', fontSize: 13, color: row.itemText ? '#D1D5DB' : '#374151' }}>{row.itemText || ''}</td>
-                              </tr>
-                            ))
-                          : [1, 2, 3, 4, 5, 6, 7, 8].map((row) => (
-                              <tr key={row} style={{ backgroundColor: row % 2 === 0 ? '#0D1321' : '#111827', borderBottom: '1px solid #1E2A3A' }}>
-                                <td style={{ padding: '7px 8px', textAlign: 'center', fontSize: 11, color: '#374151', borderRight: '1px solid #1E2A3A', userSelect: 'none' }}>{row}</td>
-                                <td style={{ padding: '7px 12px', borderRight: '1px solid #1E2A3A', height: 34 }}></td>
-                                <td style={{ padding: '7px 12px' }}></td>
-                              </tr>
-                            ))
-                        }
-                      </tbody>
-                    </table>
-                    {!pastedText && (
-                      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
-                        <div style={{ backgroundColor: '#1A2235CC', borderRadius: 8, padding: '10px 20px', fontSize: 13, color: '#9CA3AF', fontWeight: 600, textAlign: 'center' }}>
-                          👆 Click here then press Ctrl+V to paste your Excel data
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 10 }}>
-                    {pastedText ? <span style={{ fontSize: 12, color: '#22C55E', fontWeight: 600 }}>✅ {pastedText.trim().split('\n').filter(l => l.trim()).length} rows detected</span> : <span style={{ fontSize: 12, color: '#6B7280' }}>Click the table and paste with Ctrl+V</span>}
-                    {pastedText && <button onClick={() => setPastedText('')} style={{ padding: '4px 10px', backgroundColor: 'transparent', border: '1px solid #374151', borderRadius: 6, color: '#6B7280', fontSize: 11, cursor: 'pointer' }}>Clear</button>}
-                  </div>
-                  <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
-                    <button onClick={handleChecklistPastePreview} disabled={!pastedText.trim()} style={{ padding: '10px 24px', backgroundColor: pastedText.trim() ? '#F97316' : '#374151', border: 'none', borderRadius: 10, color: pastedText.trim() ? '#0A0F1E' : '#6B7280', fontSize: 14, fontWeight: 700, cursor: pastedText.trim() ? 'pointer' : 'not-allowed' }}>Preview →</button>
-                  </div>
-                </>
-              )}
+                )}
+              </div>
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 10 }}>
+                {pastedText ? <span style={{ fontSize: 12, color: '#22C55E', fontWeight: 600 }}>✅ {pastedText.trim().split('\n').filter(l => l.trim()).length} rows detected</span> : <span style={{ fontSize: 12, color: '#6B7280' }}>Click the table and paste with Ctrl+V</span>}
+                {pastedText && <button onClick={() => setPastedText('')} style={{ padding: '4px 10px', backgroundColor: 'transparent', border: '1px solid #374151', borderRadius: 6, color: '#6B7280', fontSize: 11, cursor: 'pointer' }}>Clear</button>}
+              </div>
+              <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
+                <button onClick={handlePastePreview} disabled={!pastedText.trim()} style={{ padding: '10px 24px', backgroundColor: pastedText.trim() ? '#F97316' : '#374151', border: 'none', borderRadius: 10, color: pastedText.trim() ? '#0A0F1E' : '#6B7280', fontSize: 14, fontWeight: 700, cursor: pastedText.trim() ? 'pointer' : 'not-allowed' }}>Preview Tasks →</button>
+              </div>
             </>
           )}
-          {importStep === 'preview' && importFormat === 'tasks' && (
+          {importStep === 'preview' && (
             <>
               <div style={{ display: 'flex', gap: 24, marginBottom: 16 }}>
                 <div style={{ textAlign: 'center' }}><div style={{ fontSize: 28, fontWeight: 900, color: '#22C55E' }}>{validCount}</div><div style={{ fontSize: 12, color: '#6B7280' }}>Ready</div></div>
@@ -1568,50 +1493,60 @@ async function handleSaveTask() {
               </div>
             </>
           )}
-          {importStep === 'preview' && importFormat === 'checklist' && (
-            <>
-              <div style={{ display: 'flex', gap: 24, marginBottom: 16 }}>
-                <div style={{ textAlign: 'center' }}><div style={{ fontSize: 28, fontWeight: 900, color: '#22C55E' }}>{parsedChecklistRows.filter(r => r.valid).length}</div><div style={{ fontSize: 12, color: '#6B7280' }}>Ready</div></div>
-                <div style={{ textAlign: 'center' }}><div style={{ fontSize: 28, fontWeight: 900, color: '#EF4444' }}>{parsedChecklistRows.filter(r => !r.valid).length}</div><div style={{ fontSize: 12, color: '#6B7280' }}>Skipped</div></div>
-              </div>
-              <div style={{ overflowX: 'auto', borderRadius: 8, border: '1px solid #374151', marginBottom: 16 }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr style={{ backgroundColor: '#1A2235' }}>
-                      {['Task Name', 'Checklist Item', 'Status'].map((h, i) => (
-                        <th key={i} style={{ padding: '8px 12px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: '#6B7280', borderBottom: '1px solid #374151', borderRight: i < 2 ? '1px solid #2D3748' : 'none' }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {parsedChecklistRows.map((row, i) => (
-                      <tr key={i} style={{ backgroundColor: row.valid ? (i % 2 === 0 ? '#111827' : '#0D1321') : '#2D1515', borderBottom: '1px solid #1E2A3A' }}>
-                        <td style={{ padding: '7px 12px', fontSize: 13, color: row.valid ? '#FFFFFF' : '#6B7280', borderRight: '1px solid #1E2A3A' }}>{row.taskName || '(empty)'}</td>
-                        <td style={{ padding: '7px 12px', fontSize: 13, color: row.valid ? '#D1D5DB' : '#6B7280', borderRight: '1px solid #1E2A3A' }}>{row.itemText || '(empty)'}</td>
-                        <td style={{ padding: '7px 12px', fontSize: 11, fontWeight: 700 }}>{row.valid ? <span style={{ color: '#22C55E' }}>✅ Ready</span> : <span style={{ color: '#EF4444' }} title={row.reason}>⏭ {row.reason ?? 'Skip'}</span>}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <div style={{ display: 'flex', gap: 10 }}>
-                <button onClick={() => setImportStep('input')} style={{ padding: '10px 20px', backgroundColor: 'transparent', border: '1px solid #374151', borderRadius: 10, color: '#6B7280', fontSize: 14, cursor: 'pointer' }}>← Edit</button>
-                <button onClick={handleChecklistImport} disabled={importing || parsedChecklistRows.filter(r => r.valid).length === 0} style={{ flex: 1, padding: '10px 24px', backgroundColor: importing || parsedChecklistRows.filter(r => r.valid).length === 0 ? '#374151' : '#F97316', border: 'none', borderRadius: 10, color: importing || parsedChecklistRows.filter(r => r.valid).length === 0 ? '#6B7280' : '#0A0F1E', fontSize: 14, fontWeight: 800, cursor: importing || parsedChecklistRows.filter(r => r.valid).length === 0 ? 'not-allowed' : 'pointer' }}>
-                  {importing ? 'Importing...' : `Import ${parsedChecklistRows.filter(r => r.valid).length} Items`}
-                </button>
-              </div>
-            </>
-          )}
           {importStep === 'done' && (
             <div style={{ textAlign: 'center', padding: '20px 0' }}>
               <div style={{ fontSize: 48, marginBottom: 12 }}>✅</div>
               <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>
-                {importFormat === 'checklist'
-                  ? `${parsedChecklistRows.filter(r => r.valid).length} Checklist Items Added!`
-                  : `${parsedTasks.filter(t => t.valid !== false).length} Tasks Added!`}
+                {`${parsedTasks.filter(t => t.valid !== false).length} Tasks Added!`}
               </div>
               <button onClick={resetImport} style={{ padding: '10px 24px', backgroundColor: '#F97316', border: 'none', borderRadius: 10, color: '#0A0F1E', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>Done</button>
             </div>
+          )}
+          {importStep === 'assign-checklist' && (
+            <>
+              <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>✅ Tasks created!</div>
+              <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 18 }}>
+                Now add checklist items — pick a task below, then type or paste one item per line. Switching tasks (or finishing) saves what you typed automatically.
+              </div>
+              {assignTasksLoading ? (
+                <div style={{ color: '#F97316', fontSize: 13, marginBottom: 16 }}>Loading tasks...</div>
+              ) : assignableTasks.length === 0 ? (
+                <div style={{ padding: '16px 0', fontSize: 13, color: '#4B5563' }}>Every task in this project already has a checklist.</div>
+              ) : (
+                <>
+                  <div style={{ marginBottom: 14 }}>
+                    <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#6B7280', letterSpacing: 2, marginBottom: 6 }}>TASK</label>
+                    <select
+                      value={selectedAssignTaskId}
+                      onChange={(e) => handleAssignTaskChange(e.target.value)}
+                      disabled={assignSaving}
+                      style={{ ...inputStyle, cursor: assignSaving ? 'not-allowed' : 'pointer' }}
+                    >
+                      {assignableTasks.map((t) => <option key={t.id} value={t.id}>{t.title}</option>)}
+                    </select>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+                    <label style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', letterSpacing: 2 }}>CHECKLIST ITEMS (ONE PER LINE)</label>
+                    <span style={{ fontSize: 12, color: assignLineCount > CHECKLIST_ITEM_CAP ? '#F59E0B' : '#4B5563' }}>{assignLineCount}/{CHECKLIST_ITEM_CAP}</span>
+                  </div>
+                  <textarea
+                    value={assignItemsText}
+                    onChange={(e) => setAssignItemsText(e.target.value)}
+                    disabled={assignSaving}
+                    placeholder={'Faucet\nSink\nDrain trap...'}
+                    style={{ ...inputStyle, resize: 'vertical', minHeight: 140, fontFamily: 'inherit' }}
+                  />
+                  {assignLineCount > CHECKLIST_ITEM_CAP && (
+                    <div style={{ fontSize: 12, color: '#F59E0B', marginTop: 6 }}>Only the first {CHECKLIST_ITEM_CAP} lines will be saved for this task.</div>
+                  )}
+                </>
+              )}
+              <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+                <button onClick={handleFinishAssignChecklist} disabled={assignSaving} style={{ padding: '10px 24px', backgroundColor: '#F97316', border: 'none', borderRadius: 10, color: '#0A0F1E', fontSize: 14, fontWeight: 800, cursor: assignSaving ? 'not-allowed' : 'pointer' }}>
+                  {assignSaving ? 'Saving...' : 'Done — Save & Close'}
+                </button>
+              </div>
+            </>
           )}
         </div>
       )}
