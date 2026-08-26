@@ -46,7 +46,7 @@ export default function ProjectDetailPage() {
   const [parsedTasks, setParsedTasks] = useState<any[]>([]);
   const [importStep, setImportStep] = useState<'input' | 'preview' | 'done'>('input');
   const [importing, setImporting] = useState(false);
-  const [manualTasks, setManualTasks] = useState([{ title: '', description: '', priority: 'medium', dueDate: '' }]);
+  const [manualTasks, setManualTasks] = useState([{ title: '', description: '', priority: 'medium', dueDate: '', checklistItems: [] as string[], newItemDraft: '' }]);
   const [importFormat, setImportFormat] = useState<'tasks' | 'checklist'>('tasks');
   const [parsedChecklistRows, setParsedChecklistRows] = useState<{ taskName: string; itemText: string; valid: boolean; reason?: string }[]>([]);
 
@@ -666,15 +666,44 @@ async function handleSaveTask() {
     setImporting(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      const { error } = await supabase.from('tasks').insert(
-        validTasks.map((t) => ({
-          project_id: id, folder_id: selectedFolder || null,
-          title: t.title.trim(), description: t.description.trim() || null,
-          priority: t.priority, due_date: t.dueDate || null,
-          status: 'open', created_by: user!.id,
-        }))
-      );
-      if (error) throw error;
+      const isChecklistProject = project?.project_type === 'checklist';
+
+      if (isChecklistProject) {
+        // Insert one task at a time so we get each task's id back to attach its checklist items,
+        // matching the pattern used in handleChecklistImport.
+        for (const t of validTasks) {
+          const { data: newTask, error: taskErr } = await supabase
+            .from('tasks')
+            .insert({
+              project_id: id, folder_id: selectedFolder || null,
+              title: t.title.trim(), description: t.description.trim() || null,
+              priority: t.priority, due_date: t.dueDate || null,
+              status: 'open', created_by: user!.id,
+            })
+            .select('id')
+            .single();
+          if (taskErr) throw taskErr;
+
+          const items = t.checklistItems.map((s) => s.trim()).filter(Boolean).slice(0, CHECKLIST_ITEM_CAP);
+          if (items.length > 0) {
+            const { error: itemsErr } = await supabase.from('checklist_items').insert(
+              items.map((text, i) => ({ task_id: newTask.id, item_text: text, sort_order: i }))
+            );
+            if (itemsErr) throw itemsErr;
+          }
+        }
+      } else {
+        const { error } = await supabase.from('tasks').insert(
+          validTasks.map((t) => ({
+            project_id: id, folder_id: selectedFolder || null,
+            title: t.title.trim(), description: t.description.trim() || null,
+            priority: t.priority, due_date: t.dueDate || null,
+            status: 'open', created_by: user!.id,
+          }))
+        );
+        if (error) throw error;
+      }
+
       queryClient.invalidateQueries({ queryKey: ['web-folder-tasks', id] });
       queryClient.invalidateQueries({ queryKey: ['web-folders', id] });
       queryClient.invalidateQueries({ queryKey: ['web-calendar-tasks'] });
@@ -1328,11 +1357,58 @@ async function handleSaveTask() {
                         </td>
                       </tr>
                     ))}
+                    {project?.project_type === 'checklist' && manualTasks.map((task, i) => (
+                      <tr key={`checklist-${i}`} style={{ backgroundColor: i % 2 === 0 ? '#111827' : '#0D1321', borderBottom: '1px solid #1E2A3A' }}>
+                        <td colSpan={6} style={{ padding: '8px 16px 14px 44px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', letterSpacing: 1 }}>CHECKLIST ITEMS (OPTIONAL)</span>
+                            <span style={{ fontSize: 11, color: '#4B5563' }}>{task.checklistItems.length}/{CHECKLIST_ITEM_CAP}</span>
+                          </div>
+                          {task.checklistItems.length > 0 && (
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+                              {task.checklistItems.map((itemText, itemIdx) => (
+                                <span key={itemIdx} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#D1D5DB', backgroundColor: '#1F2937', border: '1px solid #374151', borderRadius: 20, padding: '4px 6px 4px 12px' }}>
+                                  {itemText}
+                                  <button
+                                    onClick={() => { const u = [...manualTasks]; u[i].checklistItems = u[i].checklistItems.filter((_, idx) => idx !== itemIdx); setManualTasks(u); }}
+                                    style={{ background: 'none', border: 'none', color: '#6B7280', cursor: 'pointer', fontSize: 12, padding: '2px 4px', lineHeight: 1 }}
+                                  >✕</button>
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          {task.checklistItems.length >= CHECKLIST_ITEM_CAP ? (
+                            <div style={{ fontSize: 12, color: '#F59E0B' }}>Checklist item limit reached ({CHECKLIST_ITEM_CAP} max).</div>
+                          ) : (
+                            <div style={{ display: 'flex', gap: 8 }}>
+                              <input
+                                value={task.newItemDraft}
+                                onChange={(e) => { const u = [...manualTasks]; u[i].newItemDraft = e.target.value; setManualTasks(u); }}
+                                onKeyDown={(e) => {
+                                  if (e.key !== 'Enter' || !task.newItemDraft.trim() || task.checklistItems.length >= CHECKLIST_ITEM_CAP) return;
+                                  const u = [...manualTasks]; u[i].checklistItems = [...u[i].checklistItems, task.newItemDraft.trim()]; u[i].newItemDraft = ''; setManualTasks(u);
+                                }}
+                                placeholder="Add checklist item..."
+                                style={{ flex: 1, maxWidth: 320, padding: '7px 12px', backgroundColor: '#1F2937', border: '1px solid #374151', borderRadius: 8, color: '#FFFFFF', fontSize: 13, outline: 'none' }}
+                              />
+                              <button
+                                onClick={() => {
+                                  if (!task.newItemDraft.trim() || task.checklistItems.length >= CHECKLIST_ITEM_CAP) return;
+                                  const u = [...manualTasks]; u[i].checklistItems = [...u[i].checklistItems, task.newItemDraft.trim()]; u[i].newItemDraft = ''; setManualTasks(u);
+                                }}
+                                disabled={!task.newItemDraft.trim()}
+                                style={{ padding: '7px 14px', backgroundColor: !task.newItemDraft.trim() ? '#374151' : '#F97316', border: 'none', borderRadius: 8, color: !task.newItemDraft.trim() ? '#6B7280' : '#0A0F1E', fontSize: 12, fontWeight: 700, cursor: !task.newItemDraft.trim() ? 'not-allowed' : 'pointer' }}
+                              >+ Add</button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
               <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 12 }}>
-                <button onClick={() => setManualTasks([...manualTasks, { title: '', description: '', priority: 'medium', dueDate: '' }])} style={{ padding: '7px 14px', backgroundColor: 'transparent', border: '1px solid #374151', borderRadius: 8, color: '#9CA3AF', fontSize: 12, cursor: 'pointer' }}>+ Add Row</button>
+                <button onClick={() => setManualTasks([...manualTasks, { title: '', description: '', priority: 'medium', dueDate: '', checklistItems: [], newItemDraft: '' }])} style={{ padding: '7px 14px', backgroundColor: 'transparent', border: '1px solid #374151', borderRadius: 8, color: '#9CA3AF', fontSize: 12, cursor: 'pointer' }}>+ Add Row</button>
                 <button onClick={handleSaveManual} disabled={importing || !manualTasks.some(t => t.title.trim())} style={{ padding: '10px 24px', backgroundColor: !manualTasks.some(t => t.title.trim()) || importing ? '#374151' : '#F97316', border: 'none', borderRadius: 10, color: !manualTasks.some(t => t.title.trim()) || importing ? '#6B7280' : '#0A0F1E', fontSize: 14, fontWeight: 800, cursor: importing ? 'not-allowed' : 'pointer' }}>
                   {importing ? 'Saving...' : `Save ${manualTasks.filter(t => t.title.trim()).length} Task${manualTasks.filter(t => t.title.trim()).length !== 1 ? 's' : ''}`}
                 </button>
