@@ -104,6 +104,20 @@ export default function ProjectDetailPage() {
     queryClient.invalidateQueries({ queryKey: ['pm-dash-progress'] });
   };
 
+  // Shared by every call site that can set a task's status to 'completed'
+  // (inline status dropdown, Edit Task modal, Archive). Only offered to
+  // admin/PM — everyone else stays blocked with the plain CHK01 message.
+  async function completeTaskViaOverrideIfAllowed(taskId: string): Promise<boolean> {
+    if (!isAdmin && !isPM) return false;
+    const confirmed = window.confirm(
+      "This task's checklist is empty or incomplete. Override and mark it complete anyway?\n\nThis bypasses the checklist requirement for this task only."
+    );
+    if (!confirmed) return false;
+    const { error } = await supabase.rpc('complete_task_with_override', { p_task_id: taskId });
+    if (error) throw error;
+    return true;
+  }
+
   const { data: project } = useQuery({
     queryKey: ['web-project', id],
     queryFn: async () => {
@@ -166,7 +180,14 @@ export default function ProjectDetailPage() {
   const { mutate: updateStatus } = useMutation({
     mutationFn: async ({ taskId, status }: { taskId: string; status: string }) => {
       const { error } = await supabase.from('tasks').update({ status, archived: status === 'completed' }).eq('id', taskId);
-      if (error) throw error;
+      if (error) {
+        if (error.code === 'CHK01' && status === 'completed' && await completeTaskViaOverrideIfAllowed(taskId)) {
+          const { error: archiveErr } = await supabase.from('tasks').update({ archived: true }).eq('id', taskId);
+          if (archiveErr) throw archiveErr;
+          return;
+        }
+        throw error;
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['web-folder-tasks', id] });
@@ -617,7 +638,17 @@ async function handleSaveTask() {
       .update(updatePayload)
       .eq('id', selectedTask.id);
 
-    if (error) throw error;
+    if (error) {
+      if (error.code === 'CHK01' && editTaskStatus === 'completed' && await completeTaskViaOverrideIfAllowed(selectedTask.id)) {
+        // The rejected update above rolled back entirely, so re-apply every
+        // other edited field now that status is already past the gate.
+        const { status: _status, ...restPayload } = updatePayload;
+        const { error: restErr } = await supabase.from('tasks').update(restPayload).eq('id', selectedTask.id);
+        if (restErr) throw restErr;
+      } else {
+        throw error;
+      }
+    }
 
     queryClient.invalidateQueries({ queryKey: ['web-folder-tasks', id] });
     queryClient.invalidateQueries({ queryKey: ['web-folders', id] });
@@ -635,7 +666,14 @@ async function handleSaveTask() {
   async function handleArchiveTask(task: any) {
     try {
       const { error } = await supabase.from('tasks').update({ archived: true, status: 'completed' }).eq('id', task.id);
-      if (error) throw error;
+      if (error) {
+        if (error.code === 'CHK01' && await completeTaskViaOverrideIfAllowed(task.id)) {
+          const { error: archiveErr } = await supabase.from('tasks').update({ archived: true }).eq('id', task.id);
+          if (archiveErr) throw archiveErr;
+        } else {
+          throw error;
+        }
+      }
       queryClient.invalidateQueries({ queryKey: ['web-folder-tasks', id] });
       queryClient.invalidateQueries({ queryKey: ['web-folders', id] });
       queryClient.invalidateQueries({ queryKey: ['web-calendar-tasks'] });
@@ -670,6 +708,7 @@ async function handleSaveTask() {
   }
 
   async function handleSaveManual() {
+    if (!selectedFolder) return; // guarded in the UI too — belt-and-suspenders
     const validTasks = manualTasks.filter((t) => t.title.trim());
     if (!validTasks.length) { alert('Please enter at least one task name.'); return; }
     setImporting(true);
@@ -741,6 +780,7 @@ async function handleSaveTask() {
   }
 
   async function handleImport() {
+    if (!selectedFolder) return; // guarded in the UI too — belt-and-suspenders
     const validTasks = parsedTasks.filter((t) => t.valid);
     if (!validTasks.length) return;
     setImporting(true);
@@ -1289,8 +1329,8 @@ async function handleSaveTask() {
             <button onClick={resetImport} style={{ backgroundColor: 'transparent', border: 'none', color: '#6B7280', fontSize: 18, cursor: 'pointer' }}>✕</button>
           </div>
           {!selectedFolder && (
-            <div style={{ backgroundColor: '#F59E0B15', border: '1px solid #F59E0B40', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 13, color: '#F59E0B' }}>
-              💡 Select a folder on the left to add tasks into a specific folder
+            <div style={{ backgroundColor: '#EF444415', border: '1px solid #EF444440', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 13, color: '#EF4444' }}>
+              ⚠ A folder is required — select or create one on the left before adding tasks. Tasks without a folder aren't visible in the mobile app.
             </div>
           )}
           {!importMode && importStep === 'input' && (
@@ -1394,8 +1434,8 @@ async function handleSaveTask() {
               </div>
               <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 12 }}>
                 <button onClick={() => setManualTasks([...manualTasks, { title: '', description: '', priority: 'medium', dueDate: '', checklistItems: [], newItemDraft: '' }])} style={{ padding: '7px 14px', backgroundColor: 'transparent', border: '1px solid #374151', borderRadius: 8, color: '#9CA3AF', fontSize: 12, cursor: 'pointer' }}>+ Add Row</button>
-                <button onClick={handleSaveManual} disabled={importing || !manualTasks.some(t => t.title.trim())} style={{ padding: '10px 24px', backgroundColor: !manualTasks.some(t => t.title.trim()) || importing ? '#374151' : '#F97316', border: 'none', borderRadius: 10, color: !manualTasks.some(t => t.title.trim()) || importing ? '#6B7280' : '#0A0F1E', fontSize: 14, fontWeight: 800, cursor: importing ? 'not-allowed' : 'pointer' }}>
-                  {importing ? 'Saving...' : `Save ${manualTasks.filter(t => t.title.trim()).length} Task${manualTasks.filter(t => t.title.trim()).length !== 1 ? 's' : ''}`}
+                <button onClick={handleSaveManual} disabled={importing || !selectedFolder || !manualTasks.some(t => t.title.trim())} style={{ padding: '10px 24px', backgroundColor: !selectedFolder || !manualTasks.some(t => t.title.trim()) || importing ? '#374151' : '#F97316', border: 'none', borderRadius: 10, color: !selectedFolder || !manualTasks.some(t => t.title.trim()) || importing ? '#6B7280' : '#0A0F1E', fontSize: 14, fontWeight: 800, cursor: !selectedFolder || importing ? 'not-allowed' : 'pointer' }}>
+                  {importing ? 'Saving...' : !selectedFolder ? 'Select a folder first' : `Save ${manualTasks.filter(t => t.title.trim()).length} Task${manualTasks.filter(t => t.title.trim()).length !== 1 ? 's' : ''}`}
                 </button>
                 {manualTasks.some(t => t.title.trim()) && <span style={{ fontSize: 12, color: '#22C55E', fontWeight: 600 }}>✅ {manualTasks.filter(t => t.title.trim()).length} ready</span>}
               </div>
@@ -1485,10 +1525,15 @@ async function handleSaveTask() {
                   </tbody>
                 </table>
               </div>
+              {!selectedFolder && (
+                <div style={{ backgroundColor: '#EF444415', border: '1px solid #EF444440', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 13, color: '#EF4444' }}>
+                  ⚠ A folder is required — go back and select or create one on the left before importing.
+                </div>
+              )}
               <div style={{ display: 'flex', gap: 10 }}>
                 <button onClick={() => setImportStep('input')} style={{ padding: '10px 20px', backgroundColor: 'transparent', border: '1px solid #374151', borderRadius: 10, color: '#6B7280', fontSize: 14, cursor: 'pointer' }}>← Edit</button>
-                <button onClick={handleImport} disabled={importing || validCount === 0} style={{ flex: 1, padding: '10px 24px', backgroundColor: importing || validCount === 0 ? '#374151' : '#F97316', border: 'none', borderRadius: 10, color: importing || validCount === 0 ? '#6B7280' : '#0A0F1E', fontSize: 14, fontWeight: 800, cursor: importing || validCount === 0 ? 'not-allowed' : 'pointer' }}>
-                  {importing ? 'Importing...' : `Import ${validCount} Tasks`}
+                <button onClick={handleImport} disabled={importing || !selectedFolder || validCount === 0} style={{ flex: 1, padding: '10px 24px', backgroundColor: importing || !selectedFolder || validCount === 0 ? '#374151' : '#F97316', border: 'none', borderRadius: 10, color: importing || !selectedFolder || validCount === 0 ? '#6B7280' : '#0A0F1E', fontSize: 14, fontWeight: 800, cursor: importing || !selectedFolder || validCount === 0 ? 'not-allowed' : 'pointer' }}>
+                  {importing ? 'Importing...' : !selectedFolder ? 'Select a folder first' : `Import ${validCount} Tasks`}
                 </button>
               </div>
             </>
