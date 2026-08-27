@@ -8,6 +8,15 @@ const priorityColors: Record<string, string> = {
   high: '#E24B4A', medium: '#EF9F27', low: '#1D9E75',
 };
 
+// task_assignees is embedded as task_assignees(profile:profiles(id, full_name)).
+function taskAssigneeProfiles(item: any): { id: string; full_name: string }[] {
+  return (item?.task_assignees ?? []).map((ta: any) => ta.profile).filter(Boolean);
+}
+function taskAssigneeNames(item: any): string {
+  const names = taskAssigneeProfiles(item).map((p) => p.full_name).filter(Boolean);
+  return names.length > 0 ? names.join(', ') : 'Unassigned';
+}
+
 
 const inputStyle: React.CSSProperties = {
   width: '100%', padding: '10px 14px', backgroundColor: '#1F2937',
@@ -25,7 +34,7 @@ export default function PunchListPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({
     title: '', description: '', priority: 'medium',
-    assigned_to: '', due_date: '', photo_url: '',
+    assigneeIds: [] as string[], due_date: '', photo_url: '',
   });
   const [creating, setCreating] = useState(false);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
@@ -51,7 +60,7 @@ const { data: punchItems, isLoading: itemsLoading } = useQuery({
     queryFn: async () => {
       const { data, error } = await supabase
         .from('tasks')
-        .select('*, assignee:assigned_to(id, full_name)')
+        .select('*, task_assignees(user_id, profile:profiles(id, full_name))')
         .eq('project_id', selectedProject.id)
         .eq('is_punch_list', true)
         .eq('archived', false)
@@ -110,22 +119,29 @@ const { data: punchItems, isLoading: itemsLoading } = useQuery({
         const uploaded = await handlePhotoUpload(photoFile);
         if (uploaded) photoUrl = uploaded;
       }
-      const { error } = await supabase.from('tasks').insert({
+      const { data: newTask, error } = await supabase.from('tasks').insert({
         project_id: selectedProject.id,
         title: form.title.trim(),
         description: form.description.trim() || null,
         priority: form.priority,
-        assigned_to: form.assigned_to || null,
         due_date: form.due_date || null,
         status: 'open',
         created_by: user!.id,
         is_punch_list: true,
         punch_list_photo: photoUrl || null,
-      });
+      }).select('id').single();
       if (error) throw error;
+
+      if (form.assigneeIds.length > 0) {
+        const { error: assignErr } = await supabase.from('task_assignees').insert(
+          form.assigneeIds.map((user_id) => ({ task_id: newTask.id, user_id }))
+        );
+        if (assignErr) throw assignErr;
+      }
+
       queryClient.invalidateQueries({ queryKey: ['punch-list-items', selectedProject.id] });
       setShowCreate(false);
-      setForm({ title: '', description: '', priority: 'medium', assigned_to: '', due_date: '', photo_url: '' });
+      setForm({ title: '', description: '', priority: 'medium', assigneeIds: [], due_date: '', photo_url: '' });
       setPhotoFile(null);
     } catch (e: any) {
       alert(e.message);
@@ -234,8 +250,8 @@ const { data: punchItems, isLoading: itemsLoading } = useQuery({
                               Due {new Date(item.due_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                             </span>
                           )}
-                          {(item.assignee as any)?.full_name && (
-                            <span style={{ fontSize: 11, color: '#6B7280', background: '#1F2937', padding: '2px 8px', borderRadius: 6 }}>{(item.assignee as any).full_name}</span>
+                          {taskAssigneeNames(item) !== 'Unassigned' && (
+                            <span style={{ fontSize: 11, color: '#6B7280', background: '#1F2937', padding: '2px 8px', borderRadius: 6 }}>{taskAssigneeNames(item)}</span>
                           )}
                         </div>
                       </div>
@@ -301,12 +317,22 @@ const { data: punchItems, isLoading: itemsLoading } = useQuery({
 
             <div style={{ marginBottom: 14 }}>
               <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#6B7280', letterSpacing: 2, marginBottom: 6 }}>ASSIGN TO</label>
-              <select value={form.assigned_to} onChange={(e) => setForm({ ...form, assigned_to: e.target.value })} style={{ ...inputStyle, cursor: 'pointer' }}>
-                <option value="">Unassigned</option>
-                {(teamMembers ?? []).map((m: any) => (
-                  <option key={m.id} value={m.id}>{m.full_name}</option>
-                ))}
-              </select>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {(teamMembers ?? []).map((m: any) => {
+                  const selected = form.assigneeIds.includes(m.id);
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => setForm({ ...form, assigneeIds: selected ? form.assigneeIds.filter((x) => x !== m.id) : [...form.assigneeIds, m.id] })}
+                      style={{ padding: '6px 14px', borderRadius: 20, fontSize: 12, fontWeight: 600, cursor: 'pointer', background: selected ? '#F9731620' : '#1F2937', border: `1px solid ${selected ? '#F97316' : '#374151'}`, color: selected ? '#F97316' : '#9CA3AF' }}
+                    >
+                      {selected ? '✓ ' : ''}{m.full_name}
+                    </button>
+                  );
+                })}
+                {(!teamMembers || teamMembers.length === 0) && <span style={{ fontSize: 12, color: '#4B5563' }}>No team members on this project yet.</span>}
+              </div>
             </div>
 
             <div style={{ marginBottom: 20 }}>
@@ -321,7 +347,7 @@ const { data: punchItems, isLoading: itemsLoading } = useQuery({
             </div>
 
             <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={() => { setShowCreate(false); setForm({ title: '', description: '', priority: 'medium', assigned_to: '', due_date: '', photo_url: '' }); setPhotoFile(null); }} style={{ flex: 1, padding: '12px', background: 'transparent', border: '1px solid #374151', borderRadius: 10, color: '#6B7280', fontSize: 13, cursor: 'pointer' }}>
+              <button onClick={() => { setShowCreate(false); setForm({ title: '', description: '', priority: 'medium', assigneeIds: [], due_date: '', photo_url: '' }); setPhotoFile(null); }} style={{ flex: 1, padding: '12px', background: 'transparent', border: '1px solid #374151', borderRadius: 10, color: '#6B7280', fontSize: 13, cursor: 'pointer' }}>
                 Cancel
               </button>
               <button onClick={handleCreate} disabled={creating || uploadingPhoto || !form.title.trim()} style={{ flex: 2, padding: '12px', background: creating || !form.title.trim() ? '#374151' : '#F97316', border: 'none', borderRadius: 10, color: creating || !form.title.trim() ? '#6B7280' : '#0A0F1E', fontSize: 13, fontWeight: 700, cursor: creating || !form.title.trim() ? 'not-allowed' : 'pointer' }}>

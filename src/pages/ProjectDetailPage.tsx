@@ -20,6 +20,17 @@ function describeTaskError(e: any): string {
   return e?.message ?? 'Something went wrong.';
 }
 
+// task_assignees is embedded as task_assignees(user_id, profile:profiles(id, full_name)).
+// Formatting decision: comma-separated names, "Unassigned" when empty — flagged for
+// confirmation, easy to change to a stacked/chip list later if preferred.
+function taskAssigneeProfiles(task: any): { id: string; full_name: string }[] {
+  return (task?.task_assignees ?? []).map((ta: any) => ta.profile).filter(Boolean);
+}
+function taskAssigneeNames(task: any): string {
+  const names = taskAssigneeProfiles(task).map((p) => p.full_name).filter(Boolean);
+  return names.length > 0 ? names.join(', ') : 'Unassigned';
+}
+
 export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -95,7 +106,7 @@ export default function ProjectDetailPage() {
   const [editTaskStatus, setEditTaskStatus] = useState('open');
   const [editTaskPriority, setEditTaskPriority] = useState('medium');
   const [editTaskDueDate, setEditTaskDueDate] = useState('');
-  const [editTaskAssignee, setEditTaskAssignee] = useState('');
+  const [editTaskAssigneeIds, setEditTaskAssigneeIds] = useState<string[]>([]);
   const [savingTask, setSavingTask] = useState(false);
 
   const invalidateDashboard = () => {
@@ -152,7 +163,7 @@ export default function ProjectDetailPage() {
     queryFn: async () => {
       let query = supabase
         .from('tasks')
-        .select('*, assignee:assigned_to (id, full_name)')
+        .select('*, task_assignees(user_id, profile:profiles(id, full_name))')
         .eq('project_id', id)
         .eq('archived', showArchivedTasks)
         .order('created_at', { ascending: false });
@@ -209,7 +220,7 @@ export default function ProjectDetailPage() {
     return (
       task.title?.toLowerCase().includes(q) ||
       task.description?.toLowerCase().includes(q) ||
-      (task.assignee as any)?.full_name?.toLowerCase().includes(q)
+      taskAssigneeProfiles(task).some((p) => p.full_name?.toLowerCase().includes(q))
     );
   });
 
@@ -235,7 +246,7 @@ export default function ProjectDetailPage() {
     try {
       const { data, error } = await supabase
         .from('tasks')
-        .select('*, assignee:assigned_to(full_name), folder:folder_id(name)')
+        .select('*, task_assignees(user_id, profile:profiles(id, full_name)), folder:folder_id(name)')
         .eq('project_id', id)
         .order('folder_id', { ascending: true });
 
@@ -304,7 +315,7 @@ export default function ProjectDetailPage() {
         t.description ? (t.description.length > 45 ? t.description.slice(0, 45) + '...' : t.description) : '',
         t.status === 'in_progress' ? 'In Progress' : t.status === 'completed' ? 'Done' : 'Open',
         t.priority ?? '',
-        (t.assignee as any)?.full_name ?? 'Unassigned',
+        taskAssigneeNames(t),
         (t.folder as any)?.name ?? 'No Folder',
         t.due_date ? new Date(t.due_date).toLocaleDateString() : '—',
         t.archived ? 'Yes' : 'No',
@@ -617,7 +628,7 @@ export default function ProjectDetailPage() {
     setEditTaskStatus(task.status);
     setEditTaskPriority(task.priority);
     setEditTaskDueDate(task.due_date ? task.due_date.slice(0, 10) : '');
-    setEditTaskAssignee(task.assigned_to ?? '');
+    setEditTaskAssigneeIds(taskAssigneeProfiles(task).map((p) => p.id));
   }
 
 async function handleSaveTask() {
@@ -630,7 +641,6 @@ async function handleSaveTask() {
       status: editTaskStatus,
       priority: editTaskPriority,
       due_date: editTaskDueDate || null,
-      assigned_to: editTaskAssignee && editTaskAssignee.trim() !== '' ? editTaskAssignee : null,
     };
 
     const { error } = await supabase
@@ -648,6 +658,27 @@ async function handleSaveTask() {
       } else {
         throw error;
       }
+    }
+
+    // Sync assignees against whatever was loaded when the modal opened —
+    // task_assignees is a junction table now, so this is add/remove, not a column write.
+    const currentAssigneeIds = taskAssigneeProfiles(selectedTask).map((p) => p.id);
+    const assigneesToAdd = editTaskAssigneeIds.filter((uid) => !currentAssigneeIds.includes(uid));
+    const assigneesToRemove = currentAssigneeIds.filter((uid) => !editTaskAssigneeIds.includes(uid));
+
+    if (assigneesToAdd.length > 0) {
+      const { error: addErr } = await supabase.from('task_assignees').insert(
+        assigneesToAdd.map((user_id) => ({ task_id: selectedTask.id, user_id }))
+      );
+      if (addErr) throw addErr;
+    }
+    if (assigneesToRemove.length > 0) {
+      const { error: removeErr } = await supabase
+        .from('task_assignees')
+        .delete()
+        .eq('task_id', selectedTask.id)
+        .in('user_id', assigneesToRemove);
+      if (removeErr) throw removeErr;
     }
 
     queryClient.invalidateQueries({ queryKey: ['web-folder-tasks', id] });
@@ -1175,7 +1206,7 @@ async function handleSaveTask() {
             <div style={{ backgroundColor: '#0D1321', borderRadius: 10, padding: 16, marginBottom: 20 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: 10, borderBottom: '1px solid #1F2937', marginBottom: 10 }}>
                 <span style={{ fontSize: 12, color: '#6B7280', fontWeight: 600 }}>ASSIGNED TO</span>
-                <span style={{ fontSize: 13, color: '#FFFFFF', fontWeight: 600 }}>{(viewTask.assignee as any)?.full_name ?? 'Unassigned'}</span>
+                <span style={{ fontSize: 13, color: '#FFFFFF', fontWeight: 600 }}>{taskAssigneeNames(viewTask)}</span>
               </div>
               {viewTask.due_date && (
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -1284,10 +1315,23 @@ async function handleSaveTask() {
             </div>
             <div style={{ marginBottom: 14 }}>
               <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#6B7280', letterSpacing: 2, marginBottom: 6 }}>ASSIGN TO</label>
-              <select value={editTaskAssignee} onChange={(e) => setEditTaskAssignee(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
-                <option value="">Unassigned</option>
-                {teamMembers?.map((m) => <option key={m.user_id} value={m.user_id}>{(m.profile as any)?.full_name ?? 'Unknown'}</option>)}
-              </select>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {teamMembers?.map((m) => {
+                  const uid = m.user_id;
+                  const selected = editTaskAssigneeIds.includes(uid);
+                  return (
+                    <button
+                      key={uid}
+                      type="button"
+                      onClick={() => setEditTaskAssigneeIds(selected ? editTaskAssigneeIds.filter((x) => x !== uid) : [...editTaskAssigneeIds, uid])}
+                      style={{ padding: '6px 14px', borderRadius: 20, fontSize: 12, fontWeight: 600, cursor: 'pointer', backgroundColor: selected ? '#F9731620' : '#1F2937', border: `1px solid ${selected ? '#F97316' : '#374151'}`, color: selected ? '#F97316' : '#9CA3AF' }}
+                    >
+                      {selected ? '✓ ' : ''}{(m.profile as any)?.full_name ?? 'Unknown'}
+                    </button>
+                  );
+                })}
+                {(!teamMembers || teamMembers.length === 0) && <span style={{ fontSize: 12, color: '#4B5563' }}>No team members on this project yet.</span>}
+              </div>
             </div>
             <div style={{ marginBottom: 14 }}>
               <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#6B7280', letterSpacing: 2, marginBottom: 6 }}>DUE DATE (OPTIONAL)</label>
@@ -1733,7 +1777,7 @@ async function handleSaveTask() {
                           <span style={{ fontSize: 11, fontWeight: 700, color: '#22C55E', backgroundColor: '#22C55E20', padding: '3px 10px', borderRadius: 20 }}>Archived</span>
                         )}
                       </td>
-                      <td style={{ padding: '12px 16px', fontSize: 13, color: '#9CA3AF' }}>{(task.assignee as any)?.full_name ?? 'Unassigned'}</td>
+                      <td style={{ padding: '12px 16px', fontSize: 13, color: '#9CA3AF' }}>{taskAssigneeNames(task)}</td>
                       <td style={{ padding: '12px 16px' }}>
                         <div style={{ display: 'flex', gap: 8 }}>
                           {!showArchivedTasks && (

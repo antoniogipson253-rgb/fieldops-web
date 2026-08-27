@@ -2,6 +2,12 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 
+// task_assignees is embedded as task_assignees(profile:profiles(full_name)).
+function taskAssigneeNames(task: any): string {
+  const names = (task?.task_assignees ?? []).map((ta: any) => ta.profile?.full_name).filter(Boolean);
+  return names.length > 0 ? names.join(', ') : 'Unassigned';
+}
+
 export default function TasksPage() {
   const queryClient = useQueryClient();
   const [statusFilter, setStatusFilter] = useState('all');
@@ -13,7 +19,7 @@ export default function TasksPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('tasks')
-        .select(`*, assignee:assigned_to (full_name), project:project_id (name)`)
+        .select(`*, task_assignees(profile:profiles(full_name)), project:project_id (name)`)
         .eq('archived', false)
         .order('created_at', { ascending: false });
       if (error) throw error;
@@ -133,7 +139,7 @@ export default function TasksPage() {
                       </select>
                     </td>
                     <td style={{ padding: '12px 16px', fontSize: 13, color: '#9CA3AF' }}>
-                      {(task.assignee as any)?.full_name ?? 'Unassigned'}
+                      {taskAssigneeNames(task)}
                     </td>
                   </tr>
                 );

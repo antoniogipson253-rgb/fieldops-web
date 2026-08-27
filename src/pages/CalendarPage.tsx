@@ -3,6 +3,12 @@ import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useIsAdmin, useCurrentUser } from '../lib/useIsAdmin';
 
+// task_assignees is embedded as task_assignees(profile:profiles(full_name)).
+function taskAssigneeNames(task: any): string {
+  const names = (task?.task_assignees ?? []).map((ta: any) => ta.profile?.full_name).filter(Boolean);
+  return names.length > 0 ? names.join(', ') : 'Unassigned';
+}
+
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
@@ -31,14 +37,26 @@ export default function CalendarPage() {
   const { data: tasks, isLoading } = useQuery({
     queryKey: ['web-calendar-tasks', isAdmin, currentUser?.id],
     queryFn: async () => {
+      // Non-admins only see tasks they're an assignee on — resolved via task_assignees
+      // now instead of a single assigned_to column. This is the actual visibility
+      // control for non-admins on this page, not cosmetic.
+      let taskIdsFilter: string[] | null = null;
+      if (!isAdmin && currentUser) {
+        const { data: myAssignments, error: assignErr } = await supabase
+          .from('task_assignees')
+          .select('task_id')
+          .eq('user_id', currentUser.id);
+        if (assignErr) throw assignErr;
+        taskIdsFilter = (myAssignments ?? []).map((a: any) => a.task_id);
+        if (taskIdsFilter.length === 0) return [];
+      }
+
       let query = supabase
         .from('tasks')
-        .select('id, title, due_date, status, priority, assigned_to, project:project_id(name), assignee:assigned_to(full_name)')
+        .select('id, title, due_date, status, priority, project:project_id(name), task_assignees(profile:profiles(full_name))')
         .not('due_date', 'is', null)
         .eq('archived', false);
-      if (!isAdmin && currentUser) {
-        query = query.eq('assigned_to', currentUser.id);
-      }
+      if (taskIdsFilter) query = query.in('id', taskIdsFilter);
       const { data, error } = await query;
       if (error) throw error;
       return data ?? [];
@@ -284,9 +302,9 @@ export default function CalendarPage() {
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                         <span style={statusStyle[task.status] ?? statusStyle.open}>{statusLabels[task.status] ?? task.status}</span>
                         <span style={priorityStyle[task.priority] ?? priorityStyle.low}>{task.priority}</span>
-                        {isAdmin && (task.assignee as any)?.full_name && (
+                        {isAdmin && taskAssigneeNames(task) !== 'Unassigned' && (
                           <span style={{ fontSize: 11, color: '#6B7280', background: '#1F2937', padding: '2px 8px', borderRadius: 6 }}>
-                            {(task.assignee as any).full_name}
+                            {taskAssigneeNames(task)}
                           </span>
                         )}
                       </div>

@@ -15,6 +15,12 @@ function toInstant(timestamp: string): Date {
   return new Date(hasTzMarker ? timestamp : `${timestamp}Z`);
 }
 
+// task_assignees is embedded as task_assignees(profile:profiles(full_name)).
+function taskAssigneeNames(task: any): string {
+  const names = (task?.task_assignees ?? []).map((ta: any) => ta.profile?.full_name).filter(Boolean);
+  return names.length > 0 ? names.join(', ') : 'Unassigned';
+}
+
 function formatTime(dateStr: string) {
   return toInstant(dateStr).toLocaleTimeString('en-US', {
     hour: 'numeric',
@@ -290,7 +296,7 @@ function AdminDashboard({ currentUserId }: { currentUserId: string }) {
       const nextWeek = new Date(Date.now() + 7 * 86400000).toISOString();
       const { data } = await supabase
         .from('tasks')
-        .select('id, title, status, priority, due_date, project:project_id(name), assignee:assigned_to(full_name)')
+        .select('id, title, status, priority, due_date, project:project_id(name), task_assignees(profile:profiles(full_name))')
         .eq('archived', false)
         .neq('status', 'completed')
         .lte('due_date', nextWeek)
@@ -425,7 +431,7 @@ function AdminDashboard({ currentUserId }: { currentUserId: string }) {
               <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', borderBottom: '0.5px solid #1F2937' }}>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 13, fontWeight: 500 }}>{t.title}</div>
-                  <div style={{ fontSize: 11, color: '#6B7280', marginTop: 2 }}>{(t.project as any)?.name} · {(t.assignee as any)?.full_name ?? 'Unassigned'}</div>
+                  <div style={{ fontSize: 11, color: '#6B7280', marginTop: 2 }}>{(t.project as any)?.name} · {taskAssigneeNames(t)}</div>
                 </div>
                 <span style={priorityBadge[t.priority] ?? badge('#1F2937', '#9CA3AF')}>{t.priority}</span>
                 <span style={statusBadge[t.status] ?? badge('#1F2937', '#9CA3AF')}>{statusLabel[t.status] ?? t.status}</span>
@@ -533,7 +539,7 @@ function PMDashboard({ currentUserId }: { currentUserId: string }) {
       if (projectIds.length === 0) return [];
       const { data } = await supabase
         .from('tasks')
-        .select('id, title, status, priority, due_date, project:project_id(name), assignee:assigned_to(full_name)')
+        .select('id, title, status, priority, due_date, project:project_id(name), task_assignees(profile:profiles(full_name))')
         .eq('archived', false)
         .in('project_id', projectIds)
         .neq('status', 'completed')
@@ -657,7 +663,7 @@ function PMDashboard({ currentUserId }: { currentUserId: string }) {
               <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', borderBottom: '0.5px solid #1F2937' }}>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 13, fontWeight: 500 }}>{t.title}</div>
-                  <div style={{ fontSize: 11, color: '#6B7280', marginTop: 2 }}>{(t.project as any)?.name} · {(t.assignee as any)?.full_name ?? 'Unassigned'}</div>
+                  <div style={{ fontSize: 11, color: '#6B7280', marginTop: 2 }}>{(t.project as any)?.name} · {taskAssigneeNames(t)}</div>
                 </div>
                 <span style={priorityBadge[t.priority] ?? badge('#1F2937', '#9CA3AF')}>{t.priority}</span>
                 <span style={statusBadge[t.status] ?? badge('#1F2937', '#9CA3AF')}>{statusLabel[t.status] ?? t.status}</span>
@@ -739,10 +745,21 @@ function WorkerDashboard({ currentUserId }: { currentUserId: string }) {
   const { data: myTasks } = useQuery({
     queryKey: ['worker-tasks', currentUserId],
     queryFn: async () => {
+      if (!currentUserId) return [];
+      // "My Tasks" — resolved via task_assignees now instead of a single
+      // assigned_to column. This is the actual visibility for this widget.
+      const { data: myAssignments, error: assignErr } = await supabase
+        .from('task_assignees')
+        .select('task_id')
+        .eq('user_id', currentUserId);
+      if (assignErr) throw assignErr;
+      const taskIds = (myAssignments ?? []).map((a: any) => a.task_id);
+      if (taskIds.length === 0) return [];
+
       const { data } = await supabase
         .from('tasks')
         .select('id, title, status, priority, due_date, project:project_id(name)')
-        .eq('assigned_to', currentUserId)
+        .in('id', taskIds)
         .eq('archived', false)
         .order('due_date', { ascending: true })
         .limit(8);
