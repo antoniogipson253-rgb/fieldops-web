@@ -9,6 +9,7 @@ import { ProjectBudgetTab } from './tabs/ProjectBudgetTab';
 import { ProjectChangeOrdersTab } from './tabs/ProjectChangeOrdersTab';
 import { ProjectRFITab } from './tabs/ProjectRFITab';
 import { ProjectClientMessagesTab } from './tabs/ProjectClientMessagesTab';
+import { DailyReportSettings } from '../components/DailyReportSettings';
 
 // The checklist-completion DB trigger raises errcode 'CHK01' when a checklist-type
 // task can't be marked complete (no items yet, or items still unresolved) — surface
@@ -980,7 +981,7 @@ async function handleSaveTask() {
           {canEdit && <button onClick={() => { setEditName(project?.name ?? ''); setEditDescription(project?.description ?? ''); setEditStatus(project?.status ?? 'active'); setEditClientPhotosEnabled((project as any)?.client_photos_enabled ?? false); setShowEditProject(true); }} style={{ padding: '10px 16px', backgroundColor: '#111827', border: '1px solid #374151', borderRadius: 10, color: '#9CA3AF', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>✏️ Edit</button>}
           {isAdmin && <button onClick={() => setShowInvite(!showInvite)} style={{ padding: '10px 16px', backgroundColor: '#111827', border: '1px solid #374151', borderRadius: 10, color: '#9CA3AF', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>👥 Invite</button>}
           <button onClick={() => navigate(`/projects/${id}/chat`)} style={{ padding: '10px 16px', backgroundColor: '#111827', border: '1px solid #374151', borderRadius: 10, color: '#9CA3AF', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>💬 Chat</button>
-          <button onClick={() => navigate(`/projects/${id}/daily-reports`)} style={{ padding: '10px 16px', backgroundColor: '#111827', border: '1px solid #374151', borderRadius: 10, color: '#9CA3AF', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>📋 Daily Reports</button>
+          <button onClick={() => navigate(`/projects/${id}/daily-reports`)} style={{ padding: '10px 16px', backgroundColor: '#111827', border: '1px solid #374151', borderRadius: 10, color: '#9CA3AF', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Daily Reports (archive)</button>
           <button onClick={() => { setExportFolderFilter(selectedFolder ?? 'all'); setExportStatusFilter('all'); setExportIncludeArchived(false); setShowExportModal(true); }} style={{ padding: '10px 16px', backgroundColor: '#111827', border: '1px solid #374151', borderRadius: 10, color: '#9CA3AF', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>📥 Export PDF</button>
           {canEdit && <button onClick={() => { resetImport(); setShowImport(true); }} style={{ padding: '10px 20px', backgroundColor: '#F97316', border: 'none', borderRadius: 10, color: '#0A0F1E', fontSize: 14, fontWeight: 800, cursor: 'pointer' }}>+ Add Tasks</button>}
         </div>
@@ -1129,6 +1130,7 @@ async function handleSaveTask() {
               </button>
             </div>
           )}
+          <DailyReportSettings projectId={id ?? ''} />
           {isAdmin && project?.project_type === 'regular' && (
             <div style={{ marginBottom: 20, padding: 16, backgroundColor: '#7F1D1D15', border: '1px solid #EF444440', borderRadius: 10 }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: '#EF4444', letterSpacing: 2, marginBottom: 8 }}>DANGER ZONE</div>

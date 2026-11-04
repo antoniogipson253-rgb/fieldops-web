@@ -286,15 +286,20 @@ export default function DailyReportsPage() {
       </button>
 
       <div style={{ marginBottom: 24 }}>
-        <h1 style={{ fontSize: 28, fontWeight: 800, margin: 0, marginBottom: 4 }}>Daily Reports</h1>
-        <p style={{ color: '#6B7280', fontSize: 14, margin: 0 }}>{project?.name ?? 'Project'} — site activity log</p>
+        <h1 style={{ fontSize: 28, fontWeight: 800, margin: 0, marginBottom: 4 }}>Daily Reports Archive</h1>
+        <p style={{ color: '#6B7280', fontSize: 14, margin: 0 }}>{project?.name ?? 'Project'} — reports submitted manually before automatic daily reports</p>
+      </div>
+
+      <div style={{ backgroundColor: '#111827', border: '1px solid #1F2937', borderLeft: '3px solid #F97316', borderRadius: 10, padding: '12px 16px', marginBottom: 20, fontSize: 13, color: '#9CA3AF', lineHeight: 1.5 }}>
+        Manual daily reports have been replaced by an automatic daily email. This page is read-only and keeps past reports available.
+        To turn on the automatic report, open the project, choose Edit, and use the Automatic Daily Report section.
       </div>
 
       {isLoading ? (
         <div style={{ color: '#F97316' }}>Loading...</div>
       ) : !reports || reports.length === 0 ? (
         <div style={{ backgroundColor: '#111827', borderRadius: 14, border: '1px solid #1F2937', padding: 40, textAlign: 'center', color: '#4B5563' }}>
-          No daily reports submitted yet for this project.
+          No manual daily reports were submitted for this project.
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -316,7 +321,7 @@ export default function DailyReportsPage() {
                   </div>
                   <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                     <span style={{ fontSize: 10, fontWeight: 700, color: report.visible_to_client ? '#22C55E' : '#4B5563', backgroundColor: report.visible_to_client ? '#22C55E20' : '#1F2937', padding: '2px 8px', borderRadius: 20 }}>
-                      {report.visible_to_client ? '👁 Client visible' : 'Internal'}
+                      {report.visible_to_client ? 'Client visible' : 'Internal'}
                     </span>
                     {isAdmin && (
                       <button
