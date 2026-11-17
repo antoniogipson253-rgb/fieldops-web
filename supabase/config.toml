@@ -42,3 +42,23 @@ entrypoint = "./functions/create-company-bucket/index.ts"
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/create-company-bucket/*.html" ]
+
+# send-daily-reports trusts the JWT `role` claim for cron mode. That is only safe because
+# the gateway verifies the signature first. Do not set verify_jwt = false or deploy this
+# function with --no-verify-jwt.
+[functions.send-daily-reports]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/send-daily-reports/index.ts"
+
+# build-project-export and send-project-export trust the JWT `role` claim for their cron /
+# queue modes (see _shared/common.ts verifiedJwtRole). Same rule: never disable verify_jwt.
+[functions.build-project-export]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/build-project-export/index.ts"
+
+[functions.send-project-export]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/send-project-export/index.ts"

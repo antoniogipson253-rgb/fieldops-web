@@ -57,6 +57,7 @@ export function ProjectChangeOrdersTab({ projectId, isAdmin, canEdit }: Props) {
   const [rejectNotes, setRejectNotes] = useState('');
   const [showFolderPicker, setShowFolderPicker] = useState<string | null>(null);
   const [selectedFolderForTask, setSelectedFolderForTask] = useState('');
+  const [convertError, setConvertError] = useState<string | null>(null);
 
   const { data: changeOrders } = useQuery({
     queryKey: ['change-orders', projectId],
@@ -72,14 +73,32 @@ export function ProjectChangeOrdersTab({ projectId, isAdmin, canEdit }: Props) {
     enabled: !!projectId,
   });
 
-  const { data: folders } = useQuery({
+  // Same order as the project's folder list, so "first folder" means the same thing everywhere.
+  const { data: folders, isLoading: foldersLoading } = useQuery({
     queryKey: ['co-folders', projectId],
     queryFn: async () => {
-      const { data } = await supabase.from('folders').select('id, name').eq('project_id', projectId);
+      const { data, error } = await supabase.from('folders').select('id, name').eq('project_id', projectId).order('created_at', { ascending: true });
+      if (error) throw error;
       return data ?? [];
     },
     enabled: !!projectId,
   });
+
+  // A converted change order is a regular task, and regular tasks must have a folder.
+  // Default the picker to the first folder; if the selection is gone (folder deleted), fall back.
+  function openFolderPicker(coId: string) {
+    setConvertError(null);
+    // Folders may have been created on the Tasks tab since this list was loaded.
+    queryClient.invalidateQueries({ queryKey: ['co-folders', projectId] });
+    setSelectedFolderForTask((folders ?? [])[0]?.id ?? '');
+    setShowFolderPicker(coId);
+  }
+  React.useEffect(() => {
+    if (!showFolderPicker || !folders) return;
+    if (!folders.some((f: any) => f.id === selectedFolderForTask)) {
+      setSelectedFolderForTask(folders[0]?.id ?? '');
+    }
+  }, [showFolderPicker, folders, selectedFolderForTask]);
 
   const { data: coPhotos } = useQuery({
     queryKey: ['co-photos', expandedId],
@@ -151,11 +170,17 @@ export function ProjectChangeOrdersTab({ projectId, isAdmin, canEdit }: Props) {
   }
 
   async function handleConvertToTask(co: any, folderId: string) {
+    // Never send folder_id: null for a regular task.
+    if (!folderId) {
+      setConvertError('Choose a folder for this task.');
+      return;
+    }
+    setConvertError(null);
     try {
       const { data: { user } } = await supabase.auth.getUser();
       const { error } = await supabase.from('tasks').insert({
         project_id: projectId,
-        folder_id: folderId || null,
+        folder_id: folderId,
         title: `CO #${co.co_number}: ${co.title}`,
         description: co.description || co.scope_of_work || null,
         status: 'open',
@@ -167,7 +192,7 @@ export function ProjectChangeOrdersTab({ projectId, isAdmin, canEdit }: Props) {
       queryClient.invalidateQueries({ queryKey: ['web-folders', projectId] });
       setShowFolderPicker(null);
       alert('Task created!');
-    } catch (e: any) { alert(e.message); }
+    } catch (e: any) { setConvertError(e?.message ?? 'Could not create the task.'); }
   }
 
   return (
@@ -283,17 +308,28 @@ export function ProjectChangeOrdersTab({ projectId, isAdmin, canEdit }: Props) {
                                 </>
                               )}
                               {co.status === 'approved' && (
-                                showFolderPicker === co.id ? (
-                                  <>
-                                    <select value={selectedFolderForTask} onChange={(e) => setSelectedFolderForTask(e.target.value)} style={{ ...inputStyle, width: 200, padding: '8px 12px', fontSize: 13, cursor: 'pointer' }}>
-                                      <option value="">No Folder</option>
-                                      {(folders ?? []).map((f: any) => <option key={f.id} value={f.id}>{f.name}</option>)}
-                                    </select>
-                                    <button onClick={() => handleConvertToTask(co, selectedFolderForTask)} style={{ padding: '8px 16px', backgroundColor: '#22C55E20', border: '1px solid #22C55E', borderRadius: 8, color: '#22C55E', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Create Task</button>
-                                    <button onClick={() => setShowFolderPicker(null)} style={{ padding: '8px 12px', backgroundColor: 'transparent', border: '1px solid #374151', borderRadius: 8, color: '#6B7280', fontSize: 13, cursor: 'pointer' }}>Cancel</button>
-                                  </>
-                                ) : (
-                                  <button onClick={() => setShowFolderPicker(co.id)} style={{ padding: '8px 16px', backgroundColor: '#22C55E20', border: '1px solid #22C55E', borderRadius: 8, color: '#22C55E', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Convert to Task</button>
+                                showFolderPicker === co.id ? (() => {
+                                  const noFolders = !foldersLoading && (folders ?? []).length === 0;
+                                  const canCreate = !foldersLoading && !!selectedFolderForTask;
+                                  return (
+                                    <>
+                                      {noFolders ? (
+                                        <span role="alert" style={{ fontSize: 13, color: '#FCA5A5', padding: '8px 12px', backgroundColor: '#7F1D1D20', border: '1px solid #EF444460', borderRadius: 8 }}>
+                                          This project has no folders yet. Create a folder on the Tasks tab first, then convert this change order.
+                                        </span>
+                                      ) : (
+                                        <select value={selectedFolderForTask} onChange={(e) => { setSelectedFolderForTask(e.target.value); setConvertError(null); }} disabled={foldersLoading} aria-label="Folder for the new task" style={{ ...inputStyle, width: 200, padding: '8px 12px', fontSize: 13, cursor: 'pointer' }}>
+                                          {foldersLoading && <option value="">Loading folders...</option>}
+                                          {(folders ?? []).map((f: any) => <option key={f.id} value={f.id}>{f.name}</option>)}
+                                        </select>
+                                      )}
+                                      <button onClick={() => handleConvertToTask(co, selectedFolderForTask)} disabled={!canCreate} style={{ padding: '8px 16px', backgroundColor: canCreate ? '#22C55E20' : '#1F2937', border: `1px solid ${canCreate ? '#22C55E' : '#374151'}`, borderRadius: 8, color: canCreate ? '#22C55E' : '#6B7280', fontSize: 13, fontWeight: 700, cursor: canCreate ? 'pointer' : 'not-allowed' }}>Create Task</button>
+                                      <button onClick={() => { setShowFolderPicker(null); setConvertError(null); }} style={{ padding: '8px 12px', backgroundColor: 'transparent', border: '1px solid #374151', borderRadius: 8, color: '#6B7280', fontSize: 13, cursor: 'pointer' }}>Cancel</button>
+                                      {convertError && <span role="alert" style={{ fontSize: 13, color: '#FCA5A5' }}>{convertError}</span>}
+                                    </>
+                                  );
+                                })() : (
+                                  <button onClick={() => openFolderPicker(co.id)} style={{ padding: '8px 16px', backgroundColor: '#22C55E20', border: '1px solid #22C55E', borderRadius: 8, color: '#22C55E', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Convert to Task</button>
                                 )
                               )}
                               {!['void', 'rejected'].includes(co.status) && (
