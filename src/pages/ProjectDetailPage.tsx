@@ -10,6 +10,7 @@ import { ProjectChangeOrdersTab } from './tabs/ProjectChangeOrdersTab';
 import { ProjectRFITab } from './tabs/ProjectRFITab';
 import { ProjectClientMessagesTab } from './tabs/ProjectClientMessagesTab';
 import { DailyReportSettings } from '../components/DailyReportSettings';
+import { FolderChecklistEditor } from '../components/FolderChecklistEditor';
 
 // The checklist-completion DB trigger raises errcode 'CHK01' when a checklist-type
 // task can't be marked complete (no items yet, or items still unresolved) — surface
@@ -50,6 +51,9 @@ export default function ProjectDetailPage() {
   const [editingFolder, setEditingFolder] = useState<any>(null);
   const [editFolderName, setEditFolderName] = useState('');
   const [folderDeleteBlock, setFolderDeleteBlock] = useState<{ folderId: string; message: string } | null>(null);
+  const [showFolderChecklistEditor, setShowFolderChecklistEditor] = useState(false);
+  const [downloadingSheet, setDownloadingSheet] = useState(false);
+  const [downloadSheetError, setDownloadSheetError] = useState<string | null>(null);
   const [taskSearch, setTaskSearch] = useState('');
   const [activeTab, setActiveTab] = useState<'tasks' | 'budget' | 'change-orders' | 'rfi' | 'client-messages'>('tasks');
 
@@ -177,6 +181,18 @@ export default function ProjectDetailPage() {
     enabled: !!id,
   });
 
+  // Folder checklist editor: company admins and project managers of the project's company
+  // (the same server-side rule save_folder_checklist enforces), Tasks + Checklist projects only.
+  const { data: canManageChecklist } = useQuery({
+    queryKey: ['can-manage-folder-checklist', id],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('can_manage_project_reports', { p_project_id: id });
+      if (error) return false;
+      return data === true;
+    },
+    enabled: !!id,
+  });
+
   const { data: teamMembers } = useQuery({
     queryKey: ['web-project-members', id],
     queryFn: async () => {
@@ -225,6 +241,43 @@ export default function ProjectDetailPage() {
       taskAssigneeProfiles(task).some((p) => p.full_name?.toLowerCase().includes(q))
     );
   });
+
+  // A folder with a saved folder checklist: every task in it carries exactly that checklist, so
+  // per-task checklist inputs are hidden there (the database ignores per-task extras anyway).
+  const selectedFolderObj: any = selectedFolder ? (folders as any[] | undefined)?.find((f: any) => f.id === selectedFolder) : null;
+  const selectedFolderManaged = !!selectedFolderObj?.checklist_managed;
+  const isFolderManaged = (folderId: string | null | undefined) =>
+    !!folderId && !!(folders as any[] | undefined)?.find((f: any) => f.id === folderId)?.checklist_managed;
+
+  async function handleDownloadSpreadsheet() {
+    setDownloadingSheet(true);
+    setDownloadSheetError(null);
+    try {
+      const { data, error } = await supabase.functions.invoke('build-project-export', { body: { projectId: id } });
+      if (error) {
+        let detail = error.message;
+        try { detail = (await (error as any).context?.json())?.error ?? detail; } catch { /* keep message */ }
+        throw new Error(detail);
+      }
+      const bytes = data instanceof Blob ? await data.arrayBuffer() : data;
+      const file = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const today = new Date();
+      const stamp = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+      const safeName = (project?.name ?? 'Project').replace(/[\\/:*?"<>|]/g, '-').trim() || 'Project';
+      const url = URL.createObjectURL(file);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${safeName} - Tasks - ${stamp}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+    } catch (e: any) {
+      setDownloadSheetError(e?.message ?? 'Could not build the spreadsheet.');
+    } finally {
+      setDownloadingSheet(false);
+    }
+  }
 
   function getProgressColor(pct: number) {
     if (pct === 100) return '#22C55E';
@@ -798,7 +851,8 @@ async function handleSaveTask() {
           if (taskErr) throw taskErr;
 
           const items = t.checklistItems.map((s) => s.trim()).filter(Boolean).slice(0, CHECKLIST_ITEM_CAP);
-          if (items.length > 0) {
+          // In a folder with a folder checklist the database gives the new task that checklist.
+          if (items.length > 0 && !selectedFolderManaged) {
             const { error: itemsErr } = await supabase.from('checklist_items').insert(
               items.map((text, i) => ({ task_id: newTask.id, item_text: text, sort_order: i }))
             );
@@ -866,7 +920,9 @@ async function handleSaveTask() {
       queryClient.invalidateQueries({ queryKey: ['web-calendar-tasks'] });
       invalidateDashboard();
 
-      if (project?.project_type === 'checklist') {
+      // No per-task "assign checklist" step in a folder that has a folder checklist: the imported
+      // tasks already received it.
+      if (project?.project_type === 'checklist' && !selectedFolderManaged) {
         await loadAssignableTasks();
         setImportStep('assign-checklist');
       } else {
@@ -1016,6 +1072,12 @@ async function handleSaveTask() {
           {isAdmin && <button onClick={() => setShowInvite(!showInvite)} style={{ padding: '10px 16px', backgroundColor: '#111827', border: '1px solid #374151', borderRadius: 10, color: '#9CA3AF', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>👥 Invite</button>}
           <button onClick={() => navigate(`/projects/${id}/chat`)} style={{ padding: '10px 16px', backgroundColor: '#111827', border: '1px solid #374151', borderRadius: 10, color: '#9CA3AF', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>💬 Chat</button>
           <button onClick={() => navigate(`/projects/${id}/daily-reports`)} style={{ padding: '10px 16px', backgroundColor: '#111827', border: '1px solid #374151', borderRadius: 10, color: '#9CA3AF', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Daily Reports (archive)</button>
+          <button onClick={handleDownloadSpreadsheet} disabled={downloadingSheet} title="Builds a fresh spreadsheet of this project's tasks" style={{ padding: '10px 16px', backgroundColor: '#111827', border: '1px solid #374151', borderRadius: 10, color: downloadingSheet ? '#6B7280' : '#9CA3AF', fontSize: 13, fontWeight: 600, cursor: downloadingSheet ? 'wait' : 'pointer' }}>
+            {downloadingSheet ? 'Building spreadsheet...' : 'Download spreadsheet'}
+          </button>
+          {downloadSheetError && (
+            <span role="alert" style={{ alignSelf: 'center', fontSize: 12, color: '#FCA5A5', maxWidth: 320 }}>{downloadSheetError}</span>
+          )}
           <button onClick={() => { setExportFolderFilter(selectedFolder ?? 'all'); setExportStatusFilter('all'); setExportIncludeArchived(false); setShowExportModal(true); }} style={{ padding: '10px 16px', backgroundColor: '#111827', border: '1px solid #374151', borderRadius: 10, color: '#9CA3AF', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>📥 Export PDF</button>
           {canEdit && <button onClick={() => { resetImport(); setShowImport(true); }} style={{ padding: '10px 20px', backgroundColor: '#F97316', border: 'none', borderRadius: 10, color: '#0A0F1E', fontSize: 14, fontWeight: 800, cursor: 'pointer' }}>+ Add Tasks</button>}
         </div>
@@ -1179,6 +1241,18 @@ async function handleSaveTask() {
         </div>
       )}
 
+      {showFolderChecklistEditor && selectedFolderObj && project?.project_type === 'checklist' && canManageChecklist && (
+        <FolderChecklistEditor
+          folder={selectedFolderObj}
+          onClose={() => setShowFolderChecklistEditor(false)}
+          onSaved={() => {
+            queryClient.invalidateQueries({ queryKey: ['web-folders', id] });
+            queryClient.invalidateQueries({ queryKey: ['web-folder-tasks', id] });
+            if (viewTask) refreshChecklist(viewTask.id);
+          }}
+        />
+      )}
+
       {/* Convert to Checklist Confirm Modal */}
       {showConvertConfirm && isAdmin && (
         <div style={modalOverlay} onClick={() => !converting && setShowConvertConfirm(false)}>
@@ -1286,7 +1360,12 @@ async function handleSaveTask() {
                     ))}
                   </div>
                 )}
-                {canEdit && (
+                {canEdit && isFolderManaged(viewTask?.folder_id) && (
+                  <div style={{ fontSize: 12, color: '#6B7280' }}>
+                    This task uses its folder's shared checklist. Items are added, renamed or removed for the whole folder with Edit folder checklist.
+                  </div>
+                )}
+                {canEdit && !isFolderManaged(viewTask?.folder_id) && (
                   viewTaskChecklist.length >= CHECKLIST_ITEM_CAP ? (
                     <div style={{ fontSize: 12, color: '#F59E0B' }}>Checklist item limit reached ({CHECKLIST_ITEM_CAP} max).</div>
                   ) : (
@@ -1462,7 +1541,14 @@ async function handleSaveTask() {
                         </td>
                       </tr>
                     ))}
-                    {project?.project_type === 'checklist' && manualTasks.map((task, i) => (
+                    {project?.project_type === 'checklist' && selectedFolderManaged && (
+                      <tr>
+                        <td colSpan={6} style={{ padding: '10px 16px', fontSize: 12, color: '#9CA3AF' }}>
+                          This folder has a shared folder checklist. New tasks get its items automatically, all not done.
+                        </td>
+                      </tr>
+                    )}
+                    {project?.project_type === 'checklist' && !selectedFolderManaged && manualTasks.map((task, i) => (
                       <tr key={`checklist-${i}`} style={{ backgroundColor: i % 2 === 0 ? '#111827' : '#0D1321', borderBottom: '1px solid #1E2A3A' }}>
                         <td colSpan={6} style={{ padding: '8px 16px 14px 44px' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
@@ -1770,6 +1856,11 @@ async function handleSaveTask() {
                 {selectedFolder ? `📁 ${(folders as any[])?.find((f: any) => f.id === selectedFolder)?.name ?? 'Folder'}` : '📋 All Tasks'}
                 {filteredTasks ? ` (${filteredTasks.length})` : ''}
               </h2>
+              {selectedFolderObj && project?.project_type === 'checklist' && canManageChecklist && (
+                <button onClick={() => setShowFolderChecklistEditor(true)} style={{ padding: '8px 14px', backgroundColor: 'transparent', border: '1px solid #F97316', borderRadius: 8, color: '#F97316', fontSize: 12, fontWeight: 700, cursor: 'pointer', marginLeft: 'auto', marginRight: 8 }}>
+                  Edit folder checklist
+                </button>
+              )}
               {isAdmin && (
                 <button onClick={() => setShowArchivedTasks(!showArchivedTasks)} style={{ padding: '8px 14px', backgroundColor: showArchivedTasks ? '#F97316' : 'transparent', border: '1px solid', borderColor: showArchivedTasks ? '#F97316' : '#374151', borderRadius: 8, color: showArchivedTasks ? '#0A0F1E' : '#6B7280', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
                   {showArchivedTasks ? '← Active Tasks' : '📦 Archived'}

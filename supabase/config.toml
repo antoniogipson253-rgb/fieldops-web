@@ -50,3 +50,15 @@ entrypoint = "./functions/create-company-bucket/index.ts"
 enabled = true
 verify_jwt = true
 entrypoint = "./functions/send-daily-reports/index.ts"
+
+# build-project-export and send-project-export trust the JWT `role` claim for their cron /
+# queue modes (see _shared/common.ts verifiedJwtRole). Same rule: never disable verify_jwt.
+[functions.build-project-export]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/build-project-export/index.ts"
+
+[functions.send-project-export]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/send-project-export/index.ts"

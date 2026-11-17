@@ -16,6 +16,8 @@ type Settings = {
   send_time: string;
   timezone: string;
   last_sent_at: string | null;
+  export_email_enabled: boolean;
+  export_last_sent_at: string | null;
 };
 
 type RecipientRow = {
@@ -72,7 +74,7 @@ export function DailyReportSettings({ projectId }: { projectId: string }) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('project_report_settings')
-        .select('project_id, enabled, send_time, timezone, last_sent_at')
+        .select('project_id, enabled, send_time, timezone, last_sent_at, export_email_enabled, export_last_sent_at')
         .eq('project_id', projectId)
         .maybeSingle();
       if (error) throw error;
@@ -128,7 +130,10 @@ export function DailyReportSettings({ projectId }: { projectId: string }) {
   });
 
   const [enabled, setEnabled] = useState(false);
+  const [exportEmailEnabled, setExportEmailEnabled] = useState(false);
   const [sendTime, setSendTime] = useState('17:00');
+  const [testingSheet, setTestingSheet] = useState(false);
+  const [sheetTestMessage, setSheetTestMessage] = useState<{ ok: boolean; text: string } | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -156,6 +161,7 @@ export function DailyReportSettings({ projectId }: { projectId: string }) {
   useEffect(() => {
     if (settings) {
       setEnabled(settings.enabled);
+      setExportEmailEnabled(!!settings.export_email_enabled);
       setSendTime(settings.send_time.slice(0, 5));
     }
   }, [settings]);
@@ -163,7 +169,9 @@ export function DailyReportSettings({ projectId }: { projectId: string }) {
   const timezone = settings?.timezone ?? 'America/Chicago';
   const recipientCount = recipients?.length ?? 0;
   const atCap = recipientCount >= MAX_RECIPIENTS;
-  const dirty = settings ? (settings.enabled !== enabled || settings.send_time.slice(0, 5) !== sendTime) : (enabled || sendTime !== '17:00');
+  const dirty = settings
+    ? (settings.enabled !== enabled || !!settings.export_email_enabled !== exportEmailEnabled || settings.send_time.slice(0, 5) !== sendTime)
+    : (enabled || exportEmailEnabled || sendTime !== '17:00');
 
   // Same resolution as the scheduled send: team member -> profiles.email, external -> stored email.
   const recipientAddress = (r: RecipientRow) => (r.user_id ? r.profile?.email || null : r.email);
@@ -187,8 +195,8 @@ export function DailyReportSettings({ projectId }: { projectId: string }) {
     try {
       // project_id is insert-only for clients, so insert the row once, then update it.
       const { error } = settings
-        ? await supabase.from('project_report_settings').update({ enabled, send_time: sendTime }).eq('project_id', projectId)
-        : await supabase.from('project_report_settings').insert({ project_id: projectId, enabled, send_time: sendTime, timezone });
+        ? await supabase.from('project_report_settings').update({ enabled, export_email_enabled: exportEmailEnabled, send_time: sendTime }).eq('project_id', projectId)
+        : await supabase.from('project_report_settings').insert({ project_id: projectId, enabled, export_email_enabled: exportEmailEnabled, send_time: sendTime, timezone });
       if (error) throw error;
       await queryClient.invalidateQueries({ queryKey: ['report-settings', projectId] });
       setSaveMessage({ ok: true, text: 'Report settings saved.' });
@@ -243,6 +251,26 @@ export function DailyReportSettings({ projectId }: { projectId: string }) {
     }
   }
 
+  async function handleTestSpreadsheet() {
+    setTestingSheet(true);
+    setSheetTestMessage(null);
+    try {
+      const { data, error } = await supabase.functions.invoke('send-project-export', { body: { projectId } });
+      if (error) {
+        let detail = error.message;
+        try { detail = (await (error as any).context?.json())?.error ?? detail; } catch { /* keep message */ }
+        throw new Error(detail);
+      }
+      if (!data?.success) throw new Error(data?.error ?? 'The test spreadsheet could not be sent.');
+      const c = data.counts ?? {};
+      setSheetTestMessage({ ok: true, text: `Test spreadsheet sent to ${data.sent_to}: ${c.open ?? 0} Open, ${c.in_progress ?? 0} In Progress, ${c.done ?? 0} Done.` });
+    } catch (e: any) {
+      setSheetTestMessage({ ok: false, text: e?.message ?? 'The test spreadsheet could not be sent.' });
+    } finally {
+      setTestingSheet(false);
+    }
+  }
+
   async function handleTestSend() {
     setTesting(true);
     setTestMessage(null);
@@ -275,6 +303,16 @@ export function DailyReportSettings({ projectId }: { projectId: string }) {
       <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', marginBottom: 16 }}>
         <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} style={{ width: 18, height: 18, accentColor: '#F97316', cursor: 'pointer' }} />
         <span style={{ fontSize: 14, fontWeight: 600, color: '#FFFFFF' }}>Send automatic daily report</span>
+      </label>
+      <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', marginBottom: 16 }}>
+        <input type="checkbox" checked={exportEmailEnabled} onChange={(e) => setExportEmailEnabled(e.target.checked)} style={{ width: 18, height: 18, accentColor: '#F97316', cursor: 'pointer', marginTop: 1 }} />
+        <span>
+          <span style={{ display: 'block', fontSize: 14, fontWeight: 600, color: '#FFFFFF' }}>Email the project spreadsheet daily</span>
+          <span style={{ display: 'block', fontSize: 12, color: '#6B7280', marginTop: 2 }}>
+            A separate email with the task spreadsheet attached, sent at the send time below to the recipients below. Not sent on days when the project has no tasks.
+            {settings?.export_last_sent_at ? ` Last sent ${new Date(settings.export_last_sent_at).toLocaleString()}.` : ''}
+          </span>
+        </span>
       </label>
 
       {/* Send time */}
@@ -389,6 +427,19 @@ export function DailyReportSettings({ projectId }: { projectId: string }) {
         </div>
       </div>
       {testMessage && <div style={{ fontSize: 13, color: testMessage.ok ? '#22C55E' : '#EF4444', marginTop: 10 }}>{testMessage.text}</div>}
+
+      {/* Spreadsheet email test: always to the signed-in user's login email only */}
+      <div style={{ borderTop: '1px solid #1F2937', paddingTop: 14, marginTop: 14 }}>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <button onClick={handleTestSpreadsheet} disabled={testingSheet || !loginEmail} style={{ ...secondaryBtn, opacity: testingSheet || !loginEmail ? 0.5 : 1 }}>
+            {testingSheet ? 'Sending...' : `Send test spreadsheet to ${loginEmail ?? 'me'}`}
+          </button>
+        </div>
+        <div style={{ fontSize: 12, color: '#6B7280', marginTop: 6 }}>
+          Sends the spreadsheet email, with the current file attached, to your login email only. Limited to 5 test sends per project per hour.
+        </div>
+        {sheetTestMessage && <div role="status" style={{ fontSize: 13, color: sheetTestMessage.ok ? '#22C55E' : '#EF4444', marginTop: 10 }}>{sheetTestMessage.text}</div>}
+      </div>
     </div>
   );
 }
