@@ -49,6 +49,7 @@ export default function ProjectDetailPage() {
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [editingFolder, setEditingFolder] = useState<any>(null);
   const [editFolderName, setEditFolderName] = useState('');
+  const [folderDeleteBlock, setFolderDeleteBlock] = useState<{ folderId: string; message: string } | null>(null);
   const [taskSearch, setTaskSearch] = useState('');
   const [activeTab, setActiveTab] = useState<'tasks' | 'budget' | 'change-orders' | 'rfi' | 'client-messages'>('tasks');
 
@@ -502,14 +503,47 @@ export default function ProjectDetailPage() {
     } catch (e: any) { alert(e.message); }
   }
 
+  // Count every task in a folder, archived ones included: the database's folder rule
+  // (regular tasks must have a folder) applies to all of them.
+  async function countFolderTasks(folderId: string): Promise<{ total: number; archived: number }> {
+    const { data, error } = await supabase.from('tasks').select('archived').eq('folder_id', folderId);
+    if (error) throw error;
+    const rows = data ?? [];
+    return { total: rows.length, archived: rows.filter((t: any) => t.archived).length };
+  }
+
+  function folderNotEmptyMessage(c: { total: number; archived: number }) {
+    const noun = c.total === 1 ? 'task' : 'tasks';
+    const archived = c.archived > 0 ? ` (${c.archived} archived)` : '';
+    return `This folder has ${c.total} ${noun}${archived}. Move or delete them first.`;
+  }
+
+  // Folders that contain tasks cannot be deleted: nothing is moved or deleted automatically.
   async function handleDeleteFolder(folder: any) {
-    if (!window.confirm(`Delete "${folder.name}"? Tasks inside will not be deleted.`)) return;
+    setFolderDeleteBlock(null);
     try {
+      const counts = await countFolderTasks(folder.id);
+      if (counts.total > 0) {
+        setFolderDeleteBlock({ folderId: folder.id, message: folderNotEmptyMessage(counts) });
+        return;
+      }
+      if (!window.confirm(`Delete the empty folder "${folder.name}"?`)) return;
       const { error } = await supabase.from('folders').delete().eq('id', folder.id);
-      if (error) throw error;
+      if (error) {
+        // A task was added after the count (the database rejects the delete): re-count and explain.
+        if (error.code === '23514' || error.code === '23502') {
+          const fresh = await countFolderTasks(folder.id);
+          setFolderDeleteBlock({ folderId: folder.id, message: folderNotEmptyMessage(fresh) });
+          queryClient.invalidateQueries({ queryKey: ['web-folders', id] });
+          return;
+        }
+        throw error;
+      }
       queryClient.invalidateQueries({ queryKey: ['web-folders', id] });
       if (selectedFolder === folder.id) setSelectedFolder(null);
-    } catch (e: any) { alert(e.message); }
+    } catch (e: any) {
+      setFolderDeleteBlock({ folderId: folder.id, message: `Could not delete this folder: ${e?.message ?? 'unknown error'}` });
+    }
   }
 
   async function handleSaveProject() {
@@ -754,7 +788,7 @@ async function handleSaveTask() {
           const { data: newTask, error: taskErr } = await supabase
             .from('tasks')
             .insert({
-              project_id: id, folder_id: selectedFolder || null,
+              project_id: id, folder_id: selectedFolder,
               title: t.title.trim(), description: t.description.trim() || null,
               priority: t.priority, due_date: t.dueDate || null,
               status: 'open', created_by: user!.id,
@@ -774,7 +808,7 @@ async function handleSaveTask() {
       } else {
         const { error } = await supabase.from('tasks').insert(
           validTasks.map((t) => ({
-            project_id: id, folder_id: selectedFolder || null,
+            project_id: id, folder_id: selectedFolder,
             title: t.title.trim(), description: t.description.trim() || null,
             priority: t.priority, due_date: t.dueDate || null,
             status: 'open', created_by: user!.id,
@@ -820,7 +854,7 @@ async function handleSaveTask() {
       const { data: { user } } = await supabase.auth.getUser();
       const { error } = await supabase.from('tasks').insert(
         validTasks.map((t) => ({
-          project_id: id, folder_id: selectedFolder || null,
+          project_id: id, folder_id: selectedFolder,
           title: t.title, description: t.description || null,
           priority: t.priority, due_date: t.dueDate || null,
           status: 'open', created_by: user!.id,
@@ -1714,6 +1748,12 @@ async function handleSaveTask() {
                     <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
                       <button onClick={() => { setEditingFolder(folder); setEditFolderName(folder.name); }} style={{ flex: 1, padding: '4px 8px', backgroundColor: 'transparent', border: '1px solid #374151', borderRadius: 6, color: '#6B7280', fontSize: 11, cursor: 'pointer' }}>Rename</button>
                       <button onClick={() => handleDeleteFolder(folder)} style={{ flex: 1, padding: '4px 8px', backgroundColor: 'transparent', border: '1px solid #EF4444', borderRadius: 6, color: '#EF4444', fontSize: 11, cursor: 'pointer' }}>Delete</button>
+                    </div>
+                  )}
+                  {folderDeleteBlock && folderDeleteBlock.folderId === folder.id && (
+                    <div role="alert" style={{ marginTop: 6, padding: '8px 10px', backgroundColor: '#7F1D1D20', border: '1px solid #EF444460', borderRadius: 8, fontSize: 12, color: '#FCA5A5', display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'flex-start' }}>
+                      <span>{folderDeleteBlock.message}</span>
+                      <button onClick={() => setFolderDeleteBlock(null)} aria-label="Dismiss" style={{ background: 'transparent', border: 'none', color: '#FCA5A5', fontSize: 12, cursor: 'pointer', padding: 0 }}>Dismiss</button>
                     </div>
                   )}
                 </div>
