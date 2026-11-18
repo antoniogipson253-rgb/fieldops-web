@@ -423,7 +423,7 @@ export default function TeamPage() {
         <div style={{ background: '#111827', border: '0.5px solid #378ADD', borderRadius: 14, padding: 24, marginBottom: 20 }}>
           <h3 style={{ margin: '0 0 4px', fontSize: 15, fontWeight: 700 }}>Invite Client</h3>
           <p style={{ color: '#6B7280', fontSize: 13, margin: '0 0 16px' }}>
-            Clients get read-only access to project progress, photos, and daily reports.
+            Clients get read-only access to project progress and photos.
           </p>
           {clientMessage && (
             <div style={{ padding: '10px 14px', background: clientMessage.startsWith('Error') ? '#EF444420' : '#22C55E20', border: `1px solid ${clientMessage.startsWith('Error') ? '#EF4444' : '#22C55E'}`, borderRadius: 8, fontSize: 13, marginBottom: 14, color: clientMessage.startsWith('Error') ? '#EF4444' : '#22C55E' }}>

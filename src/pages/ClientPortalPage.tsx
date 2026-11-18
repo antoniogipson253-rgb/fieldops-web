@@ -59,7 +59,7 @@ const inputSt: React.CSSProperties = {
 export default function ClientPortalPage() {
   const queryClient = useQueryClient();
   const [selectedProject, setSelectedProject] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'overview' | 'reports' | 'photos' | 'messages'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'photos' | 'messages'>('overview');
   const [viewingPhoto, setViewingPhoto] = useState<string | null>(null);
   const [selectedThread, setSelectedThread] = useState<string | null>(null);
   const [replyText, setReplyText] = useState('');
@@ -125,10 +125,9 @@ export default function ClientPortalPage() {
     queryKey: ['client-project-detail', selectedProject],
     queryFn: async () => {
       if (!selectedProject) return null;
-      const [foldersRes, photosRes, reportsRes] = await Promise.all([
+      const [foldersRes, photosRes] = await Promise.all([
         supabase.from('folders').select('*').eq('project_id', selectedProject).order('created_at', { ascending: true }),
         supabase.from('task_photos').select('*, task:task_id (title, project_id)').eq('task.project_id', selectedProject).order('created_at', { ascending: false }).limit(20),
-        supabase.from('daily_reports').select('*').eq('project_id', selectedProject).eq('visible_to_client', true).order('created_at', { ascending: false }).limit(10),
       ]);
       const folders = foldersRes.data ?? [];
       const tasksRes = await supabase.from('tasks').select('id, folder_id, status, archived').eq('project_id', selectedProject);
@@ -149,11 +148,10 @@ export default function ClientPortalPage() {
         url: supabase.storage.from('task-photos').getPublicUrl(p.storage_key).data.publicUrl,
       }));
       const allDates = [
-        ...(reportsRes.data ?? []).map((r: any) => r.created_at),
         ...(photosRes.data ?? []).map((ph: any) => ph.created_at),
       ].filter(Boolean).sort().reverse();
       return {
-        folders: foldersWithProgress, photos, reports: reportsRes.data ?? [],
+        folders: foldersWithProgress, photos,
         projectProgress, totalTasks, completedTasks, inProgressTasks, openTasks,
         lastUpdatedAt: allDates[0] ?? null,
       };
@@ -468,7 +466,6 @@ export default function ClientPortalPage() {
             <div className="client-portal-tabs" style={{ display: 'flex', borderBottom: '2px solid #E5E7EB', marginBottom: 28, gap: 0, overflowX: 'auto', scrollbarWidth: 'none' as const }}>
               {([
                 { key: 'overview' as const, label: 'Overview' },
-                { key: 'reports' as const, label: 'Daily Reports' },
                 { key: 'photos' as const, label: 'Site Photos' },
                 { key: 'messages' as const, label: 'Messages', dot: hasUnreadMessages },
               ].filter((t) => t.key !== 'photos' || !!(selectedProjectData as any)?.client_photos_enabled) as Array<{ key: typeof activeTab; label: string; dot?: boolean }>).map((tab) => (
@@ -592,32 +589,6 @@ export default function ClientPortalPage() {
                       </div>
                     </div>
                   </div>
-                )}
-
-                {/* ===== DAILY REPORTS ===== */}
-                {activeTab === 'reports' && (
-                  !projectData?.reports.length ? (
-                    <div style={{ ...card, textAlign: 'center', padding: '60px 0' }}>
-                      <div style={{ fontSize: 48, marginBottom: 12 }}>📋</div>
-                      <div style={{ fontSize: 18, fontWeight: 700, color: '#111827', marginBottom: 8 }}>No daily reports submitted yet</div>
-                      <div style={{ fontSize: 14, color: '#6B7280' }}>Your contractor will submit daily updates here.</div>
-                    </div>
-                  ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                      {projectData.reports.map((report: any) => (
-                        <div key={report.id} style={isMobile ? { ...card, padding: 16 } : card}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 8 }}>
-                            <span style={{ fontSize: 15, fontWeight: 700, color: '#111827' }}>
-                              {new Date(report.created_at).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
-                            </span>
-                            {report.weather && <span style={{ fontSize: 13, color: '#6B7280' }}>🌤 {report.weather}</span>}
-                          </div>
-                          {report.work_performed && <p style={{ fontSize: 14, color: '#374151', margin: '0 0 10px', lineHeight: 1.7 }}>{report.work_performed}</p>}
-                          {report.notes && <p style={{ fontSize: 13, color: '#6B7280', margin: 0, fontStyle: 'italic', lineHeight: 1.6 }}>{report.notes}</p>}
-                        </div>
-                      ))}
-                    </div>
-                  )
                 )}
 
                 {/* ===== SITE PHOTOS ===== */}

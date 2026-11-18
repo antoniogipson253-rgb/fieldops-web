@@ -3,8 +3,6 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useIsAdmin, useIsProjectOwner, useIsProjectManager } from '../lib/useIsAdmin';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
 import { ProjectBudgetTab } from './tabs/ProjectBudgetTab';
 import { ProjectChangeOrdersTab } from './tabs/ProjectChangeOrdersTab';
 import { ProjectRFITab } from './tabs/ProjectRFITab';
@@ -90,10 +88,6 @@ export default function ProjectDetailPage() {
   const [inviting, setInviting] = useState(false);
   const [inviteType, setInviteType] = useState<'team' | 'client'>('team');
 
-  const [showExportModal, setShowExportModal] = useState(false);
-  const [exportFolderFilter, setExportFolderFilter] = useState<string>('all');
-  const [exportStatusFilter, setExportStatusFilter] = useState<string>('all');
-  const [exportIncludeArchived, setExportIncludeArchived] = useState(false);
 
   const [viewTask, setViewTask] = useState<any>(null);
   const [viewTaskPhotos, setViewTaskPhotos] = useState<any[]>([]);
@@ -295,138 +289,6 @@ export default function ProjectDetailPage() {
     setAssignableTasks([]);
     setSelectedAssignTaskId('');
     setAssignItemsText('');
-  }
-
-  async function handleExportPDF() {
-    try {
-      const { data, error } = await supabase
-        .from('tasks')
-        .select('*, task_assignees(user_id, profile:profiles(id, full_name)), folder:folder_id(name)')
-        .eq('project_id', id)
-        .order('folder_id', { ascending: true });
-
-      if (error) throw error;
-
-      let allTasks = data ?? [];
-
-      // Apply folder filter
-      if (exportFolderFilter !== 'all') {
-        allTasks = allTasks.filter((t: any) => t.folder_id === exportFolderFilter);
-      }
-
-      // Apply status filter
-      if (exportStatusFilter !== 'all') {
-        allTasks = allTasks.filter((t: any) => t.status === exportStatusFilter);
-      }
-
-      // Apply archived filter
-      if (!exportIncludeArchived) {
-        allTasks = allTasks.filter((t: any) => !t.archived);
-      }
-
-      const folderLabel = exportFolderFilter === 'all'
-        ? 'All Folders'
-        : folders?.find((f: any) => f.id === exportFolderFilter)?.name ?? 'Folder';
-
-      const statusLabel = exportStatusFilter === 'all' ? 'All Statuses'
-        : exportStatusFilter === 'in_progress' ? 'In Progress'
-        : exportStatusFilter === 'completed' ? 'Done' : 'Open';
-
-      const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-
-      // Orange header bar
-      doc.setFillColor(249, 115, 22);
-      doc.rect(0, 0, 297, 18, 'F');
-      doc.setTextColor(10, 15, 30);
-      doc.setFontSize(13);
-      doc.setFont('helvetica', 'bold');
-      doc.text('FIELDOPS PRO', 14, 12);
-      doc.setFontSize(10);
-      doc.text(`${project?.name ?? 'Project'} — ${folderLabel} — ${statusLabel}`, 80, 12);
-      doc.setFontSize(9);
-      doc.text(`Exported: ${new Date().toLocaleDateString()}`, 230, 12);
-
-      // Stats row
-      const total = allTasks.length;
-      const done = allTasks.filter((t: any) => t.status === 'completed' || t.archived).length;
-      const inProgress = allTasks.filter((t: any) => t.status === 'in_progress').length;
-      const open = allTasks.filter((t: any) => t.status === 'open').length;
-
-      doc.setFillColor(17, 24, 39);
-      doc.rect(0, 18, 297, 14, 'F');
-      doc.setFontSize(8);
-      doc.setFont('helvetica', 'normal');
-      doc.setTextColor(156, 163, 175);
-      doc.text(`TOTAL: ${total}`, 14, 27);
-      doc.setTextColor(34, 197, 94);
-      doc.text(`DONE: ${done}`, 50, 27);
-      doc.setTextColor(249, 115, 22);
-      doc.text(`IN PROGRESS: ${inProgress}`, 80, 27);
-      doc.setTextColor(107, 114, 128);
-      doc.text(`OPEN: ${open}`, 130, 27);
-
-      const rows = allTasks.map((t: any) => [
-        t.title ?? '',
-        t.description ? (t.description.length > 45 ? t.description.slice(0, 45) + '...' : t.description) : '',
-        t.status === 'in_progress' ? 'In Progress' : t.status === 'completed' ? 'Done' : 'Open',
-        t.priority ?? '',
-        taskAssigneeNames(t),
-        (t.folder as any)?.name ?? 'No Folder',
-        t.due_date ? new Date(t.due_date).toLocaleDateString() : '—',
-        t.archived ? 'Yes' : 'No',
-      ]);
-
-      autoTable(doc, {
-        startY: 34,
-        head: [['Title', 'Description', 'Status', 'Priority', 'Assigned To', 'Folder', 'Due Date', 'Archived']],
-        body: rows,
-        theme: 'grid',
-        styles: {
-          fontSize: 8,
-          cellPadding: 3,
-          fillColor: [17, 24, 39],
-          textColor: [229, 231, 235],
-          lineColor: [31, 41, 55],
-          lineWidth: 0.3,
-        },
-        headStyles: {
-          fillColor: [31, 41, 55],
-          textColor: [156, 163, 175],
-          fontStyle: 'bold',
-          fontSize: 8,
-        },
-        alternateRowStyles: { fillColor: [13, 19, 33] },
-        columnStyles: {
-          0: { cellWidth: 55 },
-          1: { cellWidth: 60 },
-          2: { cellWidth: 25 },
-          3: { cellWidth: 20 },
-          4: { cellWidth: 35 },
-          5: { cellWidth: 35 },
-          6: { cellWidth: 25 },
-          7: { cellWidth: 18 },
-        },
-        didParseCell: (data) => {
-          if (data.section === 'body' && data.column.index === 2) {
-            const val = data.cell.raw as string;
-            if (val === 'Done') data.cell.styles.textColor = [34, 197, 94];
-            else if (val === 'In Progress') data.cell.styles.textColor = [249, 115, 22];
-            else data.cell.styles.textColor = [107, 114, 128];
-          }
-          if (data.section === 'body' && data.column.index === 3) {
-            const val = data.cell.raw as string;
-            if (val === 'high') data.cell.styles.textColor = [239, 68, 68];
-            else if (val === 'medium') data.cell.styles.textColor = [245, 158, 11];
-            else data.cell.styles.textColor = [107, 114, 128];
-          }
-        },
-      });
-
-      doc.save(`${project?.name ?? 'tasks'} - ${folderLabel} - ${statusLabel}.pdf`);
-      setShowExportModal(false);
-    } catch (e: any) {
-      alert(e.message);
-    }
   }
 
   async function openViewTask(task: any) {
@@ -1071,14 +933,13 @@ async function handleSaveTask() {
           {canEdit && <button onClick={() => { setEditName(project?.name ?? ''); setEditDescription(project?.description ?? ''); setEditStatus(project?.status ?? 'active'); setEditClientPhotosEnabled((project as any)?.client_photos_enabled ?? false); setShowEditProject(true); }} style={{ padding: '10px 16px', backgroundColor: '#111827', border: '1px solid #374151', borderRadius: 10, color: '#9CA3AF', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>✏️ Edit</button>}
           {isAdmin && <button onClick={() => setShowInvite(!showInvite)} style={{ padding: '10px 16px', backgroundColor: '#111827', border: '1px solid #374151', borderRadius: 10, color: '#9CA3AF', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>👥 Invite</button>}
           <button onClick={() => navigate(`/projects/${id}/chat`)} style={{ padding: '10px 16px', backgroundColor: '#111827', border: '1px solid #374151', borderRadius: 10, color: '#9CA3AF', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>💬 Chat</button>
-          <button onClick={() => navigate(`/projects/${id}/daily-reports`)} style={{ padding: '10px 16px', backgroundColor: '#111827', border: '1px solid #374151', borderRadius: 10, color: '#9CA3AF', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Daily Reports (archive)</button>
+          {canManageChecklist && <button onClick={() => navigate(`/projects/${id}/daily-reports`)} style={{ padding: '10px 16px', backgroundColor: '#111827', border: '1px solid #374151', borderRadius: 10, color: '#9CA3AF', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Daily Reports</button>}
           <button onClick={handleDownloadSpreadsheet} disabled={downloadingSheet} title="Builds a fresh spreadsheet of this project's tasks" style={{ padding: '10px 16px', backgroundColor: '#111827', border: '1px solid #374151', borderRadius: 10, color: downloadingSheet ? '#6B7280' : '#9CA3AF', fontSize: 13, fontWeight: 600, cursor: downloadingSheet ? 'wait' : 'pointer' }}>
             {downloadingSheet ? 'Building spreadsheet...' : 'Download spreadsheet'}
           </button>
           {downloadSheetError && (
             <span role="alert" style={{ alignSelf: 'center', fontSize: 12, color: '#FCA5A5', maxWidth: 320 }}>{downloadSheetError}</span>
           )}
-          <button onClick={() => { setExportFolderFilter(selectedFolder ?? 'all'); setExportStatusFilter('all'); setExportIncludeArchived(false); setShowExportModal(true); }} style={{ padding: '10px 16px', backgroundColor: '#111827', border: '1px solid #374151', borderRadius: 10, color: '#9CA3AF', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>📥 Export PDF</button>
           {canEdit && <button onClick={() => { resetImport(); setShowImport(true); }} style={{ padding: '10px 20px', backgroundColor: '#F97316', border: 'none', borderRadius: 10, color: '#0A0F1E', fontSize: 14, fontWeight: 800, cursor: 'pointer' }}>+ Add Tasks</button>}
         </div>
       </div>
@@ -1123,77 +984,6 @@ async function handleSaveTask() {
           </button>
         ))}
       </div>
-
-      {/* Export Modal */}
-      {showExportModal && (
-        <div style={modalOverlay} onClick={() => setShowExportModal(false)}>
-          <div style={{ ...modalBox, maxWidth: 460 }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-              <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>📥 Export to PDF</h3>
-              <button onClick={() => setShowExportModal(false)} style={{ backgroundColor: '#1F2937', border: 'none', borderRadius: 8, color: '#9CA3AF', fontSize: 16, cursor: 'pointer', padding: '4px 10px' }}>✕</button>
-            </div>
-
-            <div style={{ marginBottom: 20 }}>
-              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#6B7280', letterSpacing: 2, marginBottom: 8 }}>FOLDER</label>
-              <select
-                value={exportFolderFilter}
-                onChange={(e) => setExportFolderFilter(e.target.value)}
-                style={{ ...inputStyle, cursor: 'pointer' }}
-              >
-                <option value="all">All Folders</option>
-                {folders?.map((f: any) => (
-                  <option key={f.id} value={f.id}>{f.name} ({f.task_count} tasks)</option>
-                ))}
-              </select>
-            </div>
-
-            <div style={{ marginBottom: 20 }}>
-              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#6B7280', letterSpacing: 2, marginBottom: 8 }}>STATUS</label>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                {[
-                  { value: 'all', label: 'All Statuses' },
-                  { value: 'open', label: 'Open' },
-                  { value: 'in_progress', label: 'In Progress' },
-                  { value: 'completed', label: 'Done' },
-                ].map((opt) => (
-                  <button
-                    key={opt.value}
-                    onClick={() => setExportStatusFilter(opt.value)}
-                    style={{
-                      padding: '10px 14px', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer',
-                      backgroundColor: exportStatusFilter === opt.value ? '#F9731620' : '#1F2937',
-                      border: `1px solid ${exportStatusFilter === opt.value ? '#F97316' : '#374151'}`,
-                      color: exportStatusFilter === opt.value ? '#F97316' : '#9CA3AF',
-                    }}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div style={{ marginBottom: 28 }}>
-              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#6B7280', letterSpacing: 2, marginBottom: 8 }}>OPTIONS</label>
-              <button
-                onClick={() => setExportIncludeArchived(!exportIncludeArchived)}
-                style={{
-                  padding: '10px 16px', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer',
-                  backgroundColor: exportIncludeArchived ? '#F9731620' : '#1F2937',
-                  border: `1px solid ${exportIncludeArchived ? '#F97316' : '#374151'}`,
-                  color: exportIncludeArchived ? '#F97316' : '#9CA3AF',
-                }}
-              >
-                {exportIncludeArchived ? '✓' : '○'} Include Archived Tasks
-              </button>
-            </div>
-
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={() => setShowExportModal(false)} style={{ flex: 1, padding: '12px', backgroundColor: 'transparent', border: '1px solid #374151', borderRadius: 10, color: '#6B7280', fontSize: 14, cursor: 'pointer' }}>Cancel</button>
-              <button onClick={handleExportPDF} style={{ flex: 2, padding: '12px', backgroundColor: '#F97316', border: 'none', borderRadius: 10, color: '#0A0F1E', fontSize: 14, fontWeight: 800, cursor: 'pointer' }}>📥 Download PDF</button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Edit Project Panel */}
       {showEditProject && canEdit && (

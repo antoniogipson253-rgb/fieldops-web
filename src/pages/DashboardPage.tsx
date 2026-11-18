@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useIsAdmin, useCurrentUser, useUserRole } from '../lib/useIsAdmin';
 import { useIsMobile } from '../hooks/useIsMobile';
@@ -499,6 +500,7 @@ function AdminDashboard({ currentUserId }: { currentUserId: string }) {
 
 function PMDashboard({ currentUserId }: { currentUserId: string }) {
   const isMobile = useIsMobile();
+  const navigate = useNavigate();
   const { data: pmProjects } = useQuery({
     queryKey: ['pm-dash-projects', currentUserId],
     queryFn: async () => {
@@ -587,11 +589,13 @@ function PMDashboard({ currentUserId }: { currentUserId: string }) {
     queryKey: ['pm-dash-reports', projectIdsKey],
     queryFn: async () => {
       if (projectIds.length === 0) return [];
+      // Automatic daily reports that were emailed (readable by admins/PMs of the project's company).
       const { data } = await supabase
-        .from('daily_reports')
-        .select('id, report_date, project:project_id(name), author:created_by(full_name)')
+        .from('daily_report_sends')
+        .select('id, project_id, report_date, status, sent_at, project:project_id(name)')
         .in('project_id', projectIds)
         .order('report_date', { ascending: false })
+        .order('sent_at', { ascending: false })
         .limit(5);
       return data ?? [];
     },
@@ -692,15 +696,21 @@ function PMDashboard({ currentUserId }: { currentUserId: string }) {
 
           <div style={card}>
             <p style={cardTitle}>Recent reports</p>
-            {(reports ?? []).length === 0 && <p style={{ color: '#4B5563', fontSize: 13 }}>No reports submitted.</p>}
+            {(reports ?? []).length === 0 && <p style={{ color: '#4B5563', fontSize: 13 }}>No reports sent yet.</p>}
             {(reports ?? []).map((r: any) => (
-              <div key={r.id} style={{ display: 'flex', gap: 10, padding: '9px 0', borderBottom: '0.5px solid #1F2937', alignItems: 'flex-start' }}>
-                <div style={{ width: 7, height: 7, borderRadius: 4, background: '#378ADD', marginTop: 5, flexShrink: 0 }} />
+              <button
+                key={r.id}
+                onClick={() => navigate(`/projects/${r.project_id}/daily-reports`)}
+                style={{ display: 'flex', gap: 10, padding: '9px 0', borderTop: 'none', borderLeft: 'none', borderRight: 'none', borderBottom: '0.5px solid #1F2937', alignItems: 'flex-start', width: '100%', background: 'transparent', color: 'inherit', textAlign: 'left', cursor: 'pointer', font: 'inherit' }}
+              >
+                <div style={{ width: 7, height: 7, borderRadius: 4, background: r.status === 'sent' ? '#378ADD' : r.status === 'failed' ? '#E24B4A' : '#EF9F27', marginTop: 5, flexShrink: 0 }} />
                 <div>
-                  <div style={{ fontSize: 13 }}>Daily report — {(r.project as any)?.name}</div>
-                  <div style={{ fontSize: 11, color: '#4B5563', marginTop: 2 }}>{(r.author as any)?.full_name} · {new Date(r.report_date).toLocaleDateString()}</div>
+                  <div style={{ fontSize: 13 }}>Daily report: {(r.project as any)?.name}</div>
+                  <div style={{ fontSize: 11, color: '#4B5563', marginTop: 2 }}>
+                    {new Date(r.report_date + 'T12:00:00').toLocaleDateString()} · {r.status === 'sent' ? 'Sent' : r.status === 'failed' ? 'Not delivered' : 'Delivery uncertain'}
+                  </div>
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         </div>
