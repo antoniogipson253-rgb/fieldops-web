@@ -1,13 +1,208 @@
-body {
+/* FieldOps global foundation (Direction A, High-Vis Industrial).
+   Keep these values in sync with src/theme.ts, which mirrors them for inline styles. */
+
+:root {
+  /* Surfaces */
+  --bg: #0A0F1E;
+  --surface: #111827;
+  --surface-2: #1A2235;
+  --border: #2A3445;
+
+  /* Text */
+  --text: #F9FAFB;
+  --text-2: #C7CDD6;
+  --text-3: #9CA3AF;
+
+  /* Brand: orange is for actions and the current page only */
+  --accent: #F97316;
+  --accent-hover: #FB923C;
+  --on-accent: #0A0F1E;
+
+  /* Status */
+  --status-green: #22C55E;
+  --status-blue: #60A5FA;
+  --status-amber: #FBBF24;
+  --status-red: #F87171;
+  --status-gray: #9CA3AF;
+
+  /* Type */
+  --font-ui: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-display: 'Barlow Condensed', 'Arial Narrow', 'Inter', sans-serif;
+
+  /* Shape */
+  --radius-card: 12px;
+  --radius-control: 8px;
+  --radius-pill: 999px;
+
+  /* Motion */
+  --ease: 150ms ease;
+
+  color-scheme: dark;
+}
+
+* {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  background-color: var(--bg);
+  /* No body text color on purpose: pages set their own colors until step 2. */
+  font-family: var(--font-ui);
+  font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Form controls do not inherit the page font by default */
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+}
+
+select option {
+  background-color: var(--surface);
+  color: var(--text);
+}
+
 code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New', monospace;
+}
+
+/* Keyboard focus: visible orange ring, only when navigating by keyboard */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* 150ms transitions on interactive elements */
+a,
+button,
+[role='button'],
+.fo-card,
+.fo-btn,
+.fo-nav-item {
+  transition:
+    background-color var(--ease),
+    color var(--ease),
+    border-color var(--ease),
+    box-shadow var(--ease),
+    transform var(--ease),
+    filter var(--ease),
+    opacity var(--ease);
+}
+
+/* Helpers used with the inline styles from theme.ts. They only touch properties the
+   inline styles do not set (filter, transform, box-shadow), so inline values never fight them. */
+.fo-btn:not(:disabled) {
+  cursor: pointer;
+}
+.fo-btn:hover:not(:disabled) {
+  filter: brightness(1.12);
+}
+.fo-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+.fo-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.fo-card-link {
+  cursor: pointer;
+}
+.fo-card-link:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 0 0 1px rgba(249, 115, 22, 0.45);
+}
+
+/* Sidebar navigation */
+.fo-nav-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  border-radius: var(--radius-control);
+  background-color: transparent;
+  color: var(--text-2);
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  text-align: left;
+  cursor: pointer;
+}
+.fo-nav-item:hover {
+  background-color: var(--surface-2);
+  color: var(--text);
+}
+.fo-nav-item.is-active,
+.fo-nav-item.is-active:hover {
+  background-color: var(--accent);
+  color: var(--on-accent);
+}
+
+/* Skeleton loading shapes */
+@keyframes fo-skeleton-shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+.fo-skeleton {
+  display: block;
+  background-color: var(--surface);
+  background-image: linear-gradient(90deg, var(--surface) 0%, var(--surface-2) 50%, var(--surface) 100%);
+  background-size: 200% 100%;
+  animation: fo-skeleton-shimmer 1.4s ease-in-out infinite;
+}
+
+/* App loading screen: a short orange bar sliding along a track */
+@keyframes fo-loading-slide {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(250%); }
+}
+.fo-loading-bar {
+  animation: fo-loading-slide 1.1s ease-in-out infinite;
+}
+
+/* Scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) var(--bg);
+}
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-3);
+}
+
+/* Respect the device's reduced-motion setting */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  /* Keep the placeholders and loading bar visible but still */
+  .fo-skeleton,
+  .fo-loading-bar {
+    animation: none !important;
+  }
 }
