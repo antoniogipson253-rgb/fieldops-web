@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { useIsAdmin, useUserRole } from '../lib/useIsAdmin';
 import { colors, fonts, tint } from '../theme';
@@ -20,20 +21,44 @@ function initialsFor(name: string): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
-/** Name from the signed-in session already held in the browser (no network request). */
-function useSessionName(): string {
-  const [name, setName] = useState('');
+/**
+ * Display name for the user block: the profiles.full_name the Profile page shows, then the
+ * name saved at sign-up (session metadata), then the email.
+ * The profile query uses the same key and query as ProfilePage, so the two share one cached
+ * copy, and saving a new name on Profile (which invalidates 'web-profile') updates the sidebar.
+ */
+function useDisplayName(): string {
+  const [sessionUser, setSessionUser] = useState<{ id: string; metaName: string; email: string } | null>(null);
   useEffect(() => {
     let alive = true;
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!alive || !session) return;
       const meta = session.user.user_metadata ?? {};
-      const fullName = typeof meta.full_name === 'string' ? meta.full_name.trim() : '';
-      setName(fullName || session.user.email || '');
+      setSessionUser({
+        id: session.user.id,
+        metaName: typeof meta.full_name === 'string' ? meta.full_name.trim() : '',
+        email: session.user.email ?? '',
+      });
     });
     return () => { alive = false; };
   }, []);
-  return name;
+
+  const { data: profile } = useQuery({
+    queryKey: ['web-profile', sessionUser?.id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', sessionUser!.id)
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!sessionUser,
+  });
+
+  const profileName = typeof profile?.full_name === 'string' ? profile.full_name.trim() : '';
+  return profileName || sessionUser?.metaName || sessionUser?.email || '';
 }
 
 export default function Sidebar() {
@@ -43,7 +68,7 @@ export default function Sidebar() {
   const { data: userRole } = useUserRole();
   const isPM = userRole === 'project_manager';
   const [moreOpen, setMoreOpen] = useState(false);
-  const userName = useSessionName();
+  const userName = useDisplayName();
   const roleLabel = userRole ? ROLE_LABELS[userRole] ?? userRole : '';
 
   const allNavItems = [
