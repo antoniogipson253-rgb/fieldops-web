@@ -82,7 +82,7 @@ export default function Sidebar() {
     { path: '/payroll', label: 'Payroll', show: !!isAdmin },
     { path: '/timesheet', label: 'Timesheet', show: !!isAdmin },
     { path: '/files', label: 'Files', show: true },
-    { path: '/profile', label: 'Profile', show: true },
+    { path: '/profile', label: 'Settings', show: true },
     { path: '/incidents', label: 'Incidents', show: !!isAdmin },
   ];
 

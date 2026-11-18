@@ -209,6 +209,100 @@ button.fo-row {
   color: var(--on-accent);
 }
 
+/* Segmented control */
+.fo-seg {
+  display: inline-flex;
+  flex-wrap: wrap;
+  padding: 3px;
+  gap: 2px;
+  background-color: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  max-width: 100%;
+}
+.fo-seg.is-full {
+  display: flex;
+  width: 100%;
+}
+.fo-seg.is-full .fo-seg-btn {
+  flex: 1 1 auto;
+}
+.fo-seg-btn {
+  padding: 6px 12px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-2);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color var(--ease), color var(--ease);
+}
+.fo-seg-btn:hover {
+  background-color: var(--surface-2);
+  color: var(--text);
+}
+.fo-seg-btn.is-active,
+.fo-seg-btn.is-active:hover {
+  background-color: var(--accent);
+  color: var(--on-accent);
+}
+
+/* Small square icon button; the danger one turns red on hover (e.g. Remove, Delete) */
+.fo-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: background-color var(--ease), color var(--ease), border-color var(--ease);
+}
+.fo-icon-btn:hover {
+  background-color: var(--surface-2);
+  color: var(--text);
+}
+.fo-icon-btn-danger:hover {
+  background-color: rgba(248, 113, 113, 0.15);
+  border-color: var(--status-red);
+  color: var(--status-red);
+}
+
+/* Settings side menu */
+.fo-menu-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  border-left: 3px solid transparent;
+  border-radius: 0 var(--radius-control) var(--radius-control) 0;
+  background: transparent;
+  color: var(--text-2);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--ease), color var(--ease), border-color var(--ease);
+}
+.fo-menu-item:hover {
+  background-color: var(--surface-2);
+  color: var(--text);
+}
+.fo-menu-item.is-active {
+  background-color: rgba(249, 115, 22, 0.14);
+  border-left-color: var(--accent);
+  color: var(--text);
+}
+
 /* Visually hidden but read by screen readers */
 .fo-sr-only {
   position: absolute;

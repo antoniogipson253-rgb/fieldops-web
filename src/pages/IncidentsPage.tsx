@@ -1,20 +1,17 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { useIsMobile } from '../hooks/useIsMobile';
+import { card, colors, input, sectionLabel, statusColor } from '../theme';
+import PageHeader from '../components/ui/PageHeader';
+import StatCard from '../components/ui/StatCard';
+import StatusChip from '../components/ui/StatusChip';
+import EmptyState from '../components/ui/EmptyState';
+import Skeleton from '../components/ui/Skeleton';
+import SegmentedControl from '../components/ui/SegmentedControl';
+import Icon from '../components/ui/Icon';
 
-const severityColors: Record<string, string> = {
-  low: '#1D9E75',
-  medium: '#EF9F27',
-  high: '#E24B4A',
-  critical: '#7C3AED',
-};
-
-const severityBg: Record<string, string> = {
-  low: '#1D9E7520',
-  medium: '#EF9F2720',
-  high: '#E24B4A20',
-  critical: '#7C3AED20',
-};
+// Severity colors come from the theme (StatusChip): low gray, medium amber, high red, critical violet.
 
 // Postgres `timestamp without time zone` columns come back from PostgREST with no
 // 'Z'/offset suffix, which makes `new Date()` misparse a UTC instant as local time.
@@ -31,6 +28,7 @@ export default function IncidentsPage() {
   const [selectedProject, setSelectedProject] = useState('all');
   const [selectedSeverity, setSelectedSeverity] = useState('all');
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const isMobile = useIsMobile();
 
   const { data: projects } = useQuery({
     queryKey: ['incidents-projects'],
@@ -84,141 +82,123 @@ export default function IncidentsPage() {
     });
   }
 
+  const detailLabel: React.CSSProperties = { ...sectionLabel, margin: '0 0 6px' };
+
   return (
-    <div style={{ padding: 32, color: '#FFFFFF' }}>
-      {/* Header */}
-      <div style={{ marginBottom: 24 }}>
-        <h1 style={{ fontSize: 26, fontWeight: 700, margin: '0 0 4px' }}>Safety Incidents</h1>
-        <p style={{ color: '#6B7280', fontSize: 13, margin: 0 }}>All incident reports submitted by your crew</p>
-      </div>
+    <div style={{ padding: isMobile ? 16 : 32, color: colors.text }}>
+      <PageHeader title="Safety Incidents" subtitle="All incident reports submitted by your crew" />
 
       {/* Stats */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 24 }}>
-        <div style={{ background: '#111827', borderRadius: 12, padding: '14px 16px', border: '0.5px solid #1F2937', borderLeft: '3px solid #6B7280' }}>
-          <p style={{ fontSize: 12, color: '#6B7280', margin: '0 0 6px' }}>Total Incidents</p>
-          <p style={{ fontSize: 24, fontWeight: 700, margin: 0 }}>{incidents?.length ?? 0}</p>
-        </div>
-        <div style={{ background: '#111827', borderRadius: 12, padding: '14px 16px', border: '0.5px solid #1F2937', borderLeft: '3px solid #EF9F27' }}>
-          <p style={{ fontSize: 12, color: '#6B7280', margin: '0 0 6px' }}>This Week</p>
-          <p style={{ fontSize: 24, fontWeight: 700, margin: 0 }}>{thisWeek}</p>
-        </div>
-        <div style={{ background: '#111827', borderRadius: 12, padding: '14px 16px', border: '0.5px solid #1F2937', borderLeft: '3px solid #E24B4A' }}>
-          <p style={{ fontSize: 12, color: '#6B7280', margin: '0 0 6px' }}>High Severity</p>
-          <p style={{ fontSize: 24, fontWeight: 700, margin: 0, color: highCount > 0 ? '#E24B4A' : '#FFFFFF' }}>{highCount}</p>
-        </div>
-        <div style={{ background: '#111827', borderRadius: 12, padding: '14px 16px', border: '0.5px solid #1F2937', borderLeft: '3px solid #7C3AED' }}>
-          <p style={{ fontSize: 12, color: '#6B7280', margin: '0 0 6px' }}>Critical</p>
-          <p style={{ fontSize: 24, fontWeight: 700, margin: 0, color: criticalCount > 0 ? '#7C3AED' : '#FFFFFF' }}>{criticalCount}</p>
-        </div>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, minmax(0, 1fr))' : 'repeat(4, minmax(0, 1fr))', gap: 12, marginBottom: 20 }}>
+        <StatCard label="Total incidents" tone="gray" value={isLoading ? undefined : incidents?.length ?? 0} />
+        <StatCard label="This week" tone="amber" value={isLoading ? undefined : thisWeek} />
+        <StatCard label="High severity" tone="red" alert={highCount > 0} value={isLoading ? undefined : highCount} />
+        <StatCard label="Critical" tone="violet" value={isLoading ? undefined : criticalCount} sub={criticalCount > 0 ? 'needs attention' : undefined} />
       </div>
 
       {/* Filters */}
-      <div style={{ display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap', alignItems: 'center' }}>
+      <div style={{ ...card, padding: isMobile ? 12 : 14, display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+        <label htmlFor="incident-project" className="fo-sr-only">Project</label>
         <select
+          id="incident-project"
           value={selectedProject}
           onChange={(e) => setSelectedProject(e.target.value)}
-          style={{ padding: '10px 16px', background: '#111827', border: '1px solid #1F2937', borderRadius: 10, color: '#FFFFFF', fontSize: 14, outline: 'none', cursor: 'pointer', minWidth: 200 }}
+          style={{ ...input, width: isMobile ? '100%' : 'auto', minWidth: 200, cursor: 'pointer', backgroundColor: colors.bg }}
         >
-          <option value="all">All Projects</option>
+          <option value="all">All projects</option>
           {projects?.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
-
-        <div style={{ display: 'flex', gap: 8 }}>
-          {['all', 'low', 'medium', 'high', 'critical'].map((s) => (
-            <button
-              key={s}
-              onClick={() => setSelectedSeverity(s)}
-              style={{
-                padding: '9px 16px',
-                background: selectedSeverity === s ? (s === 'all' ? '#F97316' : severityColors[s]) : '#111827',
-                border: '1px solid',
-                borderColor: selectedSeverity === s ? (s === 'all' ? '#F97316' : severityColors[s]) : '#1F2937',
-                borderRadius: 10,
-                color: selectedSeverity === s ? '#FFFFFF' : '#9CA3AF',
-                fontSize: 13, fontWeight: 600, cursor: 'pointer',
-              }}
-            >
-              {s.charAt(0).toUpperCase() + s.slice(1)}
-            </button>
-          ))}
-        </div>
-
-        <span style={{ color: '#4B5563', fontSize: 13 }}>{incidents?.length ?? 0} incident{incidents?.length !== 1 ? 's' : ''}</span>
+        <SegmentedControl
+          label="Severity"
+          options={['all', 'low', 'medium', 'high', 'critical'].map((s) => ({ value: s, label: s === 'all' ? 'All' : s.charAt(0).toUpperCase() + s.slice(1) }))}
+          value={selectedSeverity}
+          onChange={setSelectedSeverity}
+          fullWidth={isMobile}
+        />
+        <span style={{ color: colors.text3, fontSize: 13, marginLeft: isMobile ? 0 : 'auto' }}>{incidents?.length ?? 0} incident{incidents?.length !== 1 ? 's' : ''}</span>
       </div>
 
       {/* List */}
       {isLoading ? (
-        <div style={{ color: '#F97316', fontSize: 13 }}>Loading...</div>
-      ) : (incidents ?? []).length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '60px 20px', color: '#4B5563' }}>
-          <div style={{ fontSize: 16, fontWeight: 600, color: '#FFFFFF', marginBottom: 6 }}>No incidents reported</div>
-          <div style={{ fontSize: 13 }}>Incident reports submitted from the mobile app will appear here</div>
+        <div role="status" aria-label="Loading incidents" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {[0, 1, 2].map((i) => <Skeleton key={i} height={72} radius={12} />)}
         </div>
+      ) : (incidents ?? []).length === 0 ? (
+        selectedProject !== 'all' || selectedSeverity !== 'all' ? (
+          <EmptyState title="No matching incidents" message="No incidents match this project and severity." actionLabel="Show all incidents" onAction={() => { setSelectedProject('all'); setSelectedSeverity('all'); }} />
+        ) : (
+          <EmptyState title="No incidents reported" message="Incident reports submitted from the mobile app will appear here." />
+        )
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {(incidents ?? []).map((incident: any) => (
-            <div key={incident.id} style={{ background: '#111827', borderRadius: 14, border: '0.5px solid #1F2937', overflow: 'hidden' }}>
-              {/* Row */}
-              <div
-                onClick={() => setExpandedId(expandedId === incident.id ? null : incident.id)}
-                style={{ padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', borderLeft: `4px solid ${severityColors[incident.severity] ?? '#6B7280'}` }}
-                onMouseEnter={(e) => (e.currentTarget.style.background = '#1F2937')}
-                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-              >
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-                    <span style={{ fontSize: 15, fontWeight: 700 }}>{incident.incident_type}</span>
-                    <span style={{ fontSize: 11, fontWeight: 700, color: severityColors[incident.severity], background: severityBg[incident.severity], padding: '2px 10px', borderRadius: 20 }}>
-                      {incident.severity?.toUpperCase()}
-                    </span>
+          {(incidents ?? []).map((incident: any) => {
+            const open = expandedId === incident.id;
+            const edge = statusColor(incident.severity);
+            return (
+              <div key={incident.id} style={{ ...card, padding: 0, overflow: 'hidden', borderLeft: `4px solid ${edge}` }}>
+                {/* Row */}
+                <button
+                  type="button"
+                  className="fo-row"
+                  aria-expanded={open}
+                  onClick={() => setExpandedId(open ? null : incident.id)}
+                  style={{ width: '100%', padding: isMobile ? '14px 14px' : '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, background: 'transparent', border: 'none', color: 'inherit', textAlign: 'left', font: 'inherit' }}
+                >
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 15, fontWeight: 700 }}>{incident.incident_type}</span>
+                      <StatusChip status={incident.severity} />
+                    </div>
+                    <div style={{ fontSize: 13, color: colors.text2 }}>
+                      <span style={{ color: colors.text, fontWeight: 600 }}>{(incident.reporter as any)?.full_name ?? 'Unknown'}</span>
+                      {(incident.project as any)?.name && <span> · {(incident.project as any).name}</span>}
+                      <span> · {formatDate(incident.incident_date)} at {formatTime(incident.incident_date)}</span>
+                    </div>
                   </div>
-                  <div style={{ fontSize: 13, color: '#6B7280' }}>
-                    <span style={{ color: '#F97316', fontWeight: 600 }}>{(incident.reporter as any)?.full_name ?? 'Unknown'}</span>
-                    {(incident.project as any)?.name && <span> · {(incident.project as any).name}</span>}
-                    <span> · {formatDate(incident.incident_date)} at {formatTime(incident.incident_date)}</span>
-                  </div>
-                </div>
-                <span style={{ color: '#6B7280', fontSize: 18, transform: expandedId === incident.id ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', display: 'inline-block' }}>▾</span>
-              </div>
+                  <span aria-hidden="true" style={{ color: colors.text2, display: 'inline-flex', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 150ms ease' }}>
+                    <Icon name="chevron-down" size={18} />
+                  </span>
+                </button>
 
-              {/* Expanded */}
-              {expandedId === incident.id && (
-                <div style={{ padding: '0 20px 20px 24px', borderTop: '0.5px solid #1F2937' }}>
-                  {incident.description && (
-                    <div style={{ marginTop: 16 }}>
-                      <p style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', letterSpacing: 2, margin: '0 0 8px' }}>DESCRIPTION</p>
-                      <p style={{ fontSize: 14, color: '#D1D5DB', lineHeight: 1.6, margin: 0 }}>{incident.description}</p>
-                    </div>
-                  )}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginTop: 16 }}>
-                    {incident.injured_person && (
-                      <div>
-                        <p style={{ fontSize: 11, fontWeight: 700, color: '#E24B4A', letterSpacing: 2, margin: '0 0 6px' }}>INJURED PERSON</p>
-                        <p style={{ fontSize: 14, color: '#D1D5DB', margin: 0 }}>{incident.injured_person}</p>
+                {/* Expanded */}
+                {open && (
+                  <div style={{ padding: isMobile ? '0 14px 16px' : '0 20px 20px', borderTop: `1px solid ${colors.border}` }}>
+                    {incident.description && (
+                      <div style={{ marginTop: 16 }}>
+                        <p style={detailLabel}>Description</p>
+                        <p style={{ fontSize: 14, color: colors.text2, lineHeight: 1.6, margin: 0 }}>{incident.description}</p>
                       </div>
                     )}
-                    {incident.location && (
-                      <div>
-                        <p style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', letterSpacing: 2, margin: '0 0 6px' }}>LOCATION</p>
-                        <p style={{ fontSize: 14, color: '#D1D5DB', margin: 0 }}>{incident.location}</p>
+                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'repeat(2, minmax(0, 1fr))', gap: 16, marginTop: 16 }}>
+                      {incident.injured_person && (
+                        <div>
+                          <p style={{ ...detailLabel, color: colors.red }}>Injured person</p>
+                          <p style={{ fontSize: 14, color: colors.text, margin: 0 }}>{incident.injured_person}</p>
+                        </div>
+                      )}
+                      {incident.location && (
+                        <div>
+                          <p style={detailLabel}>Location</p>
+                          <p style={{ fontSize: 14, color: colors.text, margin: 0 }}>{incident.location}</p>
+                        </div>
+                      )}
+                    </div>
+                    {incident.photo_url && (
+                      <div style={{ marginTop: 16 }}>
+                        <p style={detailLabel}>Photo</p>
+                        <img
+                          src={incident.photo_url}
+                          alt="Incident"
+                          style={{ width: 160, height: 120, objectFit: 'cover', borderRadius: 10, cursor: 'pointer', border: `1px solid ${colors.border}` }}
+                          onClick={() => window.open(incident.photo_url, '_blank')}
+                        />
                       </div>
                     )}
                   </div>
-                  {incident.photo_url && (
-                    <div style={{ marginTop: 16 }}>
-                      <p style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', letterSpacing: 2, margin: '0 0 8px' }}>PHOTO</p>
-                      <img
-                        src={incident.photo_url}
-                        alt="Incident"
-                        style={{ width: 160, height: 120, objectFit: 'cover', borderRadius: 10, cursor: 'pointer' }}
-                        onClick={() => window.open(incident.photo_url, '_blank')}
-                      />
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          ))}
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
