@@ -25,6 +25,7 @@ import SetPasswordPage from './pages/SetPasswordPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import TimesheetPage from './pages/TimesheetPage';
 import DailyReportsPage from './pages/DailyReportsPage';
+import { colors, fonts } from './theme';
 
 const PLANS = [
   {
@@ -205,9 +206,9 @@ function TrialGuard({ children }: { children: React.ReactNode }) {
 
 function AppLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: '#0A0F1E' }}>
+    <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: colors.bg }}>
       <Sidebar />
-      <main style={{ flex: 1, overflowY: 'auto', paddingBottom: 'env(safe-area-inset-bottom)' }}
+      <main style={{ flex: 1, minWidth: 0, overflowY: 'auto', paddingBottom: 'env(safe-area-inset-bottom)' }}
         className="app-main">
         <TrialGuard>
           {children}
@@ -268,8 +269,17 @@ export default function App() {
 
   if (loading) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', backgroundColor: '#0A0F1E', color: '#F97316', fontSize: 24, fontWeight: 'bold', letterSpacing: 4 }}>
-        FIELDOPS
+      <div
+        role="status"
+        aria-label="Loading FieldOps Pro"
+        style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', gap: 14, minHeight: '100vh', backgroundColor: colors.bg }}
+      >
+        <div style={{ fontFamily: fonts.display, fontSize: 32, fontWeight: 700, letterSpacing: '0.05em', lineHeight: 1, color: colors.text, whiteSpace: 'nowrap' }}>
+          FIELDOPS<span style={{ color: colors.accent }}> PRO</span>
+        </div>
+        <div style={{ width: 120, height: 3, borderRadius: 2, backgroundColor: colors.surface2, overflow: 'hidden' }}>
+          <div className="fo-loading-bar" style={{ width: '40%', height: '100%', borderRadius: 2, backgroundColor: colors.accent }} />
+        </div>
       </div>
     );
   }
