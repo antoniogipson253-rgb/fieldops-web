@@ -3,6 +3,14 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useIsAdmin } from '../lib/useIsAdmin';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { btn, card, colors, fonts, input, radius, tint } from '../theme';
+import PageHeader from '../components/ui/PageHeader';
+import StatCard from '../components/ui/StatCard';
+import StatusChip from '../components/ui/StatusChip';
+import EmptyState from '../components/ui/EmptyState';
+import Skeleton from '../components/ui/Skeleton';
+import SegmentedControl from '../components/ui/SegmentedControl';
+import Icon from '../components/ui/Icon';
 
 const ROLES = ['admin', 'project_manager', 'worker'] as const;
 type Role = typeof ROLES[number];
@@ -11,12 +19,6 @@ const roleLabels: Record<Role, string> = {
   admin: 'Admin',
   project_manager: 'Project Manager',
   worker: 'Worker',
-};
-
-const roleColors: Record<Role, string> = {
-  admin: '#F97316',
-  project_manager: '#378ADD',
-  worker: '#6B7280',
 };
 
 const roleDescriptions: Record<Role, string> = {
@@ -333,85 +335,99 @@ export default function TeamPage() {
     }
   }
 
+  const seatPct = maxMembers > 0 ? Math.min(100, Math.round((totalMembers / maxMembers) * 100)) : 0;
+  const panel: React.CSSProperties = { ...card, padding: isMobile ? 16 : 24, marginBottom: 20 };
+  const labelStyle: React.CSSProperties = { display: 'block', fontSize: 12, fontWeight: 600, color: colors.text2, marginBottom: 6 };
+  const sectionHeading: React.CSSProperties = { margin: 0, fontFamily: fonts.display, fontSize: 20, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: colors.text2 };
+  const avatar = (name: string) => (
+    <div aria-hidden="true" style={{ width: 38, height: 38, borderRadius: 19, flexShrink: 0, backgroundColor: colors.surface2, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 600, color: colors.text }}>
+      {getInitials(name)}
+    </div>
+  );
+  const notice = (text: string) => {
+    const isError = text.startsWith('Error');
+    const c = isError ? colors.red : colors.green;
+    return (
+      <div role={isError ? 'alert' : 'status'} style={{ padding: '10px 14px', background: tint(c, 0.12), border: `1px solid ${tint(c, 0.5)}`, borderRadius: radius.control, fontSize: 13, fontWeight: 600, marginBottom: 14, color: c }}>
+        {text}
+      </div>
+    );
+  };
+
   return (
-    <div style={{ padding: isMobile ? 16 : 32, color: '#FFFFFF' }}>
-      {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
-        <div>
-          <h1 style={{ fontSize: 26, fontWeight: 700, margin: '0 0 4px' }}>Team</h1>
-          <p style={{ color: '#6B7280', fontSize: 13, margin: 0 }}>
-            {company?.name && <span style={{ color: '#F97316', fontWeight: 600 }}>{company.name}</span>}
-            {isAdmin && (
-              <span style={{ color: '#4B5563' }}> — {totalMembers}/{maxMembers} members · <span style={{ color: seatsRemaining <= 2 ? '#EF4444' : '#6B7280' }}>{seatsRemaining} seat{seatsRemaining !== 1 ? 's' : ''} remaining</span></span>
-            )}
-          </p>
-        </div>
-        {isAdmin && (
-          <div style={{ display: 'flex', gap: 10 }}>
-            <button
-              onClick={() => { setShowClientInvite(!showClientInvite); setShowInvite(false); }}
-              style={{ padding: '10px 20px', backgroundColor: 'transparent', border: '1px solid #378ADD', borderRadius: 10, color: '#378ADD', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}
-            >
-              + Invite Client
+    <div style={{ padding: isMobile ? 16 : 32, color: colors.text }}>
+      <PageHeader
+        title="Team"
+        subtitle={
+          <>
+            {company?.name ?? ''}
+            {isAdmin && <> · {totalMembers} of {maxMembers} seats used</>}
+          </>
+        }
+        actions={isAdmin ? (
+          <>
+            <button onClick={() => { setShowClientInvite(!showClientInvite); setShowInvite(false); }} {...btn('secondary')}>
+              <Icon name="plus" /> Invite client
             </button>
             <button
               onClick={() => { setShowInvite(!showInvite); setShowClientInvite(false); }}
               disabled={seatsRemaining <= 0}
-              style={{ padding: '10px 20px', backgroundColor: seatsRemaining <= 0 ? '#1F2937' : '#F97316', border: 'none', borderRadius: 10, color: seatsRemaining <= 0 ? '#4B5563' : '#0A0F1E', fontSize: 13, fontWeight: 700, cursor: seatsRemaining <= 0 ? 'not-allowed' : 'pointer' }}
+              {...btn('primary')}
             >
-              {seatsRemaining <= 0 ? 'Team Full' : '+ Invite Member'}
+              {seatsRemaining <= 0 ? 'Team full' : <><Icon name="plus" /> Invite member</>}
             </button>
-          </div>
-        )}
-      </div>
+          </>
+        ) : undefined}
+      />
 
-      {/* Admin: Plan + seat bar */}
+      {/* Admin: seats and role counts */}
       {isAdmin && (
-        <div style={{ background: '#111827', border: '0.5px solid #1F2937', borderRadius: 12, padding: '16px 20px', marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <span style={{ background: '#F9731620', border: '1px solid #F97316', borderRadius: 20, padding: '3px 12px', fontSize: 12, fontWeight: 700, color: '#F97316' }}>
-              {planLabels[currentPlan] ?? currentPlan}
-            </span>
-            <span style={{ color: '#6B7280', fontSize: 13 }}>{totalMembers} of {maxMembers} seats used</span>
-          </div>
-          <div style={{ flex: 1, minWidth: 180, maxWidth: 280 }}>
-            <div style={{ background: '#1F2937', borderRadius: 4, height: 5, overflow: 'hidden' }}>
-              <div style={{ height: '100%', borderRadius: 4, width: `${Math.min((totalMembers / maxMembers) * 100, 100)}%`, background: seatsRemaining <= 2 ? '#EF4444' : '#F97316' }} />
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(3, minmax(0, 1fr))' : '2fr repeat(3, minmax(0, 1fr))', gap: 12, marginBottom: 20 }}>
+          <div style={{ ...card, borderTop: `3px solid ${colors.accent}`, padding: '14px 16px 16px', gridColumn: isMobile ? '1 / -1' : undefined }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: colors.text2 }}>Seats</span>
+              <StatusChip status="active" label={planLabels[currentPlan] ?? currentPlan} />
+            </div>
+            <div style={{ fontFamily: fonts.display, fontSize: 40, fontWeight: 700, lineHeight: 1, margin: '8px 0 10px' }}>
+              {isLoading ? <Skeleton width={90} height={36} /> : <>{totalMembers}<span style={{ color: colors.text3, fontSize: 28 }}> / {maxMembers}</span></>}
+            </div>
+            <div style={{ height: 8, backgroundColor: colors.track, borderRadius: 4, overflow: 'hidden' }} role="progressbar" aria-valuemin={0} aria-valuemax={maxMembers} aria-valuenow={totalMembers} aria-label="Seats used">
+              <div style={{ height: '100%', width: `${seatPct}%`, backgroundColor: colors.accent, borderRadius: 4 }} />
+            </div>
+            <div style={{ fontSize: 12, marginTop: 6, color: seatsRemaining <= 2 ? colors.red : colors.text3, fontWeight: seatsRemaining <= 2 ? 600 : 400 }}>
+              {seatsRemaining} seat{seatsRemaining !== 1 ? 's' : ''} remaining
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 16, fontSize: 13 }}>
-            <span style={{ color: '#F97316' }}>{adminCount} Admin{adminCount !== 1 ? 's' : ''}</span>
-            <span style={{ color: '#378ADD' }}>{pmCount} PM{pmCount !== 1 ? 's' : ''}</span>
-            <span style={{ color: '#6B7280' }}>{workerCount} Worker{workerCount !== 1 ? 's' : ''}</span>
-          </div>
+          <StatCard label="Admins" tone="violet" value={isLoading ? undefined : adminCount} />
+          <StatCard label="PMs" tone="blue" value={isLoading ? undefined : pmCount} />
+          <StatCard label="Workers" tone="gray" value={isLoading ? undefined : workerCount} />
         </div>
       )}
 
       {/* Invite Member Panel */}
       {showInvite && isAdmin && (
-        <div style={{ background: '#111827', border: '0.5px solid #F97316', borderRadius: 14, padding: 24, marginBottom: 20 }}>
-          <h3 style={{ margin: '0 0 4px', fontSize: 15, fontWeight: 700 }}>Invite Team Member</h3>
-          <p style={{ color: '#6B7280', fontSize: 13, margin: '0 0 16px' }}>
+        <div style={panel}>
+          <h3 style={{ margin: '0 0 4px', fontFamily: fonts.display, fontSize: 22, fontWeight: 700, letterSpacing: '0.02em' }}>Invite team member</h3>
+          <p style={{ color: colors.text3, fontSize: 13, margin: '0 0 16px' }}>
             {seatsRemaining} seat{seatsRemaining !== 1 ? 's' : ''} remaining on {planLabels[currentPlan]}
           </p>
-          {message && (
-            <div style={{ padding: '10px 14px', background: message.startsWith('Error') ? '#EF444420' : '#22C55E20', border: `1px solid ${message.startsWith('Error') ? '#EF4444' : '#22C55E'}`, borderRadius: 8, fontSize: 13, marginBottom: 14, color: message.startsWith('Error') ? '#EF4444' : '#22C55E' }}>
-              {message}
-            </div>
-          )}
-          <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-            {ROLES.filter((r) => r !== 'admin').map((r) => (
-              <button key={r} onClick={() => setInviteRole(r)} style={{ flex: 1, padding: '8px 12px', background: inviteRole === r ? roleColors[r] + '20' : '#1F2937', border: `1px solid ${inviteRole === r ? roleColors[r] : '#374151'}`, borderRadius: 8, color: inviteRole === r ? roleColors[r] : '#6B7280', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-                {roleLabels[r]}
-              </button>
-            ))}
+          {message && notice(message)}
+          <div style={{ marginBottom: 12 }}>
+            <span style={labelStyle}>Role</span>
+            <SegmentedControl
+              label="Role for the new member"
+              options={ROLES.filter((r) => r !== 'admin').map((r) => ({ value: r, label: roleLabels[r] }))}
+              value={inviteRole}
+              onChange={(r) => setInviteRole(r as Role)}
+            />
           </div>
-          <div style={{ display: 'flex', gap: 10 }}>
-            <input type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleInvite()} placeholder="email@company.com" style={{ flex: 1, padding: '10px 14px', background: '#1F2937', border: '1px solid #374151', borderRadius: 8, color: '#FFFFFF', fontSize: 14, outline: 'none' }} />
-            <button onClick={handleInvite} disabled={inviting} style={{ padding: '10px 24px', background: inviting ? '#374151' : '#F97316', border: 'none', borderRadius: 8, color: inviting ? '#6B7280' : '#0A0F1E', fontSize: 13, fontWeight: 700, cursor: inviting ? 'not-allowed' : 'pointer' }}>
-              {inviting ? 'Sending...' : 'Send Invite'}
+          <label htmlFor="invite-email" style={labelStyle}>Email</label>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            <input id="invite-email" type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleInvite()} placeholder="email@company.com" style={{ ...input, flex: '1 1 220px', width: 'auto' }} />
+            <button onClick={handleInvite} disabled={inviting} {...btn('primary')}>
+              {inviting ? 'Sending...' : 'Send invite'}
             </button>
-            <button onClick={() => { setShowInvite(false); setMessage(''); }} style={{ padding: '10px 16px', background: 'transparent', border: '1px solid #374151', borderRadius: 8, color: '#6B7280', fontSize: 13, cursor: 'pointer' }}>
+            <button onClick={() => { setShowInvite(false); setMessage(''); }} {...btn('ghost')}>
               Cancel
             </button>
           </div>
@@ -420,22 +436,19 @@ export default function TeamPage() {
 
       {/* Invite Client Panel */}
       {showClientInvite && isAdmin && (
-        <div style={{ background: '#111827', border: '0.5px solid #378ADD', borderRadius: 14, padding: 24, marginBottom: 20 }}>
-          <h3 style={{ margin: '0 0 4px', fontSize: 15, fontWeight: 700 }}>Invite Client</h3>
-          <p style={{ color: '#6B7280', fontSize: 13, margin: '0 0 16px' }}>
+        <div style={panel}>
+          <h3 style={{ margin: '0 0 4px', fontFamily: fonts.display, fontSize: 22, fontWeight: 700, letterSpacing: '0.02em' }}>Invite client</h3>
+          <p style={{ color: colors.text3, fontSize: 13, margin: '0 0 16px' }}>
             Clients get read-only access to project progress and photos.
           </p>
-          {clientMessage && (
-            <div style={{ padding: '10px 14px', background: clientMessage.startsWith('Error') ? '#EF444420' : '#22C55E20', border: `1px solid ${clientMessage.startsWith('Error') ? '#EF4444' : '#22C55E'}`, borderRadius: 8, fontSize: 13, marginBottom: 14, color: clientMessage.startsWith('Error') ? '#EF4444' : '#22C55E' }}>
-              {clientMessage}
-            </div>
-          )}
+          {clientMessage && notice(clientMessage)}
           <div style={{ marginBottom: 12 }}>
-            <label style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', letterSpacing: 2, display: 'block', marginBottom: 6 }}>SELECT PROJECT</label>
+            <label htmlFor="client-project" style={labelStyle}>Project</label>
             <select
+              id="client-project"
               value={clientInviteProject}
               onChange={(e) => setClientInviteProject(e.target.value)}
-              style={{ width: '100%', padding: '10px 14px', background: '#1F2937', border: '1px solid #374151', borderRadius: 8, color: clientInviteProject ? '#FFFFFF' : '#6B7280', fontSize: 14, outline: 'none', cursor: 'pointer' }}
+              style={{ ...input, cursor: 'pointer', color: clientInviteProject ? colors.text : colors.text3 }}
             >
               <option value="">Select a project...</option>
               {projects?.map((p: any) => (
@@ -443,26 +456,21 @@ export default function TeamPage() {
               ))}
             </select>
           </div>
-          <div style={{ display: 'flex', gap: 10 }}>
+          <label htmlFor="client-email" style={labelStyle}>Email</label>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
             <input
+              id="client-email"
               type="email"
               value={clientInviteEmail}
               onChange={(e) => setClientInviteEmail(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleClientInvite()}
               placeholder="client@company.com"
-              style={{ flex: 1, padding: '10px 14px', background: '#1F2937', border: '1px solid #374151', borderRadius: 8, color: '#FFFFFF', fontSize: 14, outline: 'none' }}
+              style={{ ...input, flex: '1 1 220px', width: 'auto' }}
             />
-            <button
-              onClick={handleClientInvite}
-              disabled={clientInviting}
-              style={{ padding: '10px 24px', background: clientInviting ? '#374151' : '#378ADD', border: 'none', borderRadius: 8, color: clientInviting ? '#6B7280' : '#FFFFFF', fontSize: 13, fontWeight: 700, cursor: clientInviting ? 'not-allowed' : 'pointer' }}
-            >
-              {clientInviting ? 'Sending...' : 'Send Invite'}
+            <button onClick={handleClientInvite} disabled={clientInviting} {...btn('primary')}>
+              {clientInviting ? 'Sending...' : 'Send invite'}
             </button>
-            <button
-              onClick={() => { setShowClientInvite(false); setClientMessage(''); }}
-              style={{ padding: '10px 16px', background: 'transparent', border: '1px solid #374151', borderRadius: 8, color: '#6B7280', fontSize: 13, cursor: 'pointer' }}
-            >
+            <button onClick={() => { setShowClientInvite(false); setClientMessage(''); }} {...btn('ghost')}>
               Cancel
             </button>
           </div>
@@ -471,21 +479,25 @@ export default function TeamPage() {
 
       {/* Role change modal */}
       {editingMember && isAdmin && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
-          <div style={{ background: '#111827', borderRadius: 16, padding: 32, width: '100%', maxWidth: 440, border: '0.5px solid #1F2937' }}>
-            <h3 style={{ margin: '0 0 20px', fontSize: 17, fontWeight: 700 }}>Change Role</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 24 }}>
-              {ROLES.map((role) => (
-                <button key={role} onClick={() => setSelectedRole(role)} style={{ padding: '12px 16px', background: selectedRole === role ? roleColors[role] + '20' : '#1F2937', border: `1px solid ${selectedRole === role ? roleColors[role] : '#374151'}`, borderRadius: 10, cursor: 'pointer', textAlign: 'left' }}>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: selectedRole === role ? roleColors[role] : '#FFFFFF', marginBottom: 2 }}>{roleLabels[role]}</div>
-                  <div style={{ fontSize: 12, color: '#6B7280' }}>{roleDescriptions[role]}</div>
-                </button>
-              ))}
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: 16 }}>
+          <div role="dialog" aria-modal="true" aria-labelledby="role-dialog-title" style={{ ...card, padding: isMobile ? 20 : 28, width: '100%', maxWidth: 440 }}>
+            <h3 id="role-dialog-title" style={{ margin: '0 0 16px', fontFamily: fonts.display, fontSize: 24, fontWeight: 700, letterSpacing: '0.02em' }}>Change role</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 20 }}>
+              {ROLES.map((role) => {
+                const selected = selectedRole === role;
+                return (
+                  <button key={role} type="button" aria-pressed={selected} onClick={() => setSelectedRole(role)} style={{ padding: '12px 14px', background: selected ? tint(colors.accent, 0.12) : colors.bg, border: `1px solid ${selected ? colors.accent : colors.border}`, borderRadius: radius.control, cursor: 'pointer', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <StatusChip status={role} label={roleLabels[role]} />
+                    <span style={{ fontSize: 13, color: colors.text2, flex: 1 }}>{roleDescriptions[role]}</span>
+                    {selected && <Icon name="check" size={16} strokeWidth={3} style={{ color: colors.accent }} />}
+                  </button>
+                );
+              })}
             </div>
             <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={() => setEditingMember(null)} style={{ flex: 1, padding: '12px', background: 'transparent', border: '1px solid #374151', borderRadius: 10, color: '#6B7280', fontSize: 13, cursor: 'pointer' }}>Cancel</button>
-              <button onClick={() => handleSaveRole(editingMember)} disabled={!!updatingRole} style={{ flex: 2, padding: '12px', background: '#F97316', border: 'none', borderRadius: 10, color: '#0A0F1E', fontSize: 13, fontWeight: 700, cursor: updatingRole ? 'not-allowed' : 'pointer' }}>
-                {updatingRole ? 'Saving...' : 'Save Role'}
+              <button onClick={() => setEditingMember(null)} {...btn('ghost', { flex: 1 })}>Cancel</button>
+              <button onClick={() => handleSaveRole(editingMember)} disabled={!!updatingRole} {...btn('primary', { flex: 2 })}>
+                {updatingRole ? 'Saving...' : 'Save role'}
               </button>
             </div>
           </div>
@@ -494,151 +506,115 @@ export default function TeamPage() {
 
       {/* Members list */}
       {isLoading ? (
-        <div style={{ color: '#F97316', fontSize: 13 }}>Loading...</div>
+        <div style={{ ...card, padding: 0 }} role="status" aria-label="Loading team">
+          {[0, 1, 2].map((i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 18px', borderTop: i ? `1px solid ${colors.border}` : 'none' }}>
+              <Skeleton width={38} height={38} radius={19} />
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}><Skeleton width="35%" height={14} /><Skeleton width="20%" height={11} /></div>
+            </div>
+          ))}
+        </div>
+      ) : !companyMembers?.length ? (
+        <EmptyState
+          title="No team members yet"
+          message={isAdmin ? 'Invite your crew to start assigning tasks and tracking time.' : 'Contact your admin to add team members.'}
+          actionLabel={isAdmin && seatsRemaining > 0 ? 'Invite member' : undefined}
+          onAction={() => { setShowInvite(true); setShowClientInvite(false); }}
+        />
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {companyMembers?.map((member: any) => {
+        <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
+          {companyMembers.map((member: any, i: number) => {
             const profile = member.profile as any;
             const name = profile?.full_name ?? 'Unknown';
             const role = (member.role ?? 'worker') as Role;
             return (
-              <div key={member.user_id} style={{ background: '#111827', borderRadius: 12, padding: '16px 20px', border: '0.5px solid #1F2937', display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'stretch' : 'center', gap: isMobile ? 12 : 14 }}>
-                {isMobile ? (
-                  <>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                      <div style={{ width: 44, height: 44, borderRadius: 22, background: '#1F2937', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 700, color: roleColors[role] ?? '#6B7280', flexShrink: 0, border: `1.5px solid ${roleColors[role] ?? '#374151'}` }}>
-                        {getInitials(name)}
-                      </div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: profile?.phone ? 4 : 0 }}>
-                          <span style={{ fontSize: 15, fontWeight: 600 }}>{name}</span>
-                          {isAdmin && (
-                            <span style={{ fontSize: 11, fontWeight: 700, color: roleColors[role] ?? '#6B7280', background: (roleColors[role] ?? '#6B7280') + '20', padding: '2px 10px', borderRadius: 20 }}>
-                              {roleLabels[role] ?? role}
-                            </span>
-                          )}
-                        </div>
-                        {profile?.phone && (
-                          <div style={{ fontSize: 12, color: '#4B5563' }}>{profile.phone}</div>
-                        )}
-                      </div>
-                    </div>
-                    {isAdmin && (
-                      <div style={{ display: 'flex', gap: 8 }}>
-                        <button
-                          onClick={() => { setEditingMember(member.user_id); setSelectedRole(role); }}
-                          style={{ padding: '7px 14px', minHeight: 44, flex: 1, background: '#1F2937', border: '0.5px solid #374151', borderRadius: 8, color: '#9CA3AF', fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}
-                        >
-                          Change Role
-                        </button>
-                        {member.user_id !== currentUserId && (
-                          <button
-                            onClick={() => handleRemoveMember(member.user_id, profile?.full_name)}
-                            style={{ padding: '7px 14px', minHeight: 44, flex: 1, background: 'transparent', border: '0.5px solid #EF4444', borderRadius: 8, color: '#EF4444', fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}
-                          >
-                            Remove
-                          </button>
-                        )}
-                      </div>
+              <div key={member.user_id} className="fo-row" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: isMobile ? '12px 14px' : '12px 18px', borderTop: i ? `1px solid ${colors.border}` : 'none' }}>
+                {avatar(name)}
+                <div style={{ flex: '1 1 160px', minWidth: 0 }}>
+                  <div style={{ fontSize: 15, fontWeight: 600, overflowWrap: 'anywhere' }}>{name}</div>
+                  <div style={{ fontSize: 13, marginTop: 2, color: profile?.phone ? colors.text2 : colors.text3 }}>
+                    {profile?.phone || 'No phone added'}
+                  </div>
+                </div>
+                {isAdmin && <StatusChip status={role} label={roleLabels[role] ?? role} />}
+                {isAdmin && (
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <button onClick={() => { setEditingMember(member.user_id); setSelectedRole(role); }} {...btn('secondary', { padding: '7px 12px', fontSize: 13 })}>
+                      Change role
+                    </button>
+                    {member.user_id !== currentUserId && (
+                      <button
+                        type="button"
+                        className="fo-icon-btn fo-icon-btn-danger"
+                        onClick={() => handleRemoveMember(member.user_id, profile?.full_name)}
+                        aria-label={`Remove ${name} from the team`}
+                        title="Remove from team"
+                      >
+                        <Icon name="trash" size={16} />
+                      </button>
                     )}
-                  </>
-                ) : (
-                  <>
-                    <div style={{ width: 44, height: 44, borderRadius: 22, background: '#1F2937', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 700, color: roleColors[role] ?? '#6B7280', flexShrink: 0, border: `1.5px solid ${roleColors[role] ?? '#374151'}` }}>
-                      {getInitials(name)}
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>{name}</div>
-                      {isAdmin && (
-                        <span style={{ fontSize: 11, fontWeight: 700, color: roleColors[role] ?? '#6B7280', background: (roleColors[role] ?? '#6B7280') + '20', padding: '2px 10px', borderRadius: 20 }}>
-                          {roleLabels[role] ?? role}
-                        </span>
-                      )}
-                      {profile?.phone && (
-                        <span style={{ fontSize: 12, color: '#4B5563', marginLeft: isAdmin ? 8 : 0 }}>{profile.phone}</span>
-                      )}
-                    </div>
-                    {isAdmin && (
-                      <div style={{ display: 'flex', gap: 8 }}>
-                        <button
-                          onClick={() => { setEditingMember(member.user_id); setSelectedRole(role); }}
-                          style={{ padding: '7px 14px', background: '#1F2937', border: '0.5px solid #374151', borderRadius: 8, color: '#9CA3AF', fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}
-                        >
-                          Change Role
-                        </button>
-                        {member.user_id !== currentUserId && (
-                          <button
-                            onClick={() => handleRemoveMember(member.user_id, profile?.full_name)}
-                            style={{ padding: '7px 14px', background: 'transparent', border: '0.5px solid #EF4444', borderRadius: 8, color: '#EF4444', fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}
-                          >
-                            Remove
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </>
+                  </div>
                 )}
               </div>
             );
           })}
-          {!companyMembers?.length && (
-            <div style={{ textAlign: 'center', padding: 60, color: '#4B5563' }}>
-              <div style={{ fontSize: 16, fontWeight: 600, color: '#FFFFFF', marginBottom: 6 }}>No team members yet</div>
-              <div style={{ fontSize: 13 }}>{isAdmin ? 'Click "+ Invite Member" to add your crew' : 'Contact your admin to add team members'}</div>
-            </div>
-          )}
         </div>
       )}
 
       {/* ===== CLIENTS SECTION ===== */}
       {isAdmin && (
-        <>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16, margin: '32px 0 20px' }}>
-            <div style={{ flex: 1, height: 1, backgroundColor: '#1F2937' }} />
-            <span style={{ fontSize: 11, fontWeight: 700, color: '#4B5563', letterSpacing: 2 }}>CLIENTS</span>
-            <div style={{ flex: 1, height: 1, backgroundColor: '#1F2937' }} />
+        <div style={{ marginTop: 32 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
+            <h2 style={sectionHeading}>Clients</h2>
+            {clientsList.length > 0 && <span style={{ fontSize: 13, color: colors.text3 }}>{clientsList.length} client{clientsList.length !== 1 ? 's' : ''}</span>}
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {clientsList.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: 40, color: '#4B5563' }}>
-                <div style={{ fontSize: 13 }}>No clients added yet. Use "Invite Client" to add one.</div>
-              </div>
-            ) : clientsList.map((client) => (
-              <div key={client.id} style={{ background: '#111827', borderRadius: 12, padding: '16px 20px', border: '0.5px solid #1F2937', display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
-                <div style={{ width: 44, height: 44, borderRadius: 22, background: '#1F293760', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 700, color: '#378ADD', flexShrink: 0, border: '1.5px solid #378ADD40' }}>
-                  {getInitials(client.name)}
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>{client.name}</div>
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                    {client.projects.map((p) => (
-                      <span key={p.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 700, color: '#6B7280', backgroundColor: '#1F2937', padding: '3px 8px', borderRadius: 20 }}>
-                        {p.name}
-                        <button onClick={() => handleRemoveClientFromProject(client.id, p.id)} style={{ background: 'none', border: 'none', color: '#EF4444', cursor: 'pointer', fontSize: 11, padding: 0, lineHeight: 1, marginLeft: 2 }}>✕</button>
-                      </span>
-                    ))}
+          {clientsList.length === 0 ? (
+            <EmptyState
+              title="No clients yet"
+              message="Invite a client to give them read-only access to a project."
+              actionLabel="Invite client"
+              onAction={() => { setShowClientInvite(true); setShowInvite(false); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+            />
+          ) : (
+            <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
+              {clientsList.map((client, i) => (
+                <div key={client.id} className="fo-row" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: isMobile ? '12px 14px' : '12px 18px', borderTop: i ? `1px solid ${colors.border}` : 'none' }}>
+                  {avatar(client.name)}
+                  <div style={{ flex: '1 1 200px', minWidth: 0 }}>
+                    <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6, overflowWrap: 'anywhere' }}>{client.name}</div>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                      {client.projects.map((p) => (
+                        <span key={p.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, fontWeight: 600, color: colors.text2, border: `1px solid ${colors.border}`, padding: '2px 4px 2px 10px', borderRadius: radius.pill }}>
+                          {p.name}
+                          <button onClick={() => handleRemoveClientFromProject(client.id, p.id)} aria-label={`Remove ${client.name} from ${p.name}`} title="Remove from project" style={{ background: 'none', border: 'none', color: colors.text3, cursor: 'pointer', padding: 2, display: 'inline-flex', borderRadius: radius.pill }}>
+                            <Icon name="x" size={12} strokeWidth={2.75} />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                  <StatusChip status="client" />
+                  <div>
+                    {addToProjectClientId === client.id ? (
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                        <select aria-label="Project to add the client to" value={addToProjectId} onChange={(e) => setAddToProjectId(e.target.value)} style={{ ...input, width: 'auto', padding: '7px 10px', fontSize: 13, cursor: 'pointer' }}>
+                          <option value="">Select project...</option>
+                          {projects?.filter((p: any) => !client.projects.some((cp) => cp.id === p.id)).map((p: any) => (
+                            <option key={p.id} value={p.id}>{p.name}</option>
+                          ))}
+                        </select>
+                        <button onClick={() => handleAddClientToProject(client.id)} disabled={!addToProjectId} {...btn('primary', { padding: '7px 12px', fontSize: 13 })}>Add</button>
+                        <button onClick={() => { setAddToProjectClientId(null); setAddToProjectId(''); }} {...btn('ghost', { padding: '7px 12px', fontSize: 13 })}>Cancel</button>
+                      </div>
+                    ) : (
+                      <button onClick={() => { setAddToProjectClientId(client.id); setAddToProjectId(''); }} {...btn('secondary', { padding: '7px 12px', fontSize: 13 })}><Icon name="plus" /> Add to project</button>
+                    )}
                   </div>
                 </div>
-                <div>
-                  {addToProjectClientId === client.id ? (
-                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                      <select value={addToProjectId} onChange={(e) => setAddToProjectId(e.target.value)} style={{ padding: '6px 10px', background: '#1F2937', border: '1px solid #374151', borderRadius: 8, color: '#FFFFFF', fontSize: 12, cursor: 'pointer', outline: 'none' }}>
-                        <option value="">Select project...</option>
-                        {projects?.filter((p: any) => !client.projects.some((cp) => cp.id === p.id)).map((p: any) => (
-                          <option key={p.id} value={p.id}>{p.name}</option>
-                        ))}
-                      </select>
-                      <button onClick={() => handleAddClientToProject(client.id)} disabled={!addToProjectId} style={{ padding: '6px 12px', background: '#378ADD', border: 'none', borderRadius: 8, color: '#FFFFFF', fontSize: 12, fontWeight: 700, cursor: addToProjectId ? 'pointer' : 'not-allowed', opacity: addToProjectId ? 1 : 0.5 }}>Add</button>
-                      <button onClick={() => { setAddToProjectClientId(null); setAddToProjectId(''); }} style={{ padding: '6px 10px', background: 'transparent', border: '1px solid #374151', borderRadius: 8, color: '#6B7280', fontSize: 12, cursor: 'pointer' }}>Cancel</button>
-                    </div>
-                  ) : (
-                    <button onClick={() => { setAddToProjectClientId(client.id); setAddToProjectId(''); }} style={{ padding: '7px 14px', background: '#1F2937', border: '0.5px solid #378ADD', borderRadius: 8, color: '#378ADD', fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>+ Add to Project</button>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </>
+              ))}
+            </div>
+          )}
+        </div>
       )}
     </div>
   );

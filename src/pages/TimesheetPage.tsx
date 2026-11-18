@@ -1,6 +1,15 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
+import { useIsMobile } from '../hooks/useIsMobile';
+import { btn, card, colors, fonts, radius, sectionLabel, tint } from '../theme';
+import PageHeader from '../components/ui/PageHeader';
+import StatCard from '../components/ui/StatCard';
+import StatusChip from '../components/ui/StatusChip';
+import EmptyState from '../components/ui/EmptyState';
+import Skeleton from '../components/ui/Skeleton';
+import SegmentedControl from '../components/ui/SegmentedControl';
+import Icon from '../components/ui/Icon';
 
 function getWeekRange(weekOffset: number) {
   const now = new Date();
@@ -53,6 +62,7 @@ export default function TimesheetPage() {
   const [sending, setSending] = useState(false);
   const [sendResult, setSendResult] = useState<{ success?: boolean; message?: string } | null>(null);
   const [expandedEmployee, setExpandedEmployee] = useState<string | null>(null);
+  const isMobile = useIsMobile();
 
   const { start, end } = getWeekRange(weekOffset);
   const weekLabel = `${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
@@ -163,88 +173,75 @@ export default function TimesheetPage() {
     }
   }
 
-  const inputStyle: React.CSSProperties = {
-    padding: '10px 14px', backgroundColor: '#0D1321',
-    border: '1px solid #1F2937', borderRadius: 8,
-    color: '#FFFFFF', fontSize: 14, outline: 'none', cursor: 'pointer',
-  };
+  const weekName = weekOffset === 0 ? 'This week' : weekOffset === -1 ? 'Last week' : `${Math.abs(weekOffset)} weeks ago`;
+  const WEEK_OPTIONS = [
+    { value: 0, label: 'This week' },
+    { value: -1, label: 'Last week' },
+    { value: -2, label: '2 weeks ago' },
+    { value: -3, label: '3 weeks ago' },
+  ];
+  const th: React.CSSProperties = { ...sectionLabel, fontSize: 10.5, padding: '9px 14px', textAlign: 'left', whiteSpace: 'nowrap' };
+  const td: React.CSSProperties = { padding: '10px 14px', fontSize: 13, color: colors.text2, whiteSpace: 'nowrap' };
 
   return (
-    <div style={{ padding: 32, color: '#FFFFFF', maxWidth: 960 }}>
-      <div style={{ marginBottom: 32 }}>
-        <h1 style={{ fontSize: 28, fontWeight: 800, margin: 0, marginBottom: 4 }}>Timesheet Viewer</h1>
-        <p style={{ color: '#6B7280', fontSize: 14, margin: 0 }}>
-          Review hours worked by your team for any week
-        </p>
-      </div>
+    <div style={{ padding: isMobile ? 16 : 32, color: colors.text, maxWidth: 1100 }}>
+      <PageHeader
+        title="Timesheet Viewer"
+        subtitle="Review hours worked by your team for any week"
+        actions={
+          <button onClick={handleSendReport} disabled={sending} {...btn('secondary')}>
+            <Icon name="mail" size={15} /> {sending ? 'Sending...' : 'Email report'}
+          </button>
+        }
+      />
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <button
-            onClick={() => setWeekOffset(w => w - 1)}
-            style={{ ...inputStyle, padding: '10px 16px', fontWeight: 700 }}
-          >
-            ←
-          </button>
-          <div style={{ backgroundColor: '#111827', borderRadius: 10, padding: '10px 20px', border: '1px solid #1F2937', fontSize: 14, fontWeight: 600, minWidth: 240, textAlign: 'center' }}>
-            {weekOffset === 0 ? 'This Week' : weekOffset === -1 ? 'Last Week' : `${Math.abs(weekOffset)} Weeks Ago`} · {weekLabel}
-          </div>
-          <button
-            onClick={() => setWeekOffset(w => Math.min(w + 1, 0))}
-            disabled={weekOffset >= 0}
-            style={{ ...inputStyle, padding: '10px 16px', fontWeight: 700, opacity: weekOffset >= 0 ? 0.4 : 1 }}
-          >
-            →
-          </button>
-        </div>
-        <button
-          onClick={handleSendReport}
-          disabled={sending}
-          style={{ padding: '10px 24px', backgroundColor: sending ? '#374151' : '#F97316', border: 'none', borderRadius: 10, color: sending ? '#6B7280' : '#0A0F1E', fontSize: 14, fontWeight: 800, cursor: sending ? 'not-allowed' : 'pointer' }}
-        >
-          {sending ? 'Sending...' : '📧 Email Report'}
+      {/* Week selector */}
+      <div style={{ ...card, padding: isMobile ? 12 : 14, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <button type="button" className="fo-icon-btn" aria-label="Previous week" onClick={() => setWeekOffset((w) => w - 1)}>
+          <Icon name="chevron-left" size={16} />
         </button>
+        <SegmentedControl
+          label="Week"
+          options={WEEK_OPTIONS}
+          value={weekOffset}
+          onChange={(v) => setWeekOffset(v)}
+        />
+        <button type="button" className="fo-icon-btn" aria-label="Next week" onClick={() => setWeekOffset((w) => Math.min(w + 1, 0))} disabled={weekOffset >= 0} style={{ opacity: weekOffset >= 0 ? 0.4 : 1 }}>
+          <Icon name="chevron-right" size={16} />
+        </button>
+        <span style={{ fontSize: 14, fontWeight: 600, color: colors.text, marginLeft: isMobile ? 0 : 6 }}>
+          {weekName} <span style={{ color: colors.text2, fontWeight: 500 }}>· {weekLabel}</span>
+        </span>
       </div>
 
       {sendResult && (
-        <div style={{ marginBottom: 20, padding: '12px 20px', borderRadius: 10, backgroundColor: sendResult.success ? '#22C55E20' : '#EF444420', border: `1px solid ${sendResult.success ? '#22C55E' : '#EF4444'}`, color: sendResult.success ? '#22C55E' : '#EF4444', fontSize: 14, fontWeight: 600 }}>
-          {sendResult.success ? '✓ ' : '✗ '}{sendResult.message}
+        <div role={sendResult.success ? 'status' : 'alert'} style={{ marginBottom: 16, padding: '11px 16px', borderRadius: radius.control, display: 'flex', alignItems: 'center', gap: 8, backgroundColor: tint(sendResult.success ? colors.green : colors.red, 0.12), border: `1px solid ${tint(sendResult.success ? colors.green : colors.red, 0.5)}`, color: sendResult.success ? colors.green : colors.red, fontSize: 14, fontWeight: 600 }}>
+          <Icon name={sendResult.success ? 'check' : 'alert'} size={15} strokeWidth={sendResult.success ? 3 : 2.25} />
+          {sendResult.message}
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 24 }}>
-        <div style={{ backgroundColor: '#111827', borderRadius: 12, padding: 20, border: '1px solid #1F2937', borderLeftWidth: 3, borderLeftColor: '#F97316' }}>
-          <div style={{ fontSize: 11, color: '#6B7280', fontWeight: 700, letterSpacing: 2, marginBottom: 8 }}>TOTAL HOURS</div>
-          <div style={{ fontSize: 28, fontWeight: 900, color: '#FFFFFF' }}>{minutesToHours(totalHours)}h</div>
-        </div>
-        <div style={{ backgroundColor: '#111827', borderRadius: 12, padding: 20, border: '1px solid #1F2937', borderLeftWidth: 3, borderLeftColor: '#378ADD' }}>
-          <div style={{ fontSize: 11, color: '#6B7280', fontWeight: 700, letterSpacing: 2, marginBottom: 8 }}>EMPLOYEES</div>
-          <div style={{ fontSize: 28, fontWeight: 900, color: '#FFFFFF' }}>{Object.keys(byEmployee).length}</div>
-        </div>
-        <div style={{ backgroundColor: '#111827', borderRadius: 12, padding: 20, border: '1px solid #1F2937', borderLeftWidth: 3, borderLeftColor: '#22C55E' }}>
-          <div style={{ fontSize: 11, color: '#6B7280', fontWeight: 700, letterSpacing: 2, marginBottom: 8 }}>CLOCK-INS</div>
-          <div style={{ fontSize: 28, fontWeight: 900, color: '#FFFFFF' }}>{entries?.length ?? 0}</div>
-        </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: isMobile ? 8 : 12, marginBottom: 16 }}>
+        <StatCard label="Total hours" tone="accent" value={isLoading ? undefined : `${minutesToHours(totalHours)}h`} />
+        <StatCard label="Employees" tone="blue" value={isLoading ? undefined : Object.keys(byEmployee).length} />
+        <StatCard label="Clock-ins" tone="green" value={isLoading ? undefined : entries?.length ?? 0} />
       </div>
 
       {flaggedEntries.length > 0 && (
-        <div style={{ backgroundColor: '#7F1D1D20', border: '1px solid #7F1D1D', borderRadius: 12, padding: '16px 20px', marginBottom: 24 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: '#FCA5A5', marginBottom: 10 }}>
-            ⚠ {flaggedEntries.length} Flagged Entr{flaggedEntries.length === 1 ? 'y' : 'ies'}
+        <div style={{ backgroundColor: colors.redSurface, border: `1px solid ${tint(colors.red, 0.5)}`, borderRadius: radius.card, padding: '14px 18px', marginBottom: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, fontWeight: 700, color: colors.red, marginBottom: 10 }}>
+            <Icon name="alert" size={16} /> {flaggedEntries.length} flagged entr{flaggedEntries.length === 1 ? 'y' : 'ies'}
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {flaggedEntries.map((e: any) => {
               const isMissing = !e.clock_out;
               const name = (e as any).profile?.full_name ?? 'Unknown';
               const reason = isMissing ? 'Missing clock-out' : (e.flag_reason || 'Flagged');
               return (
-                <div
-                  key={e.id}
-                  style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, padding: '8px 12px', backgroundColor: isMissing ? '#92400E20' : '#7F1D1D30', borderRadius: 8 }}
-                >
-                  <span style={{ fontSize: 13, fontWeight: 600, color: isMissing ? '#FCD34D' : '#FCA5A5' }}>{name}</span>
-                  <span style={{ fontSize: 12, color: isMissing ? '#FCD34D' : '#FCA5A5' }}>{formatDate(e.clock_in)}</span>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: isMissing ? '#FCD34D' : '#FCA5A5' }}>{reason}</span>
+                <div key={e.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, padding: '8px 12px', backgroundColor: colors.bg, border: `1px solid ${colors.border}`, borderRadius: radius.control }}>
+                  <span style={{ fontSize: 14, fontWeight: 600, color: colors.text }}>{name}</span>
+                  <span style={{ fontSize: 13, color: colors.text2 }}>{formatDate(e.clock_in)}</span>
+                  <StatusChip status={isMissing ? 'medium' : 'high'} label={reason} />
                 </div>
               );
             })}
@@ -253,13 +250,16 @@ export default function TimesheetPage() {
       )}
 
       {isLoading ? (
-        <div style={{ color: '#F97316', padding: 24 }}>Loading...</div>
-      ) : Object.keys(byEmployee).length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '60px 0', color: '#4B5563' }}>
-          <div style={{ fontSize: 48, marginBottom: 12 }}>⏱</div>
-          <div style={{ fontSize: 18, fontWeight: 700, color: '#FFFFFF', marginBottom: 6 }}>No time entries</div>
-          <div style={{ fontSize: 14 }}>No one clocked in during this week.</div>
+        <div role="status" aria-label="Loading timesheet" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {[0, 1, 2].map((i) => <Skeleton key={i} height={72} radius={12} />)}
         </div>
+      ) : Object.keys(byEmployee).length === 0 ? (
+        <EmptyState
+          title="No time entries"
+          message="No one clocked in during this week."
+          actionLabel={weekOffset !== 0 ? 'Go to this week' : undefined}
+          onAction={() => setWeekOffset(0)}
+        />
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {Object.entries(byEmployee).map(([userId, employee]) => {
@@ -267,45 +267,50 @@ export default function TimesheetPage() {
             const regularHours = Math.min(minutesToHours(employee.totalMinutes), 40);
             const overtimeHours = Math.max(0, minutesToHours(employee.totalMinutes) - 40);
             return (
-              <div key={userId} style={{ backgroundColor: '#111827', borderRadius: 14, border: '1px solid #1F2937', overflow: 'hidden' }}>
+              <div key={userId} style={{ ...card, padding: 0, overflow: 'hidden' }}>
                 <button
+                  type="button"
+                  className="fo-row"
+                  aria-expanded={isExpanded}
                   onClick={() => setExpandedEmployee(isExpanded ? null : userId)}
-                  style={{ width: '100%', padding: '16px 20px', backgroundColor: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#FFFFFF' }}
+                  style={{ width: '100%', padding: isMobile ? '14px 14px' : '14px 20px', backgroundColor: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, color: colors.text, font: 'inherit' }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                    <div style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#1F2937', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700, color: '#F97316' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+                    <div aria-hidden="true" style={{ width: 38, height: 38, borderRadius: 19, flexShrink: 0, backgroundColor: colors.surface2, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 600, color: colors.text }}>
                       {employee.name.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2)}
                     </div>
-                    <div style={{ textAlign: 'left' }}>
-                      <div style={{ fontSize: 15, fontWeight: 700 }}>{employee.name}</div>
-                      <div style={{ fontSize: 12, color: '#6B7280', marginTop: 2 }}>
+                    <div style={{ textAlign: 'left', minWidth: 0 }}>
+                      <div style={{ fontSize: 15, fontWeight: 700, overflowWrap: 'anywhere' }}>{employee.name}</div>
+                      <div style={{ fontSize: 13, color: colors.text2, marginTop: 2 }}>
                         {employee.entries.length} shift{employee.entries.length !== 1 ? 's' : ''}
                       </div>
                     </div>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
                     <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontSize: 18, fontWeight: 900, color: '#FFFFFF' }}>{minutesToHours(employee.totalMinutes)}h</div>
+                      <div style={{ fontFamily: fonts.display, fontSize: 26, fontWeight: 700, lineHeight: 1 }}>{minutesToHours(employee.totalMinutes)}h</div>
                       {overtimeHours > 0 && (
-                        <div style={{ fontSize: 11, color: '#EF4444', fontWeight: 700 }}>+{overtimeHours}h OT</div>
+                        <div style={{ fontSize: 12, color: colors.red, fontWeight: 700, marginTop: 2 }}>+{overtimeHours}h OT</div>
                       )}
                     </div>
-                    <div style={{ fontSize: 16, color: '#6B7280' }}>{isExpanded ? '▲' : '▼'}</div>
+                    <span aria-hidden="true" style={{ color: colors.text2, display: 'inline-flex', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 150ms ease' }}>
+                      <Icon name="chevron-down" size={18} />
+                    </span>
                   </div>
                 </button>
 
                 {isExpanded && (
-                  <div style={{ borderTop: '1px solid #1F2937' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <div style={{ borderTop: `1px solid ${colors.border}`, overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
                       <thead>
-                        <tr style={{ backgroundColor: '#0D1321' }}>
-                          {['Date', 'Clock In', 'Clock Out', 'Raw Hrs', 'Lunch', 'Net Hrs', 'OT', 'Flag', 'Project', 'Notes'].map((h) => (
-                            <th key={h} style={{ padding: '8px 16px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: '#6B7280', letterSpacing: 1 }}>{h}</th>
+                        <tr style={{ backgroundColor: colors.bg }}>
+                          {['Date', 'Clock in', 'Clock out', 'Raw hrs', 'Lunch', 'Net hrs', 'OT', 'Flag', 'Project', 'Notes'].map((h) => (
+                            <th key={h} style={th}>{h}</th>
                           ))}
                         </tr>
                       </thead>
                       <tbody>
-                        {employee.entries.map((entry: any, i: number) => {
+                        {employee.entries.map((entry: any) => {
                           const lunchBreakMinutes = (entry.project as any)?.lunch_break_minutes ?? 0;
                           const rawMinutes = entry.total_minutes ?? 0;
                           const lunchMinutes = rawMinutes > 0 && lunchBreakMinutes > 0 ? lunchBreakMinutes : 0;
@@ -317,28 +322,28 @@ export default function TimesheetPage() {
                           const isMissingClockOut = !entry.clock_out;
                           const flagReason = isMissingClockOut ? 'Missing clock-out' : (entry.flagged ? (entry.flag_reason || 'Flagged') : '');
                           return (
-                            <tr key={entry.id} style={{ borderTop: '1px solid #1F2937', backgroundColor: i % 2 === 0 ? 'transparent' : '#0D132120' }}>
-                              <td style={{ padding: '10px 16px', fontSize: 13 }}>{formatDate(entry.clock_in)}</td>
-                              <td style={{ padding: '10px 16px', fontSize: 13, color: '#9CA3AF' }}>{formatTime(entry.clock_in)}</td>
-                              <td style={{ padding: '10px 16px', fontSize: 13, color: isMissingClockOut ? '#EF4444' : '#9CA3AF', fontWeight: isMissingClockOut ? 700 : 400 }}>
-                                {isMissingClockOut ? 'MISSING' : formatTime(entry.clock_out)}
+                            <tr key={entry.id} className="fo-row" style={{ borderTop: `1px solid ${colors.border}` }}>
+                              <td style={{ ...td, color: colors.text }}>{formatDate(entry.clock_in)}</td>
+                              <td style={td}>{formatTime(entry.clock_in)}</td>
+                              <td style={{ ...td, color: isMissingClockOut ? colors.red : colors.text2, fontWeight: isMissingClockOut ? 700 : 400 }}>
+                                {isMissingClockOut ? 'Missing' : formatTime(entry.clock_out)}
                               </td>
-                              <td style={{ padding: '10px 16px', fontSize: 13, color: '#9CA3AF' }}>{isMissingClockOut ? '—' : `${rawHours}h`}</td>
-                              <td style={{ padding: '10px 16px', fontSize: 13, color: lunchDeduction !== '—' ? '#EF4444' : '#6B7280' }}>
+                              <td style={td}>{isMissingClockOut ? '—' : `${rawHours}h`}</td>
+                              <td style={{ ...td, color: lunchDeduction !== '—' ? colors.amber : colors.text3 }}>
                                 {isMissingClockOut ? '—' : (lunchDeduction === '—' ? '—' : `${lunchDeduction}h`)}
                               </td>
-                              <td style={{ padding: '10px 16px', fontSize: 13, fontWeight: 700, color: '#22C55E' }}>{isMissingClockOut ? '—' : `${netHours}h`}</td>
-                              <td style={{ padding: '10px 16px', fontSize: 12, fontWeight: 700, color: '#F97316', textAlign: 'center' }}>{isOT ? 'OT' : ''}</td>
-                              <td style={{ padding: '10px 16px', fontSize: 12, color: '#EF4444', fontWeight: flagReason ? 700 : 400 }}>{flagReason}</td>
-                              <td style={{ padding: '10px 16px', fontSize: 13, color: '#9CA3AF' }}>{(entry.project as any)?.name ?? '—'}</td>
-                              <td style={{ padding: '10px 16px', fontSize: 12, color: '#6B7280' }}>{entry.notes || '—'}</td>
+                              <td style={{ ...td, fontWeight: 700, color: colors.green }}>{isMissingClockOut ? '—' : `${netHours}h`}</td>
+                              <td style={td}>{isOT ? <StatusChip status="medium" label="OT" /> : ''}</td>
+                              <td style={{ ...td, color: colors.red, fontWeight: flagReason ? 700 : 400 }}>{flagReason}</td>
+                              <td style={td}>{(entry.project as any)?.name ?? '—'}</td>
+                              <td style={{ ...td, color: entry.notes ? colors.text2 : colors.text3, whiteSpace: 'normal' }}>{entry.notes || '—'}</td>
                             </tr>
                           );
                         })}
-                        <tr style={{ borderTop: '2px solid #374151', backgroundColor: '#F9731608' }}>
-                          <td colSpan={3} style={{ padding: '10px 16px', fontSize: 13, fontWeight: 700, color: '#F97316' }}>Subtotal</td>
-                          <td colSpan={3} style={{ padding: '10px 16px', fontSize: 14, fontWeight: 900, color: '#F97316' }}>{minutesToHours(employee.totalMinutes)}h</td>
-                          <td colSpan={4} style={{ padding: '10px 16px', fontSize: 12, color: '#6B7280' }}>
+                        <tr style={{ borderTop: `2px solid ${colors.border}`, backgroundColor: colors.bg }}>
+                          <td colSpan={3} style={{ ...td, fontWeight: 700, color: colors.text }}>Subtotal</td>
+                          <td colSpan={3} style={{ ...td, fontFamily: fonts.display, fontSize: 18, fontWeight: 700, color: colors.text }}>{minutesToHours(employee.totalMinutes)}h</td>
+                          <td colSpan={4} style={td}>
                             {regularHours}h regular{overtimeHours > 0 ? ` · ${overtimeHours}h overtime` : ''}
                           </td>
                         </tr>

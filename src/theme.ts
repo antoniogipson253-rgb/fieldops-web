@@ -20,6 +20,7 @@ export const colors = {
   amber: '#FBBF24',
   red: '#F87171',
   gray: '#9CA3AF',
+  violet: '#A78BFA',
   /** Card fill for an alert stat (e.g. flagged clock-ins above 0). */
   redSurface: '#2A1618',
   /** Progress bar track. */
@@ -43,7 +44,7 @@ export function tint(hex: string, alpha = 0.15): string {
 
 /* ---------- Status ---------- */
 
-export type StatusTone = 'green' | 'blue' | 'amber' | 'red' | 'gray';
+export type StatusTone = 'green' | 'blue' | 'amber' | 'red' | 'gray' | 'violet';
 
 const STATUS_TONE: Record<string, StatusTone> = {
   // green: done / active
@@ -69,6 +70,13 @@ const STATUS_TONE: Record<string, StatusTone> = {
   failed: 'red',
   // calendar: past due and not done
   overdue: 'red',
+  // safety incident severity (low/medium/high above)
+  critical: 'violet',
+  // company roles
+  admin: 'violet',
+  project_manager: 'blue',
+  worker: 'gray',
+  client: 'blue',
 };
 
 const STATUS_LABEL: Record<string, string> = {
@@ -88,6 +96,11 @@ const STATUS_LABEL: Record<string, string> = {
   delivery_uncertain: 'Delivery uncertain',
   failed: 'Not delivered',
   overdue: 'Overdue',
+  critical: 'Critical',
+  admin: 'Admin',
+  project_manager: 'Project Manager',
+  worker: 'Worker',
+  client: 'Client',
 };
 
 export function statusTone(status: string | null | undefined): StatusTone {
