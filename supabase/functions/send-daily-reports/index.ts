@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { archiveSend, type ArchiveStatus } from './archive.ts';
 
 // send-daily-reports
 //
@@ -581,6 +582,7 @@ async function runCron(admin: SupabaseClient) {
     emails_sent: 0,
     projects_skipped: { no_activity: 0, no_recipients: 0, already_sent: 0, outside_window: 0, not_due: 0, archived: 0 },
     recipients_skipped_no_email: 0,
+    archive: { archived: 0, kept_existing: 0, archive_failed: 0 },
     failures: [] as { project_id: string; error: string }[],
   };
 
@@ -656,12 +658,27 @@ async function runCron(admin: SupabaseClient) {
         rows, truncated, names, crew, isTest: false,
       });
 
+      const subject = subjectFor(s.project.name, win.start, s.timezone, false);
       const result = await sendBatch(
-        recipients, subjectFor(s.project.name, win.start, s.timezone, false), html,
+        recipients, subject, html,
         `daily-report/${projectId}/${due.scheduledDate}/${buildTime.getTime()}`,
       );
+
+      // Archive (scheduled sends only; never affects the send outcome below).
+      const archive = (status: ArchiveStatus, error: string | null) => archiveSend(admin, {
+        projectId, reportDate: due.scheduledDate, status, scheduledAt: due.scheduledAt,
+        sentAt: status === 'failed' ? null : new Date(), recipients: recipients.map((r) => r.email),
+        subject, html, error,
+        summary: {
+          activity_count: rows.length, activity_truncated: truncated, crew_count: crew.total,
+          window_start: win.start.toISOString(), window_end: win.end.toISOString(),
+          time_zone: s.timezone, counts: countActivity(rows),
+        },
+      }).then((r) => { summary.archive[r]++; });
+
       if (result.status === 'rejected') {
         // Definite 4xx, nothing delivered: release so the next tick in the window retries.
+        await archive('failed', result.error);
         await release('send rejected');
         summary.failures.push({ project_id: projectId, error: result.error });
         continue;
@@ -670,10 +687,12 @@ async function runCron(admin: SupabaseClient) {
         // Possibly delivered. Keep the claim so no recipient can get this report twice;
         // the trade-off is that a genuinely undelivered report is not resent automatically.
         console.error(`Project ${projectId}: delivery uncertain for ${due.scheduledDate} (${win.start.toISOString()} .. ${win.end.toISOString()}): ${result.error}`);
+        await archive('delivery_uncertain', result.error);
         summary.failures.push({ project_id: projectId, error: `delivery uncertain (not retried): ${result.error}` });
         continue;
       }
 
+      await archive('sent', null);
       await admin.from('project_report_settings').update({ last_sent_at: new Date().toISOString() }).eq('project_id', projectId);
       summary.projects_sent++;
       summary.emails_sent += recipients.length;

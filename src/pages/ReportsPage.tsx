@@ -78,9 +78,9 @@ export default function ReportsPage() {
 
       {/* Daily Reports by project */}
       <div>
-        <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 12 }}>Daily Reports Archive</h2>
+        <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 12 }}>Daily Reports</h2>
         <p style={{ color: '#6B7280', fontSize: 13, marginBottom: 16 }}>
-          Manually submitted daily reports from before automatic daily reports. Select a project to view them, including weather, crew on site, issues, materials, and photos, or export a report as PDF.
+          Every automatic daily report that was emailed, by project. Select a project to read them exactly as they were sent.
           Automatic daily reports are set up per project under Edit.
         </p>
 
@@ -108,7 +108,7 @@ export default function ReportsPage() {
                 onMouseLeave={(e) => (e.currentTarget.style.borderColor = '#1F2937')}
               >
                 <span style={{ fontSize: 14, fontWeight: 600 }}>{project.name}</span>
-                <span style={{ fontSize: 13, color: '#F97316', fontWeight: 600 }}>View Archive →</span>
+                <span style={{ fontSize: 13, color: '#F97316', fontWeight: 600 }}>View Daily Reports</span>
               </div>
             ))}
           </div>
