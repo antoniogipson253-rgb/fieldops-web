@@ -20,6 +20,10 @@ export const colors = {
   amber: '#FBBF24',
   red: '#F87171',
   gray: '#9CA3AF',
+  /** Card fill for an alert stat (e.g. flagged clock-ins above 0). */
+  redSurface: '#2A1618',
+  /** Progress bar track. */
+  track: '#1F2937',
 } as const;
 
 export const fonts = {
@@ -59,6 +63,12 @@ const STATUS_TONE: Record<string, StatusTone> = {
   open: 'gray',
   archived: 'gray',
   low: 'gray',
+  // automatic daily report sends
+  sent: 'green',
+  delivery_uncertain: 'amber',
+  failed: 'red',
+  // calendar: past due and not done
+  overdue: 'red',
 };
 
 const STATUS_LABEL: Record<string, string> = {
@@ -74,6 +84,10 @@ const STATUS_LABEL: Record<string, string> = {
   open: 'Open',
   archived: 'Archived',
   low: 'Low',
+  sent: 'Sent',
+  delivery_uncertain: 'Delivery uncertain',
+  failed: 'Not delivered',
+  overdue: 'Overdue',
 };
 
 export function statusTone(status: string | null | undefined): StatusTone {
@@ -120,6 +134,40 @@ export const card: CSSProperties = {
 };
 
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
+
+/** Class names that give a button its hover, press and disabled behavior. */
+export function buttonClass(variant: ButtonVariant = 'primary'): string {
+  return `fo-btn fo-btn-${variant}`;
+}
+
+/** Spread onto a <button>: className plus inline style, optionally with style overrides. */
+export function btn(variant: ButtonVariant = 'primary', extra?: CSSProperties) {
+  return { className: buttonClass(variant), style: { ...button(variant), ...extra } };
+}
+
+/** Small uppercase section label, e.g. card titles and form labels. */
+export const sectionLabel: CSSProperties = {
+  fontFamily: fonts.ui,
+  fontSize: 11,
+  fontWeight: 700,
+  letterSpacing: '0.1em',
+  textTransform: 'uppercase',
+  color: colors.text3,
+};
+
+/** Text inputs, selects and textareas. */
+export const input: CSSProperties = {
+  width: '100%',
+  padding: '10px 14px',
+  backgroundColor: colors.surface2,
+  border: `1px solid ${colors.border}`,
+  borderRadius: radius.control,
+  color: colors.text,
+  fontSize: 14,
+  outline: 'none',
+  boxSizing: 'border-box',
+  fontFamily: 'inherit',
+};
 
 /** Button styles. Add className "fo-btn" for hover, press and disabled behavior. */
 export function button(variant: ButtonVariant = 'primary'): CSSProperties {

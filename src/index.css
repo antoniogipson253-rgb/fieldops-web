@@ -111,12 +111,126 @@ button,
   opacity: 0.6;
 }
 
+/* Secondary and ghost buttons: brighten the outline and text on hover */
+.fo-btn-secondary:hover:not(:disabled),
+.fo-btn-ghost:hover:not(:disabled) {
+  filter: none;
+  border-color: var(--text-3) !important;
+  color: var(--text) !important;
+}
+.fo-btn-ghost:hover:not(:disabled) {
+  background-color: var(--surface-2) !important;
+}
+
+/* Clickable card: lifts 1px and its border warms to orange */
 .fo-card-link {
   cursor: pointer;
 }
 .fo-card-link:hover {
   transform: translateY(-1px);
-  box-shadow: 0 0 0 1px rgba(249, 115, 22, 0.45);
+  border-color: rgba(249, 115, 22, 0.7) !important;
+}
+
+/* List rows: hover background. Rows must not set their own inline background. */
+.fo-row {
+  transition: background-color var(--ease);
+}
+.fo-row:hover {
+  background-color: var(--surface-2);
+}
+button.fo-row {
+  cursor: pointer;
+}
+
+/* Tabs */
+.fo-tab {
+  padding: 10px 16px 9px;
+  background: none;
+  border: none;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -1px;
+  color: var(--text-2);
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color var(--ease), border-color var(--ease);
+}
+.fo-tab:hover {
+  color: var(--text);
+}
+.fo-tab.is-active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+/* Pills (folder filter) */
+.fo-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background-color: transparent;
+  color: var(--text-2);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color var(--ease), border-color var(--ease), color var(--ease);
+}
+.fo-pill:hover {
+  border-color: var(--text-3);
+  color: var(--text);
+}
+.fo-pill.is-active,
+.fo-pill.is-active:hover {
+  background-color: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+}
+.fo-pill-count {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  background-color: var(--surface-2);
+  color: var(--text-2);
+}
+.fo-pill.is-active .fo-pill-count {
+  background-color: rgba(10, 15, 30, 0.2);
+  color: var(--on-accent);
+}
+
+/* Calendar day cell */
+.fo-cal-day {
+  min-height: 74px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background-color: var(--surface);
+  cursor: pointer;
+  min-width: 0;
+  transition: border-color var(--ease), background-color var(--ease);
+}
+.fo-cal-day.is-selected {
+  background-color: var(--surface-2);
+}
+.fo-cal-day.is-today {
+  border: 2px solid var(--accent);
+  padding: 5px;
+}
+.fo-cal-day.is-other {
+  opacity: 0.55;
+}
+.fo-cal-day:hover {
+  border-color: var(--accent);
+  background-color: var(--surface-2);
 }
 
 /* Sidebar navigation */

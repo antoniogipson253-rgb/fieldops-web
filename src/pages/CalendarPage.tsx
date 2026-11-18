@@ -2,6 +2,14 @@ import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useIsAdmin, useCurrentUser } from '../lib/useIsAdmin';
+import { useIsMobile } from '../hooks/useIsMobile';
+import { btn, card, colors, fonts, radius, sectionLabel, statusColor, tint } from '../theme';
+import PageHeader from '../components/ui/PageHeader';
+import StatCard from '../components/ui/StatCard';
+import StatusChip from '../components/ui/StatusChip';
+import EmptyState from '../components/ui/EmptyState';
+import Skeleton from '../components/ui/Skeleton';
+import Icon from '../components/ui/Icon';
 
 // task_assignees is embedded as task_assignees(profile:profiles(full_name)).
 function taskAssigneeNames(task: any): string {
@@ -14,19 +22,18 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
 
 const statusLabels: Record<string, string> = { open: 'Open', in_progress: 'In Progress', completed: 'Done' };
 
-const priorityStyle: Record<string, React.CSSProperties> = {
-  high: { background: '#FCEBEB', color: '#A32D2D', fontSize: 11, padding: '2px 8px', borderRadius: 6, fontWeight: 600 },
-  medium: { background: '#FAEEDA', color: '#854F0B', fontSize: 11, padding: '2px 8px', borderRadius: 6, fontWeight: 600 },
-  low: { background: '#EAF3DE', color: '#3B6D11', fontSize: 11, padding: '2px 8px', borderRadius: 6, fontWeight: 600 },
-};
+// Event chips use the same colors as StatusChip; a task past its due date that is not done shows as Overdue (red).
+const LEGEND = [
+  { status: 'open', label: 'Open' },
+  { status: 'in_progress', label: 'In progress' },
+  { status: 'completed', label: 'Done' },
+  { status: 'overdue', label: 'Overdue' },
+];
 
-const statusStyle: Record<string, React.CSSProperties> = {
-  open: { background: '#1F2937', color: '#9CA3AF', fontSize: 11, padding: '2px 8px', borderRadius: 6, fontWeight: 600 },
-  in_progress: { background: '#E6F1FB', color: '#185FA5', fontSize: 11, padding: '2px 8px', borderRadius: 6, fontWeight: 600 },
-  completed: { background: '#EAF3DE', color: '#3B6D11', fontSize: 11, padding: '2px 8px', borderRadius: 6, fontWeight: 600 },
-};
+const MAX_CHIPS = 3;
 
 export default function CalendarPage() {
+  const isMobile = useIsMobile();
   const { data: isAdmin } = useIsAdmin();
   const { data: currentUser } = useCurrentUser();
   const today = new Date();
@@ -64,16 +71,15 @@ export default function CalendarPage() {
     enabled: isAdmin !== undefined && !!currentUser,
   });
 
-  function getTaskColor(task: any) {
+  /** Status key used for the chip color: completed, overdue, in_progress or open. */
+  function getTaskTone(task: any): string {
     const due = new Date(task.due_date);
     const now = new Date();
     now.setHours(0, 0, 0, 0);
-    if (task.status === 'completed') return '#1D9E75';
-    if (due < now) return '#E24B4A';
-    const diff = Math.ceil((due.getTime() - now.getTime()) / 86400000);
-    if (diff <= 3) return '#EF9F27';
-    if (task.status === 'in_progress') return '#378ADD';
-    return '#EF9F27';
+    if (task.status === 'completed') return 'completed';
+    if (due < now) return 'overdue';
+    if (task.status === 'in_progress') return 'in_progress';
+    return 'open';
   }
 
   function formatDateStr(y: number, m: number, d: number) {
@@ -129,119 +135,117 @@ export default function CalendarPage() {
     return due < now && t.status !== 'completed';
   }) ?? [];
 
+  const navButton = { padding: '8px 10px', minWidth: 38 };
+
   return (
-    <div style={{ padding: 32, color: '#FFFFFF' }}>
-      {/* Header */}
-      <div style={{ marginBottom: 24 }}>
-        <h1 style={{ fontSize: 26, fontWeight: 700, margin: '0 0 4px' }}>Calendar</h1>
-        <p style={{ color: '#6B7280', fontSize: 13, margin: 0 }}>
-          {isAdmin ? 'All project task due dates' : 'Your assigned task due dates'}
-        </p>
-      </div>
-
-      {/* Stat cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 24 }}>
-        <div style={{ background: '#111827', border: '0.5px solid #1F2937', borderLeft: '3px solid #378ADD', borderRadius: 12, padding: '14px 16px' }}>
-          <p style={{ fontSize: 12, color: '#6B7280', margin: '0 0 6px' }}>This month</p>
-          <p style={{ fontSize: 24, fontWeight: 700, margin: 0 }}>{monthTasks.length}</p>
-          <p style={{ fontSize: 11, color: '#4B5563', margin: '3px 0 0' }}>tasks with due dates</p>
-        </div>
-        <div style={{ background: '#111827', border: '0.5px solid #1F2937', borderLeft: '3px solid #E24B4A', borderRadius: 12, padding: '14px 16px' }}>
-          <p style={{ fontSize: 12, color: '#6B7280', margin: '0 0 6px' }}>Overdue</p>
-          <p style={{ fontSize: 24, fontWeight: 700, margin: 0, color: overdueTasks.length > 0 ? '#EF4444' : '#FFFFFF' }}>{overdueTasks.length}</p>
-          <p style={{ fontSize: 11, color: '#4B5563', margin: '3px 0 0' }}>past due date</p>
-        </div>
-        <div style={{ background: '#111827', border: '0.5px solid #1F2937', borderLeft: '3px solid #EF9F27', borderRadius: 12, padding: '14px 16px' }}>
-          <p style={{ fontSize: 12, color: '#6B7280', margin: '0 0 6px' }}>Total scheduled</p>
-          <p style={{ fontSize: 24, fontWeight: 700, margin: 0 }}>{tasks?.length ?? 0}</p>
-          <p style={{ fontSize: 11, color: '#4B5563', margin: '3px 0 0' }}>tasks with due dates</p>
-        </div>
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 16 }}>
-        {/* Calendar */}
-        <div style={{ background: '#111827', border: '0.5px solid #1F2937', borderRadius: 14, overflow: 'hidden' }}>
-          {/* Month nav */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', borderBottom: '0.5px solid #1F2937' }}>
-            <button onClick={() => changeMonth(-1)} style={{ background: '#1F2937', border: '0.5px solid #374151', borderRadius: 8, color: '#FFFFFF', fontSize: 16, cursor: 'pointer', padding: '6px 14px', lineHeight: 1 }}>‹</button>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <span style={{ fontSize: 17, fontWeight: 700 }}>{MONTHS[currentMonth]} {currentYear}</span>
-              <button onClick={() => { setCurrentMonth(today.getMonth()); setCurrentYear(today.getFullYear()); setSelectedDate(todayStr); }} style={{ background: 'transparent', border: '0.5px solid #374151', borderRadius: 6, color: '#9CA3AF', fontSize: 12, cursor: 'pointer', padding: '4px 10px' }}>
+    <div style={{ padding: isMobile ? 16 : 32, color: colors.text }}>
+      <PageHeader
+        title="Calendar"
+        subtitle={
+          <>
+            <span style={{ fontFamily: fonts.display, fontSize: 20, fontWeight: 600, letterSpacing: '0.02em', color: colors.text }}>
+              {MONTHS[currentMonth]} {currentYear}
+            </span>
+            <span style={{ display: 'block', fontSize: 13, color: colors.text3, marginTop: 2 }}>
+              {isAdmin ? 'All project task due dates' : 'Your assigned task due dates'}
+            </span>
+          </>
+        }
+        actions={
+          <>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginRight: 4 }} aria-label="Legend">
+              {LEGEND.map((l) => <StatusChip key={l.status} status={l.status} label={l.label} />)}
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button type="button" aria-label="Previous month" onClick={() => changeMonth(-1)} {...btn('secondary', navButton)}>
+                <Icon name="chevron-left" size={16} />
+              </button>
+              <button type="button" onClick={() => { setCurrentMonth(today.getMonth()); setCurrentYear(today.getFullYear()); setSelectedDate(todayStr); }} {...btn('secondary', { padding: '8px 14px' })}>
                 Today
               </button>
+              <button type="button" aria-label="Next month" onClick={() => changeMonth(1)} {...btn('secondary', navButton)}>
+                <Icon name="chevron-right" size={16} />
+              </button>
             </div>
-            <button onClick={() => changeMonth(1)} style={{ background: '#1F2937', border: '0.5px solid #374151', borderRadius: 8, color: '#FFFFFF', fontSize: 16, cursor: 'pointer', padding: '6px 14px', lineHeight: 1 }}>›</button>
-          </div>
+          </>
+        }
+      />
 
+      {/* Stat cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: isMobile ? 8 : 12, marginBottom: 20 }}>
+        <StatCard label="This month" tone="accent" value={isLoading ? undefined : monthTasks.length} sub="tasks with due dates" />
+        <StatCard label="Overdue" tone="gray" alert={overdueTasks.length > 0} value={isLoading ? undefined : overdueTasks.length} sub="past due date" />
+        <StatCard label="Total scheduled" tone="blue" value={isLoading ? undefined : (tasks?.length ?? 0)} sub="tasks with due dates" />
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(0, 1fr) 300px', gap: 16 }}>
+        {/* Calendar */}
+        <div style={{ ...card, padding: isMobile ? 8 : 14 }}>
           {/* Day headers */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', padding: '10px 10px 0', gap: 2 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: isMobile ? 3 : 6, marginBottom: 6 }}>
             {DAYS.map((d) => (
-              <div key={d} style={{ textAlign: 'center', fontSize: 11, fontWeight: 600, color: '#4B5563', padding: '4px 0', letterSpacing: 1 }}>{d}</div>
+              <div key={d} style={{ ...sectionLabel, fontSize: 11, fontWeight: 600, textAlign: 'center', padding: '4px 0' }}>{d}</div>
             ))}
           </div>
 
           {/* Grid */}
           {isLoading ? (
-            <div style={{ padding: 40, textAlign: 'center', color: '#F97316', fontSize: 13 }}>Loading...</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: isMobile ? 3 : 6 }} role="status" aria-label="Loading">
+              {Array.from({ length: 35 }, (_, i) => <Skeleton key={i} height={74} radius={8} />)}
+            </div>
           ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', padding: '4px 10px 10px', gap: 2 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: isMobile ? 3 : 6 }}>
               {cells.map((cell, i) => {
                 const cellTasks = getTasksForDate(cell.dateStr);
                 const isToday = cell.dateStr === todayStr;
                 const isSelected = cell.dateStr === selectedDate;
-                const isWeekend = i % 7 >= 5;
+                const classes = ['fo-cal-day', isToday && 'is-today', isSelected && 'is-selected', cell.isOther && 'is-other'].filter(Boolean).join(' ');
 
                 return (
                   <div
                     key={i}
+                    className={classes}
                     onClick={() => setSelectedDate(cell.dateStr === selectedDate ? null : cell.dateStr)}
-                    style={{
-                      minHeight: 72,
-                      padding: '6px 4px',
-                      borderRadius: 8,
-                      cursor: 'pointer',
-                      background: isSelected ? '#1F2937' : isToday ? '#F9731610' : 'transparent',
-                      border: isToday ? '1px solid #F97316' : '1px solid transparent',
-                      opacity: cell.isOther ? 0.3 : 1,
-                      transition: 'background 0.1s',
-                    }}
-                    onMouseEnter={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.background = '#1F293750'; }}
-                    onMouseLeave={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.background = isToday ? '#F9731610' : 'transparent'; }}
+                    style={isMobile ? { padding: isToday ? 2 : 3 } : undefined}
                   >
                     <div style={{
-                      fontSize: 12,
-                      fontWeight: isToday ? 700 : 400,
-                      color: isToday ? '#F97316' : isWeekend ? '#6B7280' : '#FFFFFF',
+                      width: 24,
+                      height: 24,
+                      lineHeight: '24px',
+                      borderRadius: 12,
                       textAlign: 'center',
-                      marginBottom: 4,
-                      width: 22,
-                      height: 22,
-                      lineHeight: '22px',
-                      borderRadius: 11,
-                      background: isToday ? '#F9731620' : 'transparent',
+                      fontSize: 12,
+                      fontWeight: isToday ? 700 : 600,
+                      color: isToday ? colors.onAccent : colors.text,
+                      background: isToday ? colors.accent : 'transparent',
                       margin: '0 auto 4px',
                     }}>
                       {cell.day}
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                      {cellTasks.slice(0, 2).map((t, ti) => (
-                        <div key={ti} style={{
-                          fontSize: 9,
-                          padding: '2px 4px',
-                          borderRadius: 3,
-                          background: getTaskColor(t) + '25',
-                          color: getTaskColor(t),
-                          fontWeight: 600,
-                          overflow: 'hidden',
-                          whiteSpace: 'nowrap',
-                          textOverflow: 'ellipsis',
-                          borderLeft: `2px solid ${getTaskColor(t)}`,
-                        }}>
-                          {t.title}
+                      {cellTasks.slice(0, MAX_CHIPS).map((t, ti) => {
+                        const c = statusColor(getTaskTone(t));
+                        return (
+                          <div key={ti} title={t.title} style={{
+                            fontSize: 10.5,
+                            fontWeight: 600,
+                            lineHeight: 1.35,
+                            padding: isMobile ? '1px 3px' : '1px 6px',
+                            borderRadius: radius.pill,
+                            background: tint(c),
+                            color: c,
+                            overflow: 'hidden',
+                            whiteSpace: 'nowrap',
+                            textOverflow: 'ellipsis',
+                          }}>
+                            {t.title}
+                          </div>
+                        );
+                      })}
+                      {cellTasks.length > MAX_CHIPS && (
+                        <div style={{ fontSize: 10.5, fontWeight: 600, color: colors.text3, paddingLeft: isMobile ? 2 : 6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          +{cellTasks.length - MAX_CHIPS}{isMobile ? '' : ' more'}
                         </div>
-                      ))}
-                      {cellTasks.length > 2 && (
-                        <div style={{ fontSize: 9, color: '#6B7280', paddingLeft: 4 }}>+{cellTasks.length - 2} more</div>
                       )}
                     </div>
                   </div>
@@ -249,33 +253,18 @@ export default function CalendarPage() {
               })}
             </div>
           )}
-
-          {/* Legend */}
-          <div style={{ display: 'flex', gap: 20, padding: '12px 20px', borderTop: '0.5px solid #1F2937', flexWrap: 'wrap' }}>
-            {[
-              { color: '#EF9F27', label: 'Due soon' },
-              { color: '#E24B4A', label: 'Overdue' },
-              { color: '#378ADD', label: 'In progress' },
-              { color: '#1D9E75', label: 'Completed' },
-            ].map((item) => (
-              <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <div style={{ width: 8, height: 8, borderRadius: 2, background: item.color }} />
-                <span style={{ fontSize: 11, color: '#6B7280' }}>{item.label}</span>
-              </div>
-            ))}
-          </div>
         </div>
 
         {/* Side panel */}
-        <div style={{ background: '#111827', border: '0.5px solid #1F2937', borderRadius: 14, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-          <div style={{ padding: '16px 20px', borderBottom: '0.5px solid #1F2937' }}>
-            <div style={{ fontSize: 15, fontWeight: 700 }}>
+        <div style={{ ...card, padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ padding: '16px 20px', borderBottom: `1px solid ${colors.border}` }}>
+            <div style={{ fontFamily: fonts.display, fontSize: 20, fontWeight: 700, letterSpacing: '0.02em' }}>
               {selectedDate
                 ? new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
                 : 'Select a date'}
             </div>
             {selectedDate && (
-              <div style={{ fontSize: 12, color: '#6B7280', marginTop: 4 }}>
+              <div style={{ fontSize: 13, color: colors.text3, marginTop: 4 }}>
                 {selectedTasks.length === 0 ? 'No tasks due' : `${selectedTasks.length} task${selectedTasks.length !== 1 ? 's' : ''} due`}
               </div>
             )}
@@ -283,27 +272,30 @@ export default function CalendarPage() {
 
           <div style={{ padding: 16, flex: 1, overflowY: 'auto' }}>
             {!selectedDate ? (
-              <div style={{ textAlign: 'center', padding: '40px 20px', color: '#4B5563' }}>
-                <div style={{ fontSize: 13 }}>Click a date to see tasks due</div>
-              </div>
+              <EmptyState compact title="No date selected" message="Click a day on the calendar to see the tasks due that day." />
             ) : selectedTasks.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '40px 20px', color: '#4B5563' }}>
-                <div style={{ fontSize: 13 }}>No tasks due this day</div>
-              </div>
+              <EmptyState
+                compact
+                title="Nothing due this day"
+                message="Pick another day, or jump back to today."
+                actionLabel={selectedDate !== todayStr ? 'Go to today' : undefined}
+                onAction={() => { setCurrentMonth(today.getMonth()); setCurrentYear(today.getFullYear()); setSelectedDate(todayStr); }}
+              />
             ) : (
               selectedTasks.map((task) => {
-                const color = getTaskColor(task);
+                const color = statusColor(getTaskTone(task));
                 return (
-                  <div key={task.id} style={{ background: '#0D1321', borderRadius: 10, marginBottom: 10, overflow: 'hidden', border: '0.5px solid #1F2937', display: 'flex' }}>
+                  <div key={task.id} style={{ background: colors.bg, borderRadius: 10, marginBottom: 10, overflow: 'hidden', border: `1px solid ${colors.border}`, display: 'flex' }}>
                     <div style={{ width: 3, background: color, flexShrink: 0 }} />
-                    <div style={{ padding: '12px 14px', flex: 1 }}>
-                      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>{task.title}</div>
-                      <div style={{ fontSize: 11, color: '#6B7280', marginBottom: 10 }}>{(task.project as any)?.name}</div>
+                    <div style={{ padding: '12px 14px', flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>{task.title}</div>
+                      <div style={{ fontSize: 12, color: colors.text3, marginBottom: 10 }}>{(task.project as any)?.name}</div>
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                        <span style={statusStyle[task.status] ?? statusStyle.open}>{statusLabels[task.status] ?? task.status}</span>
-                        <span style={priorityStyle[task.priority] ?? priorityStyle.low}>{task.priority}</span>
+                        <StatusChip status={task.status} label={statusLabels[task.status] ?? task.status} />
+                        {getTaskTone(task) === 'overdue' && <StatusChip status="overdue" />}
+                        <StatusChip status={task.priority} label={`${task.priority} priority`} />
                         {isAdmin && taskAssigneeNames(task) !== 'Unassigned' && (
-                          <span style={{ fontSize: 11, color: '#6B7280', background: '#1F2937', padding: '2px 8px', borderRadius: 6 }}>
+                          <span style={{ fontSize: 12, color: colors.text2, background: colors.surface2, padding: '3px 10px', borderRadius: radius.pill }}>
                             {taskAssigneeNames(task)}
                           </span>
                         )}

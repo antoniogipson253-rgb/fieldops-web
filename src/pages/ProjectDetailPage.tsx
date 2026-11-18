@@ -9,6 +9,15 @@ import { ProjectRFITab } from './tabs/ProjectRFITab';
 import { ProjectClientMessagesTab } from './tabs/ProjectClientMessagesTab';
 import { DailyReportSettings } from '../components/DailyReportSettings';
 import { FolderChecklistEditor } from '../components/FolderChecklistEditor';
+import { useIsMobile } from '../hooks/useIsMobile';
+import { btn, card, chip, colors, fonts, input as inputBase, radius, sectionLabel, statusColor } from '../theme';
+import PageHeader from '../components/ui/PageHeader';
+import StatCard from '../components/ui/StatCard';
+import StatusChip from '../components/ui/StatusChip';
+import EmptyState from '../components/ui/EmptyState';
+import Skeleton from '../components/ui/Skeleton';
+import AvatarStack from '../components/ui/AvatarStack';
+import Icon from '../components/ui/Icon';
 
 // The checklist-completion DB trigger raises errcode 'CHK01' when a checklist-type
 // task can't be marked complete (no items yet, or items still unresolved) — surface
@@ -35,6 +44,7 @@ export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const isMobile = useIsMobile();
 
   const { data: isAdmin } = useIsAdmin();
   const { data: isOwner } = useIsProjectOwner(id ?? '');
@@ -152,7 +162,9 @@ export default function ProjectDetailPage() {
       return folders.map((folder) => {
         const folderTasks = tasks.filter((t) => t.folder_id === folder.id);
         const completedTasks = folderTasks.filter((t) => t.status === 'completed' || t.archived);
-        return { ...folder, task_count: folderTasks.length, completed_count: completedTasks.length };
+        // Counted from the rows already fetched above (no extra request), for the In progress stat card.
+        const inProgressTasks = folderTasks.filter((t) => t.status === 'in_progress' && !t.archived);
+        return { ...folder, task_count: folderTasks.length, completed_count: completedTasks.length, in_progress_count: inProgressTasks.length };
       });
     },
     enabled: !!id,
@@ -225,6 +237,7 @@ export default function ProjectDetailPage() {
   const totalTasks = folders?.reduce((sum, f) => sum + (f.task_count ?? 0), 0) ?? 0;
   const completedTasks = folders?.reduce((sum, f) => sum + (f.completed_count ?? 0), 0) ?? 0;
   const projectProgress = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+  const inProgressTasks = folders?.reduce((sum, f: any) => sum + (f.in_progress_count ?? 0), 0) ?? 0;
 
   const filteredTasks = tasks?.filter((task: any) => {
     if (!taskSearch.trim()) return true;
@@ -273,11 +286,6 @@ export default function ProjectDetailPage() {
     }
   }
 
-  function getProgressColor(pct: number) {
-    if (pct === 100) return '#22C55E';
-    if (pct >= 50) return '#F97316';
-    return '#3B82F6';
-  }
 
   function resetImport() {
     setShowImport(false);
@@ -389,7 +397,7 @@ export default function ProjectDetailPage() {
   }
 
   const checklistStatusColors: Record<string, string> = {
-    not_started: '#6B7280', done: '#22C55E', missing_part: '#EF4444', part_received: '#3B82F6',
+    not_started: colors.text3, done: colors.green, missing_part: colors.red, part_received: colors.blue,
   };
   const checklistStatusLabels: Record<string, string> = {
     not_started: 'Not Started', done: 'Done', missing_part: "Missing Part", part_received: 'Part Received',
@@ -875,24 +883,23 @@ async function handleSaveTask() {
     }
   }
 
-  const statusColors: Record<string, string> = { open: '#6B7280', in_progress: '#F97316', completed: '#22C55E', active: '#22C55E', on_hold: '#F97316' };
+  // Status and priority colors come from the shared theme (same as StatusChip).
   const statusLabels: Record<string, string> = { open: 'Open', in_progress: 'In Progress', completed: 'Done', active: 'Active', on_hold: 'On Hold' };
-  const priorityColors: Record<string, string> = { low: '#6B7280', medium: '#F59E0B', high: '#EF4444' };
   const validCount = parsedTasks.filter((t) => t.valid).length;
   const assignLineCount = assignItemsText.split('\n').map((l) => l.trim()).filter(Boolean).length;
-  const progressColor = getProgressColor(projectProgress);
 
-  const inputStyle: React.CSSProperties = {
-    width: '100%', padding: '10px 14px', backgroundColor: '#1F2937',
-    border: '1px solid #374151', borderRadius: 8, color: '#FFFFFF',
-    fontSize: 14, outline: 'none', boxSizing: 'border-box',
-  };
+  // Overdue count for the stat card, from the task list the page already has loaded for the current view.
+  const isTaskOverdue = (task: any) => !!task.due_date && new Date(task.due_date) < new Date() && task.status !== 'completed';
+  const overdueCount = (tasks ?? []).filter(isTaskOverdue).length;
+  const overdueScope = showArchivedTasks ? 'in archived tasks' : selectedFolderObj ? `in ${selectedFolderObj.name}` : 'across all tasks';
 
-  const cellStyle: React.CSSProperties = { padding: 0, border: '1px solid #2D3748' };
+  const inputStyle: React.CSSProperties = inputBase;
+
+  const cellStyle: React.CSSProperties = { padding: 0, border: `1px solid ${colors.border}` };
 
   const cellInputStyle: React.CSSProperties = {
     width: '100%', padding: '7px 10px', backgroundColor: 'transparent',
-    border: 'none', color: '#FFFFFF', fontSize: 13, outline: 'none',
+    border: 'none', color: colors.text, fontSize: 13, outline: 'none',
     boxSizing: 'border-box', fontFamily: 'inherit',
   };
 
@@ -900,64 +907,80 @@ async function handleSaveTask() {
     position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
     backgroundColor: 'rgba(0,0,0,0.75)', display: 'flex',
     justifyContent: 'center', alignItems: 'center', zIndex: 1000,
+    padding: 16,
   };
 
   const modalBox: React.CSSProperties = {
-    backgroundColor: '#111827', borderRadius: 16, padding: 32,
-    width: '100%', maxWidth: 520, border: '1px solid #1F2937',
+    backgroundColor: colors.surface, borderRadius: radius.card, padding: isMobile ? 20 : 32,
+    width: '100%', maxWidth: 520, border: `1px solid ${colors.border}`,
     maxHeight: '85vh', overflowY: 'auto',
   };
 
-  return (
-    <div style={{ padding: 32, color: '#FFFFFF' }}>
-      <button onClick={() => navigate('/projects')} style={{ backgroundColor: 'transparent', border: 'none', color: '#F97316', fontSize: 14, fontWeight: 600, cursor: 'pointer', padding: 0, marginBottom: 16 }}>
-        ← Back to Projects
-      </button>
+  const panel: React.CSSProperties = { ...card, padding: isMobile ? 16 : 24, marginBottom: 24 };
+  const small: React.CSSProperties = { padding: '6px 12px', fontSize: 12 };
+  const labelStyle: React.CSSProperties = { ...sectionLabel, display: 'block', marginBottom: 6 };
+  const assigneeNames = (task: any) => taskAssigneeProfiles(task).map((p) => p.full_name).filter(Boolean);
+  const TASK_COLS = 'minmax(0, 1fr) 96px 112px 132px auto';
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, gap: 16, flexWrap: 'wrap' }}>
-        <div>
-          <h1 style={{ fontSize: 28, fontWeight: 800, margin: 0, marginBottom: 4 }}>{project?.name}</h1>
-          {project?.description && <p style={{ color: '#6B7280', fontSize: 14, margin: 0 }}>{project.description}</p>}
-          {project?.status && (
-            <span style={{ display: 'inline-block', marginTop: 8, fontSize: 12, fontWeight: 700, color: statusColors[project.status], backgroundColor: statusColors[project.status] + '20', padding: '3px 10px', borderRadius: 20 }}>
-              {statusLabels[project.status]}
-            </span>
-          )}
-          {project?.project_type === 'checklist' && (
-            <span style={{ display: 'inline-block', marginTop: 8, marginLeft: 8, fontSize: 12, fontWeight: 700, color: '#3B82F6', backgroundColor: '#3B82F620', padding: '3px 10px', borderRadius: 20 }}>
-              ✅ Checklist Project
-            </span>
-          )}
-        </div>
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          {canEdit && <button onClick={() => { setEditName(project?.name ?? ''); setEditDescription(project?.description ?? ''); setEditStatus(project?.status ?? 'active'); setEditClientPhotosEnabled((project as any)?.client_photos_enabled ?? false); setShowEditProject(true); }} style={{ padding: '10px 16px', backgroundColor: '#111827', border: '1px solid #374151', borderRadius: 10, color: '#9CA3AF', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>✏️ Edit</button>}
-          {isAdmin && <button onClick={() => setShowInvite(!showInvite)} style={{ padding: '10px 16px', backgroundColor: '#111827', border: '1px solid #374151', borderRadius: 10, color: '#9CA3AF', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>👥 Invite</button>}
-          <button onClick={() => navigate(`/projects/${id}/chat`)} style={{ padding: '10px 16px', backgroundColor: '#111827', border: '1px solid #374151', borderRadius: 10, color: '#9CA3AF', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>💬 Chat</button>
-          {canManageChecklist && <button onClick={() => navigate(`/projects/${id}/daily-reports`)} style={{ padding: '10px 16px', backgroundColor: '#111827', border: '1px solid #374151', borderRadius: 10, color: '#9CA3AF', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Daily Reports</button>}
-          <button onClick={handleDownloadSpreadsheet} disabled={downloadingSheet} title="Builds a fresh spreadsheet of this project's tasks" style={{ padding: '10px 16px', backgroundColor: '#111827', border: '1px solid #374151', borderRadius: 10, color: downloadingSheet ? '#6B7280' : '#9CA3AF', fontSize: 13, fontWeight: 600, cursor: downloadingSheet ? 'wait' : 'pointer' }}>
-            {downloadingSheet ? 'Building spreadsheet...' : 'Download spreadsheet'}
-          </button>
-          {downloadSheetError && (
-            <span role="alert" style={{ alignSelf: 'center', fontSize: 12, color: '#FCA5A5', maxWidth: 320 }}>{downloadSheetError}</span>
-          )}
-          {canEdit && <button onClick={() => { resetImport(); setShowImport(true); }} style={{ padding: '10px 20px', backgroundColor: '#F97316', border: 'none', borderRadius: 10, color: '#0A0F1E', fontSize: 14, fontWeight: 800, cursor: 'pointer' }}>+ Add Tasks</button>}
-        </div>
+  return (
+    <div style={{ padding: isMobile ? 16 : 32, color: colors.text }}>
+      <PageHeader
+        breadcrumb={[{ label: 'Projects', onClick: () => navigate('/projects') }, { label: project?.name ?? '…' }]}
+        title={project?.name ?? <Skeleton width={260} height={34} />}
+        subtitle={project ? (
+          <>
+            {project.description && <p style={{ color: colors.text2, fontSize: 14, lineHeight: 1.5, margin: 0 }}>{project.description}</p>}
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+              {project.status && <StatusChip status={project.status} label={statusLabels[project.status]} />}
+              {project.project_type === 'checklist' && (
+                <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 10px', borderRadius: radius.pill, border: `1px solid ${colors.border}`, color: colors.text2, fontSize: 12, fontWeight: 600 }}>
+                  Tasks + Checklist
+                </span>
+              )}
+            </div>
+          </>
+        ) : undefined}
+        actions={
+          <>
+            {canEdit && <button onClick={() => { setEditName(project?.name ?? ''); setEditDescription(project?.description ?? ''); setEditStatus(project?.status ?? 'active'); setEditClientPhotosEnabled((project as any)?.client_photos_enabled ?? false); setShowEditProject(true); }} {...btn('secondary')}>Edit</button>}
+            {isAdmin && <button onClick={() => setShowInvite(!showInvite)} {...btn('secondary')}>Invite</button>}
+            <button onClick={() => navigate(`/projects/${id}/chat`)} {...btn('secondary')}>Chat</button>
+            {canManageChecklist && <button onClick={() => navigate(`/projects/${id}/daily-reports`)} {...btn('secondary')}>Daily Reports</button>}
+            {canEdit && <button onClick={() => { resetImport(); setShowImport(true); }} {...btn('secondary')}><Icon name="plus" /> Add Tasks</button>}
+            <button onClick={handleDownloadSpreadsheet} disabled={downloadingSheet} title="Builds a fresh spreadsheet of this project's tasks" {...btn('primary', { cursor: downloadingSheet ? 'wait' : 'pointer' })}>
+              {downloadingSheet ? 'Building spreadsheet...' : 'Download spreadsheet'}
+            </button>
+            {downloadSheetError && (
+              <span role="alert" style={{ alignSelf: 'center', fontSize: 13, color: colors.red, maxWidth: 320 }}>{downloadSheetError}</span>
+            )}
+          </>
+        }
+      />
+
+      {/* Stat cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, minmax(0, 1fr))' : 'repeat(4, minmax(0, 1fr))', gap: 12, marginBottom: 16 }}>
+        <StatCard label="Tasks" tone="accent" value={folders ? totalTasks : undefined} sub={folders ? `across ${folders.length} folder${folders.length !== 1 ? 's' : ''}` : undefined} />
+        <StatCard label="Done" tone="green" value={folders ? completedTasks : undefined} sub="completed or archived" />
+        <StatCard label="In progress" tone="blue" value={folders ? inProgressTasks : undefined} sub="being worked on" />
+        <StatCard label="Overdue" tone="gray" alert={overdueCount > 0} value={tasks ? overdueCount : undefined} sub={overdueScope} />
       </div>
 
       {/* Progress Bar */}
-      <div style={{ backgroundColor: '#111827', borderRadius: 14, padding: 20, border: '1px solid #1F2937', marginBottom: 24 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-          <span style={{ fontSize: 14, fontWeight: 700 }}>Project Progress</span>
-          <span style={{ fontSize: 20, fontWeight: 900, color: progressColor }}>{projectProgress}%</span>
+      <div style={{ ...card, marginBottom: 24, display: 'flex', alignItems: 'center', gap: isMobile ? 14 : 24 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ ...sectionLabel, marginBottom: 10 }}>Overall progress</div>
+          <div style={{ height: 10, backgroundColor: colors.track, borderRadius: 5, overflow: 'hidden', marginBottom: 8 }}>
+            <div style={{ height: '100%', width: `${projectProgress}%`, backgroundColor: colors.accent, borderRadius: 5, transition: 'width 0.5s ease' }} />
+          </div>
+          <span style={{ fontSize: 13, color: colors.text3 }}>{completedTasks} of {totalTasks} tasks completed across {folders?.length ?? 0} folder{folders?.length !== 1 ? 's' : ''}</span>
         </div>
-        <div style={{ height: 8, backgroundColor: '#1F2937', borderRadius: 4, overflow: 'hidden', marginBottom: 8 }}>
-          <div style={{ height: '100%', width: `${projectProgress}%`, backgroundColor: progressColor, borderRadius: 4, transition: 'width 0.5s ease' }} />
+        <div style={{ fontFamily: fonts.display, fontSize: isMobile ? 40 : 48, fontWeight: 700, lineHeight: 1, color: colors.text, fontVariantNumeric: 'tabular-nums' }}>
+          {projectProgress}%
         </div>
-        <span style={{ fontSize: 12, color: '#6B7280' }}>{completedTasks} of {totalTasks} tasks completed across {folders?.length ?? 0} folder{folders?.length !== 1 ? 's' : ''}</span>
       </div>
 
       {/* Tab Bar */}
-      <div style={{ display: 'flex', borderBottom: '1px solid #1F2937', marginBottom: 24 }}>
+      <div role="tablist" style={{ display: 'flex', borderBottom: `1px solid ${colors.border}`, marginBottom: 24, overflowX: 'auto' }}>
         {[
           { key: 'tasks', label: 'Tasks' },
           { key: 'budget', label: 'Budget' },
@@ -967,18 +990,10 @@ async function handleSaveTask() {
         ].map((tab) => (
           <button
             key={tab.key}
+            role="tab"
+            aria-selected={activeTab === tab.key}
+            className={`fo-tab${activeTab === tab.key ? ' is-active' : ''}`}
             onClick={() => setActiveTab(tab.key as any)}
-            style={{
-              padding: '12px 20px',
-              backgroundColor: 'transparent',
-              border: 'none',
-              borderBottom: `2px solid ${activeTab === tab.key ? '#F97316' : 'transparent'}`,
-              color: activeTab === tab.key ? '#F97316' : '#6B7280',
-              fontSize: 14,
-              fontWeight: activeTab === tab.key ? 700 : 500,
-              cursor: 'pointer',
-              marginBottom: -1,
-            }}
           >
             {tab.label}
           </button>
@@ -987,18 +1002,18 @@ async function handleSaveTask() {
 
       {/* Edit Project Panel */}
       {showEditProject && canEdit && (
-        <div style={{ backgroundColor: '#111827', borderRadius: 14, padding: 24, border: '1px solid #F97316', marginBottom: 24 }}>
-          <h3 style={{ margin: '0 0 16px 0', fontSize: 16, fontWeight: 700 }}>Edit Project</h3>
+        <div style={panel}>
+          <h3 style={{ margin: '0 0 16px 0', fontFamily: fonts.display, fontSize: 22, fontWeight: 700, letterSpacing: '0.02em' }}>Edit Project</h3>
           <div style={{ marginBottom: 14 }}>
-            <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#6B7280', letterSpacing: 2, marginBottom: 6 }}>PROJECT NAME</label>
+            <label style={labelStyle}>PROJECT NAME</label>
             <input value={editName} onChange={(e) => setEditName(e.target.value)} style={inputStyle} />
           </div>
           <div style={{ marginBottom: 14 }}>
-            <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#6B7280', letterSpacing: 2, marginBottom: 6 }}>DESCRIPTION</label>
+            <label style={labelStyle}>DESCRIPTION</label>
             <textarea value={editDescription} onChange={(e) => setEditDescription(e.target.value)} style={{ ...inputStyle, resize: 'vertical', minHeight: 80 }} />
           </div>
           <div style={{ marginBottom: 16 }}>
-            <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#6B7280', letterSpacing: 2, marginBottom: 6 }}>STATUS</label>
+            <label style={labelStyle}>STATUS</label>
             <select value={editStatus} onChange={(e) => setEditStatus(e.target.value)} style={{ ...inputStyle, width: 'auto', cursor: 'pointer' }}>
               <option value="active">Active</option>
               <option value="on_hold">On Hold</option>
@@ -1007,26 +1022,26 @@ async function handleSaveTask() {
           </div>
           {isAdmin && (
             <div style={{ marginBottom: 16 }}>
-              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#6B7280', letterSpacing: 2, marginBottom: 6 }}>CLIENT ACCESS</label>
+              <label style={labelStyle}>CLIENT ACCESS</label>
               <button
                 onClick={() => setEditClientPhotosEnabled(!editClientPhotosEnabled)}
-                style={{ padding: '10px 16px', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer', backgroundColor: editClientPhotosEnabled ? '#F9731620' : '#1F2937', border: `1px solid ${editClientPhotosEnabled ? '#F97316' : '#374151'}`, color: editClientPhotosEnabled ? '#F97316' : '#9CA3AF' }}
+                style={{ padding: '10px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', backgroundColor: editClientPhotosEnabled ? '#F9731620' : colors.surface2, border: `1px solid ${editClientPhotosEnabled ? '#F97316' : colors.border}`, color: editClientPhotosEnabled ? '#F97316' : '#9CA3AF' }}
               >
-                {editClientPhotosEnabled ? '✓ Show site photos to client' : '○ Show site photos to client'}
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}><span aria-hidden="true" style={{ width: 16, height: 16, borderRadius: 4, border: `1.5px solid ${editClientPhotosEnabled ? colors.accent : colors.text3}`, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{editClientPhotosEnabled && <Icon name="check" size={11} strokeWidth={3} />}</span>Show site photos to client</span>
               </button>
             </div>
           )}
           <DailyReportSettings projectId={id ?? ''} />
           {isAdmin && project?.project_type === 'regular' && (
-            <div style={{ marginBottom: 20, padding: 16, backgroundColor: '#7F1D1D15', border: '1px solid #EF444440', borderRadius: 10 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: '#EF4444', letterSpacing: 2, marginBottom: 8 }}>DANGER ZONE</div>
+            <div style={{ marginBottom: 20, padding: 16, backgroundColor: '#7F1D1D15', border: '1px solid #EF444440', borderRadius: 8 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: colors.red, letterSpacing: 2, marginBottom: 8 }}>DANGER ZONE</div>
               <div style={{ fontSize: 13, color: '#9CA3AF', marginBottom: 12 }}>Switch this project to Tasks + Checklist mode. Existing tasks are kept — this only unlocks per-task checklists.</div>
-              <button onClick={() => setShowConvertConfirm(true)} style={{ padding: '10px 16px', backgroundColor: 'transparent', border: '1px solid #EF4444', borderRadius: 8, color: '#EF4444', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Convert to Tasks + Checklist →</button>
+              <button onClick={() => setShowConvertConfirm(true)} style={{ padding: '10px 16px', backgroundColor: 'transparent', border: `1px solid ${colors.red}`, borderRadius: 8, color: colors.red, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Convert to Tasks + Checklist →</button>
             </div>
           )}
           <div style={{ display: 'flex', gap: 10 }}>
-            <button onClick={() => setShowEditProject(false)} style={{ padding: '10px 20px', backgroundColor: 'transparent', border: '1px solid #374151', borderRadius: 10, color: '#6B7280', fontSize: 14, cursor: 'pointer' }}>Cancel</button>
-            <button onClick={handleSaveProject} disabled={savingProject} style={{ padding: '10px 24px', backgroundColor: '#F97316', border: 'none', borderRadius: 10, color: '#0A0F1E', fontSize: 14, fontWeight: 800, cursor: 'pointer' }}>{savingProject ? 'Saving...' : 'Save Changes'}</button>
+            <button onClick={() => setShowEditProject(false)} style={{ padding: '10px 20px', backgroundColor: 'transparent', border: `1px solid ${colors.border}`, borderRadius: 8, color: colors.text3, fontSize: 14, cursor: 'pointer' }}>Cancel</button>
+            <button onClick={handleSaveProject} disabled={savingProject} style={{ padding: '10px 24px', backgroundColor: '#F97316', border: 'none', borderRadius: 8, color: '#0A0F1E', fontSize: 14, fontWeight: 800, cursor: 'pointer' }}>{savingProject ? 'Saving...' : 'Save Changes'}</button>
           </div>
         </div>
       )}
@@ -1046,17 +1061,17 @@ async function handleSaveTask() {
       {/* Convert to Checklist Confirm Modal */}
       {showConvertConfirm && isAdmin && (
         <div style={modalOverlay} onClick={() => !converting && setShowConvertConfirm(false)}>
-          <div style={{ ...modalBox, maxWidth: 460, border: '1px solid #EF4444' }} onClick={(e) => e.stopPropagation()}>
-            <h3 style={{ margin: '0 0 12px 0', fontSize: 18, fontWeight: 800, color: '#EF4444' }}>⚠ Convert to Tasks + Checklist</h3>
-            <p style={{ fontSize: 14, color: '#D1D5DB', lineHeight: 1.6, marginBottom: 12 }}>
+          <div style={{ ...modalBox, maxWidth: 460, border: `1px solid ${colors.red}` }} onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ margin: '0 0 12px 0', fontSize: 18, fontWeight: 800, color: colors.red }}><Icon name="alert" size={18} style={{ marginRight: 8, verticalAlign: '-3px' }} />Convert to Tasks + Checklist</h3>
+            <p style={{ fontSize: 14, color: colors.text2, lineHeight: 1.6, marginBottom: 12 }}>
               This is <strong>permanent and cannot be undone</strong>. Once converted, this project cannot be switched back to a Regular Project — for any user, at any time.
             </p>
-            <p style={{ fontSize: 14, color: '#D1D5DB', lineHeight: 1.6, marginBottom: 24 }}>
+            <p style={{ fontSize: 14, color: colors.text2, lineHeight: 1.6, marginBottom: 24 }}>
               Existing tasks will not be deleted or changed — they'll simply become eligible to have checklists added, and can no longer be marked complete until their checklist items are resolved.
             </p>
             <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={() => setShowConvertConfirm(false)} disabled={converting} style={{ flex: 1, padding: '12px', backgroundColor: 'transparent', border: '1px solid #374151', borderRadius: 10, color: '#6B7280', fontSize: 14, cursor: 'pointer' }}>Cancel</button>
-              <button onClick={handleConvertToChecklist} disabled={converting} style={{ flex: 2, padding: '12px', backgroundColor: '#EF4444', border: 'none', borderRadius: 10, color: '#FFFFFF', fontSize: 14, fontWeight: 800, cursor: 'pointer' }}>{converting ? 'Converting...' : 'Yes, Convert Permanently'}</button>
+              <button onClick={() => setShowConvertConfirm(false)} disabled={converting} style={{ flex: 1, padding: '12px', backgroundColor: 'transparent', border: `1px solid ${colors.border}`, borderRadius: 8, color: colors.text3, fontSize: 14, cursor: 'pointer' }}>Cancel</button>
+              <button onClick={handleConvertToChecklist} disabled={converting} {...btn('danger', { flex: 2, padding: '12px' })}>{converting ? 'Converting...' : 'Yes, Convert Permanently'}</button>
             </div>
           </div>
         </div>
@@ -1064,28 +1079,28 @@ async function handleSaveTask() {
 
       {/* Invite Panel */}
       {showInvite && isAdmin && (
-        <div style={{ backgroundColor: '#111827', borderRadius: 14, padding: 24, border: '1px solid #1F2937', marginBottom: 24 }}>
-          <h3 style={{ margin: '0 0 16px 0', fontSize: 16, fontWeight: 700 }}>Invite to Project</h3>
+        <div style={panel}>
+          <h3 style={{ margin: '0 0 16px 0', fontFamily: fonts.display, fontSize: 22, fontWeight: 700, letterSpacing: '0.02em' }}>Invite to Project</h3>
           {/* Invite type toggle */}
           <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
             {(['team', 'client'] as const).map((t) => (
-              <button key={t} onClick={() => setInviteType(t)} style={{ flex: 1, padding: '8px 12px', backgroundColor: inviteType === t ? (t === 'team' ? '#F9731620' : '#3B82F620') : '#1F2937', border: `1px solid ${inviteType === t ? (t === 'team' ? '#F97316' : '#3B82F6') : '#374151'}`, borderRadius: 8, color: inviteType === t ? (t === 'team' ? '#F97316' : '#3B82F6') : '#6B7280', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
-                {t === 'team' ? '👷 Team Member' : '👔 Client'}
+              <button key={t} onClick={() => setInviteType(t)} style={{ flex: 1, padding: '8px 12px', backgroundColor: inviteType === t ? (t === 'team' ? '#F9731620' : '#3B82F620') : colors.surface2, border: `1px solid ${inviteType === t ? (t === 'team' ? '#F97316' : colors.blue) : colors.border}`, borderRadius: 8, color: inviteType === t ? (t === 'team' ? '#F97316' : colors.blue) : colors.text3, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                {t === 'team' ? 'Team member' : 'Client'}
               </button>
             ))}
           </div>
           {inviteType === 'team' && teamMembers && teamMembers.length > 0 && (
             <div style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', letterSpacing: 2, marginBottom: 8 }}>CURRENT MEMBERS</div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: colors.text3, letterSpacing: 2, marginBottom: 8 }}>CURRENT MEMBERS</div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                {teamMembers.map((m) => <span key={m.user_id} style={{ fontSize: 12, color: '#9CA3AF', backgroundColor: '#1F2937', padding: '4px 10px', borderRadius: 20 }}>{(m.profile as any)?.full_name ?? 'Unknown'}</span>)}
+                {teamMembers.map((m) => <span key={m.user_id} style={{ fontSize: 12, color: '#9CA3AF', backgroundColor: colors.surface2, padding: '4px 10px', borderRadius: 20 }}>{(m.profile as any)?.full_name ?? 'Unknown'}</span>)}
               </div>
             </div>
           )}
           <div style={{ display: 'flex', gap: 10 }}>
             <input type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder={inviteType === 'team' ? 'worker@company.com' : 'client@company.com'} onKeyDown={(e) => e.key === 'Enter' && (inviteType === 'team' ? handleInvite() : handleInviteClient())} style={{ flex: 1, ...inputStyle, width: 'auto' }} />
-            <button onClick={inviteType === 'team' ? handleInvite : handleInviteClient} disabled={inviting} style={{ padding: '10px 20px', backgroundColor: inviteType === 'team' ? '#F97316' : '#3B82F6', border: 'none', borderRadius: 8, color: '#FFFFFF', fontSize: 14, fontWeight: 800, cursor: 'pointer' }}>{inviting ? 'Adding...' : 'Add'}</button>
-            <button onClick={() => { setShowInvite(false); setInviteType('team'); }} style={{ padding: '10px 16px', backgroundColor: 'transparent', border: '1px solid #374151', borderRadius: 8, color: '#6B7280', fontSize: 14, cursor: 'pointer' }}>Cancel</button>
+            <button onClick={inviteType === 'team' ? handleInvite : handleInviteClient} disabled={inviting} {...btn('primary')}>{inviting ? 'Adding...' : 'Add'}</button>
+            <button onClick={() => { setShowInvite(false); setInviteType('team'); }} style={{ padding: '10px 16px', backgroundColor: 'transparent', border: `1px solid ${colors.border}`, borderRadius: 8, color: colors.text3, fontSize: 14, cursor: 'pointer' }}>Cancel</button>
           </div>
         </div>
       )}
@@ -1096,52 +1111,52 @@ async function handleSaveTask() {
           <div style={{ ...modalBox, maxWidth: 640 }} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
               <h3 style={{ margin: 0, fontSize: 20, fontWeight: 800, flex: 1, marginRight: 16 }}>{viewTask.title}</h3>
-              <button onClick={closeViewTask} style={{ backgroundColor: '#1F2937', border: 'none', borderRadius: 8, color: '#9CA3AF', fontSize: 16, cursor: 'pointer', padding: '4px 10px' }}>✕</button>
+              <button onClick={closeViewTask} style={{ backgroundColor: colors.surface2, border: 'none', borderRadius: 8, color: '#9CA3AF', fontSize: 16, cursor: 'pointer', padding: '6px 8px', display: 'inline-flex' }} aria-label="Close"><Icon name="x" size={16} /></button>
             </div>
             {viewTask.description && <p style={{ color: '#9CA3AF', fontSize: 14, lineHeight: 1.6, margin: '0 0 20px 0' }}>{viewTask.description}</p>}
             <div style={{ display: 'flex', gap: 10, marginBottom: 20, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 12, fontWeight: 700, color: statusColors[viewTask.status], backgroundColor: statusColors[viewTask.status] + '20', padding: '4px 12px', borderRadius: 20 }}>{statusLabels[viewTask.status]}</span>
-              <span style={{ fontSize: 12, fontWeight: 700, color: priorityColors[viewTask.priority], backgroundColor: priorityColors[viewTask.priority] + '20', padding: '4px 12px', borderRadius: 20 }}>{viewTask.priority} priority</span>
+              <StatusChip status={viewTask.status} label={statusLabels[viewTask.status]} />
+              <StatusChip status={viewTask.priority} label={`${viewTask.priority} priority`} />
             </div>
-            <div style={{ backgroundColor: '#0D1321', borderRadius: 10, padding: 16, marginBottom: 20 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: 10, borderBottom: '1px solid #1F2937', marginBottom: 10 }}>
-                <span style={{ fontSize: 12, color: '#6B7280', fontWeight: 600 }}>ASSIGNED TO</span>
-                <span style={{ fontSize: 13, color: '#FFFFFF', fontWeight: 600 }}>{taskAssigneeNames(viewTask)}</span>
+            <div style={{ backgroundColor: colors.bg, borderRadius: 8, padding: 16, marginBottom: 20 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: 10, borderBottom: `1px solid ${colors.border}`, marginBottom: 10 }}>
+                <span style={{ fontSize: 12, color: colors.text3, fontWeight: 600 }}>ASSIGNED TO</span>
+                <span style={{ fontSize: 13, color: colors.text, fontWeight: 600 }}>{taskAssigneeNames(viewTask)}</span>
               </div>
               {viewTask.due_date && (
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ fontSize: 12, color: '#6B7280', fontWeight: 600 }}>DUE DATE</span>
-                  <span style={{ fontSize: 13, color: '#FFFFFF', fontWeight: 600 }}>{new Date(viewTask.due_date).toLocaleDateString()}</span>
+                  <span style={{ fontSize: 12, color: colors.text3, fontWeight: 600 }}>DUE DATE</span>
+                  <span style={{ fontSize: 13, color: colors.text, fontWeight: 600 }}>{new Date(viewTask.due_date).toLocaleDateString()}</span>
                 </div>
               )}
             </div>
             {project?.project_type === 'checklist' && (
               <div style={{ marginBottom: 20 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: '#6B7280', letterSpacing: 2 }}>CHECKLIST</div>
-                  <div style={{ fontSize: 12, color: '#4B5563' }}>{viewTaskChecklist.length}/{CHECKLIST_ITEM_CAP}</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: colors.text3, letterSpacing: 2 }}>CHECKLIST</div>
+                  <div style={{ fontSize: 12, color: colors.text3 }}>{viewTaskChecklist.length}/{CHECKLIST_ITEM_CAP}</div>
                 </div>
                 {checklistLoading ? (
-                  <div style={{ color: '#F97316', fontSize: 13 }}>Loading checklist...</div>
+                  <div role="status" aria-label="Loading checklist" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}><Skeleton height={44} radius={8} /><Skeleton height={44} radius={8} /></div>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
                     {viewTaskChecklist.length === 0 && (
-                      <div style={{ padding: '12px 0', fontSize: 13, color: '#4B5563' }}>No checklist items yet — add at least one before this task can be marked complete.</div>
+                      <div style={{ padding: '12px 0', fontSize: 13, color: colors.text3 }}>No checklist items yet — add at least one before this task can be marked complete.</div>
                     )}
                     {viewTaskChecklist.map((item) => (
-                      <div key={item.id} style={{ backgroundColor: '#0D1321', border: '1px solid #1F2937', borderRadius: 8, padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                      <div key={item.id} style={{ backgroundColor: colors.bg, border: `1px solid ${colors.border}`, borderRadius: 8, padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                         <div style={{ flex: 1, minWidth: 140 }}>
-                          <div style={{ fontSize: 13, color: '#FFFFFF', marginBottom: 4 }}>{item.item_text}</div>
+                          <div style={{ fontSize: 13, color: colors.text, marginBottom: 4 }}>{item.item_text}</div>
                           <span style={{ fontSize: 11, fontWeight: 700, color: checklistStatusColors[item.status], backgroundColor: checklistStatusColors[item.status] + '20', padding: '2px 8px', borderRadius: 12 }}>
                             {checklistStatusLabels[item.status]}
                           </span>
                         </div>
                         {canEdit && (
                           <div style={{ display: 'flex', gap: 6 }}>
-                            <button onClick={() => handleToggleChecklistDone(item)} style={{ padding: '6px 10px', backgroundColor: item.status === 'done' ? '#22C55E20' : '#1F2937', border: `1px solid ${item.status === 'done' ? '#22C55E' : '#374151'}`, borderRadius: 6, color: item.status === 'done' ? '#22C55E' : '#9CA3AF', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
-                              {item.status === 'done' ? '✓ Done' : 'Mark Done'}
+                            <button onClick={() => handleToggleChecklistDone(item)} style={{ padding: '6px 10px', backgroundColor: item.status === 'done' ? '#22C55E20' : colors.surface2, border: `1px solid ${item.status === 'done' ? colors.green : colors.border}`, borderRadius: 6, color: item.status === 'done' ? colors.green : '#9CA3AF', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+                              {item.status === 'done' ? <><Icon name="check" size={12} strokeWidth={3} /> Done</> : 'Mark Done'}
                             </button>
-                            <button onClick={() => handleToggleChecklistMissingPart(item)} style={{ padding: '6px 10px', backgroundColor: item.status === 'missing_part' ? '#EF444420' : '#1F2937', border: `1px solid ${item.status === 'missing_part' ? '#EF4444' : '#374151'}`, borderRadius: 6, color: item.status === 'missing_part' ? '#EF4444' : '#9CA3AF', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+                            <button onClick={() => handleToggleChecklistMissingPart(item)} style={{ padding: '6px 10px', backgroundColor: item.status === 'missing_part' ? '#EF444420' : colors.surface2, border: `1px solid ${item.status === 'missing_part' ? colors.red : colors.border}`, borderRadius: 6, color: item.status === 'missing_part' ? colors.red : '#9CA3AF', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
                               {item.status === 'missing_part' ? 'Now Have Part' : "Don't Have Part"}
                             </button>
                           </div>
@@ -1151,13 +1166,13 @@ async function handleSaveTask() {
                   </div>
                 )}
                 {canEdit && isFolderManaged(viewTask?.folder_id) && (
-                  <div style={{ fontSize: 12, color: '#6B7280' }}>
+                  <div style={{ fontSize: 12, color: colors.text3 }}>
                     This task uses its folder's shared checklist. Items are added, renamed or removed for the whole folder with Edit folder checklist.
                   </div>
                 )}
                 {canEdit && !isFolderManaged(viewTask?.folder_id) && (
                   viewTaskChecklist.length >= CHECKLIST_ITEM_CAP ? (
-                    <div style={{ fontSize: 12, color: '#F59E0B' }}>Checklist item limit reached ({CHECKLIST_ITEM_CAP} max).</div>
+                    <div style={{ fontSize: 12, color: colors.amber }}>Checklist item limit reached ({CHECKLIST_ITEM_CAP} max).</div>
                   ) : (
                     <div style={{ display: 'flex', gap: 8 }}>
                       <input
@@ -1165,9 +1180,9 @@ async function handleSaveTask() {
                         onChange={(e) => setNewChecklistItemText(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && handleAddChecklistItem()}
                         placeholder="Add checklist item..."
-                        style={{ flex: 1, padding: '8px 12px', backgroundColor: '#1F2937', border: '1px solid #374151', borderRadius: 8, color: '#FFFFFF', fontSize: 13, outline: 'none' }}
+                        style={{ flex: 1, padding: '8px 12px', backgroundColor: colors.surface2, border: `1px solid ${colors.border}`, borderRadius: 8, color: colors.text, fontSize: 13, outline: 'none' }}
                       />
-                      <button onClick={handleAddChecklistItem} disabled={addingChecklistItem || !newChecklistItemText.trim()} style={{ padding: '8px 16px', backgroundColor: !newChecklistItemText.trim() || addingChecklistItem ? '#374151' : '#F97316', border: 'none', borderRadius: 8, color: !newChecklistItemText.trim() || addingChecklistItem ? '#6B7280' : '#0A0F1E', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                      <button onClick={handleAddChecklistItem} disabled={addingChecklistItem || !newChecklistItemText.trim()} style={{ padding: '8px 16px', backgroundColor: !newChecklistItemText.trim() || addingChecklistItem ? colors.surface2 : '#F97316', border: 'none', borderRadius: 8, color: !newChecklistItemText.trim() || addingChecklistItem ? colors.text3 : '#0A0F1E', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
                         {addingChecklistItem ? 'Adding...' : '+ Add'}
                       </button>
                     </div>
@@ -1176,29 +1191,29 @@ async function handleSaveTask() {
               </div>
             )}
             <div style={{ marginBottom: 20 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: '#6B7280', letterSpacing: 2, marginBottom: 12 }}>PHOTOS {viewTaskPhotos.length > 0 ? `(${viewTaskPhotos.length})` : ''}</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: colors.text3, letterSpacing: 2, marginBottom: 12 }}>PHOTOS {viewTaskPhotos.length > 0 ? `(${viewTaskPhotos.length})` : ''}</div>
               {photosLoading ? (
-                <div style={{ color: '#F97316', fontSize: 13 }}>Loading photos...</div>
+                <div role="status" aria-label="Loading photos" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>{[0, 1, 2, 3].map((i) => <Skeleton key={i} height={72} radius={8} />)}</div>
               ) : viewTaskPhotos.length > 0 ? (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
                   {viewTaskPhotos.map((photo: any) => (
-                    <div key={photo.id} onClick={() => setViewingPhoto(photo.url)} style={{ aspectRatio: '1', borderRadius: 8, overflow: 'hidden', cursor: 'pointer', backgroundColor: '#1F2937', border: '1px solid #374151' }}>
+                    <div key={photo.id} onClick={() => setViewingPhoto(photo.url)} style={{ aspectRatio: '1', borderRadius: 8, overflow: 'hidden', cursor: 'pointer', backgroundColor: colors.surface2, border: `1px solid ${colors.border}` }}>
                       <img src={photo.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                     </div>
                   ))}
                 </div>
               ) : (
-                <div style={{ padding: '16px 0', fontSize: 13, color: '#4B5563' }}>No photos attached to this task.</div>
+                <div style={{ padding: '16px 0', fontSize: 13, color: colors.text3 }}>No photos attached to this task.</div>
               )}
             </div>
             <div style={{ display: 'flex', gap: 10 }}>
-              {canEdit && <button onClick={() => { closeViewTask(); openEditTask(viewTask); }} style={{ flex: 1, padding: '12px', backgroundColor: '#F97316', border: 'none', borderRadius: 10, color: '#0A0F1E', fontSize: 14, fontWeight: 800, cursor: 'pointer' }}>Edit Task</button>}
-              <button onClick={closeViewTask} style={{ padding: '12px 20px', backgroundColor: 'transparent', border: '1px solid #374151', borderRadius: 10, color: '#6B7280', fontSize: 14, cursor: 'pointer' }}>Close</button>
+              {canEdit && <button onClick={() => { closeViewTask(); openEditTask(viewTask); }} style={{ flex: 1, padding: '12px', backgroundColor: '#F97316', border: 'none', borderRadius: 8, color: '#0A0F1E', fontSize: 14, fontWeight: 800, cursor: 'pointer' }}>Edit Task</button>}
+              <button onClick={closeViewTask} style={{ padding: '12px 20px', backgroundColor: 'transparent', border: `1px solid ${colors.border}`, borderRadius: 8, color: colors.text3, fontSize: 14, cursor: 'pointer' }}>Close</button>
             </div>
           </div>
           {viewingPhoto && (
             <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.95)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 2000 }} onClick={() => setViewingPhoto(null)}>
-              <button onClick={() => setViewingPhoto(null)} style={{ position: 'absolute', top: 24, right: 24, backgroundColor: '#1F2937', border: 'none', borderRadius: 20, color: '#FFFFFF', fontSize: 16, cursor: 'pointer', width: 40, height: 40 }}>✕</button>
+              <button onClick={() => setViewingPhoto(null)} style={{ position: 'absolute', top: 24, right: 24, backgroundColor: colors.surface2, border: 'none', borderRadius: 20, color: colors.text, fontSize: 16, cursor: 'pointer', width: 40, height: 40, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }} aria-label="Close photo"><Icon name="x" size={18} /></button>
               <img src={viewingPhoto} alt="" style={{ maxWidth: '90vw', maxHeight: '90vh', objectFit: 'contain', borderRadius: 8 }} onClick={(e) => e.stopPropagation()} />
             </div>
           )}
@@ -1211,15 +1226,15 @@ async function handleSaveTask() {
           <div style={modalBox} onClick={(e) => e.stopPropagation()}>
             <h3 style={{ margin: '0 0 20px 0', fontSize: 18, fontWeight: 700 }}>Edit Task</h3>
             <div style={{ marginBottom: 14 }}>
-              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#6B7280', letterSpacing: 2, marginBottom: 6 }}>TITLE</label>
+              <label style={labelStyle}>TITLE</label>
               <input value={editTaskTitle} onChange={(e) => setEditTaskTitle(e.target.value)} style={inputStyle} />
             </div>
             <div style={{ marginBottom: 14 }}>
-              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#6B7280', letterSpacing: 2, marginBottom: 6 }}>DESCRIPTION</label>
+              <label style={labelStyle}>DESCRIPTION</label>
               <textarea value={editTaskDescription} onChange={(e) => setEditTaskDescription(e.target.value)} style={{ ...inputStyle, resize: 'vertical', minHeight: 80 }} />
             </div>
             <div style={{ marginBottom: 14 }}>
-              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#6B7280', letterSpacing: 2, marginBottom: 6 }}>ASSIGN TO</label>
+              <label style={labelStyle}>ASSIGN TO</label>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                 {teamMembers?.map((m) => {
                   const uid = m.user_id;
@@ -1229,22 +1244,22 @@ async function handleSaveTask() {
                       key={uid}
                       type="button"
                       onClick={() => setEditTaskAssigneeIds(selected ? editTaskAssigneeIds.filter((x) => x !== uid) : [...editTaskAssigneeIds, uid])}
-                      style={{ padding: '6px 14px', borderRadius: 20, fontSize: 12, fontWeight: 600, cursor: 'pointer', backgroundColor: selected ? '#F9731620' : '#1F2937', border: `1px solid ${selected ? '#F97316' : '#374151'}`, color: selected ? '#F97316' : '#9CA3AF' }}
+                      style={{ padding: '6px 14px', borderRadius: 20, fontSize: 12, fontWeight: 600, cursor: 'pointer', backgroundColor: selected ? '#F9731620' : colors.surface2, border: `1px solid ${selected ? '#F97316' : colors.border}`, color: selected ? '#F97316' : '#9CA3AF' }}
                     >
-                      {selected ? '✓ ' : ''}{(m.profile as any)?.full_name ?? 'Unknown'}
+                      {selected && <Icon name="check" size={12} strokeWidth={3} style={{ marginRight: 6 }} />}{(m.profile as any)?.full_name ?? 'Unknown'}
                     </button>
                   );
                 })}
-                {(!teamMembers || teamMembers.length === 0) && <span style={{ fontSize: 12, color: '#4B5563' }}>No team members on this project yet.</span>}
+                {(!teamMembers || teamMembers.length === 0) && <span style={{ fontSize: 12, color: colors.text3 }}>No team members on this project yet.</span>}
               </div>
             </div>
             <div style={{ marginBottom: 14 }}>
-              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#6B7280', letterSpacing: 2, marginBottom: 6 }}>DUE DATE (OPTIONAL)</label>
+              <label style={labelStyle}>DUE DATE (OPTIONAL)</label>
               <input type="date" value={editTaskDueDate} onChange={(e) => setEditTaskDueDate(e.target.value)} style={inputStyle} />
             </div>
             <div style={{ display: 'flex', gap: 14, marginBottom: 20 }}>
               <div style={{ flex: 1 }}>
-                <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#6B7280', letterSpacing: 2, marginBottom: 6 }}>STATUS</label>
+                <label style={labelStyle}>STATUS</label>
                 <select value={editTaskStatus} onChange={(e) => setEditTaskStatus(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
                   <option value="open">Open</option>
                   <option value="in_progress">In Progress</option>
@@ -1252,7 +1267,7 @@ async function handleSaveTask() {
                 </select>
               </div>
               <div style={{ flex: 1 }}>
-                <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#6B7280', letterSpacing: 2, marginBottom: 6 }}>PRIORITY</label>
+                <label style={labelStyle}>PRIORITY</label>
                 <select value={editTaskPriority} onChange={(e) => setEditTaskPriority(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
                   <option value="low">Low</option>
                   <option value="medium">Medium</option>
@@ -1261,8 +1276,8 @@ async function handleSaveTask() {
               </div>
             </div>
             <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={() => setSelectedTask(null)} style={{ flex: 1, padding: '12px', backgroundColor: 'transparent', border: '1px solid #374151', borderRadius: 10, color: '#6B7280', fontSize: 14, cursor: 'pointer' }}>Cancel</button>
-              <button onClick={handleSaveTask} disabled={savingTask} style={{ flex: 2, padding: '12px', backgroundColor: '#F97316', border: 'none', borderRadius: 10, color: '#0A0F1E', fontSize: 14, fontWeight: 800, cursor: 'pointer' }}>{savingTask ? 'Saving...' : 'Save Changes'}</button>
+              <button onClick={() => setSelectedTask(null)} style={{ flex: 1, padding: '12px', backgroundColor: 'transparent', border: `1px solid ${colors.border}`, borderRadius: 8, color: colors.text3, fontSize: 14, cursor: 'pointer' }}>Cancel</button>
+              <button onClick={handleSaveTask} disabled={savingTask} style={{ flex: 2, padding: '12px', backgroundColor: '#F97316', border: 'none', borderRadius: 8, color: '#0A0F1E', fontSize: 14, fontWeight: 800, cursor: 'pointer' }}>{savingTask ? 'Saving...' : 'Save Changes'}</button>
             </div>
           </div>
         </div>
@@ -1270,64 +1285,62 @@ async function handleSaveTask() {
 
       {/* Add Tasks Panel */}
       {showImport && canEdit && (
-        <div style={{ backgroundColor: '#111827', borderRadius: 14, padding: 24, border: '1px solid #1F2937', marginBottom: 32 }}>
+        <div style={{ ...panel, marginBottom: 32 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
             <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>
-              + Add Tasks {selectedFolder ? `→ 📁 ${folders?.find((f: any) => f.id === selectedFolder)?.name}` : ''}
+              Add tasks{selectedFolder ? ` to ${folders?.find((f: any) => f.id === selectedFolder)?.name}` : ''}
             </h3>
-            <button onClick={resetImport} style={{ backgroundColor: 'transparent', border: 'none', color: '#6B7280', fontSize: 18, cursor: 'pointer' }}>✕</button>
+            <button onClick={resetImport} style={{ backgroundColor: 'transparent', border: 'none', color: colors.text2, fontSize: 18, cursor: 'pointer', display: 'inline-flex', padding: 4 }} aria-label="Close"><Icon name="x" size={18} /></button>
           </div>
           {!selectedFolder && (
-            <div style={{ backgroundColor: '#EF444415', border: '1px solid #EF444440', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 13, color: '#EF4444' }}>
-              ⚠ A folder is required — select or create one on the left before adding tasks. Tasks without a folder aren't visible in the mobile app.
+            <div style={{ backgroundColor: '#EF444415', border: '1px solid #EF444440', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 13, color: colors.red }}>
+              <Icon name="alert" style={{ marginRight: 6 }} />A folder is required — select or create one above before adding tasks. Tasks without a folder aren't visible in the mobile app.
             </div>
           )}
           {!importMode && importStep === 'input' && (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <button onClick={() => setImportMode('manual')} style={{ padding: 20, backgroundColor: '#1F2937', border: '1px solid #374151', borderRadius: 12, cursor: 'pointer', textAlign: 'left' }}>
-                <div style={{ fontSize: 28, marginBottom: 8 }}>✏️</div>
-                <div style={{ fontSize: 15, fontWeight: 700, color: '#FFFFFF', marginBottom: 4 }}>Type Manually</div>
-                <div style={{ fontSize: 12, color: '#6B7280' }}>Fill in a spreadsheet-style table row by row</div>
+              <button onClick={() => setImportMode('manual')} style={{ padding: 20, backgroundColor: colors.surface2, border: `1px solid ${colors.border}`, borderRadius: 12, cursor: 'pointer', textAlign: 'left' }}>
+                                <div style={{ fontSize: 15, fontWeight: 700, color: colors.text, marginBottom: 4 }}>Type Manually</div>
+                <div style={{ fontSize: 12, color: colors.text3 }}>Fill in a spreadsheet-style table row by row</div>
               </button>
-              <button onClick={() => setImportMode('paste')} style={{ padding: 20, backgroundColor: '#1F2937', border: '1px solid #374151', borderRadius: 12, cursor: 'pointer', textAlign: 'left' }}>
-                <div style={{ fontSize: 28, marginBottom: 8 }}>📋</div>
-                <div style={{ fontSize: 15, fontWeight: 700, color: '#FFFFFF', marginBottom: 4 }}>Paste from Excel</div>
-                <div style={{ fontSize: 12, color: '#6B7280' }}>Copy cells from Excel and paste into the table below</div>
+              <button onClick={() => setImportMode('paste')} style={{ padding: 20, backgroundColor: colors.surface2, border: `1px solid ${colors.border}`, borderRadius: 12, cursor: 'pointer', textAlign: 'left' }}>
+                                <div style={{ fontSize: 15, fontWeight: 700, color: colors.text, marginBottom: 4 }}>Paste from Excel</div>
+                <div style={{ fontSize: 12, color: colors.text3 }}>Copy cells from Excel and paste into the table below</div>
               </button>
             </div>
           )}
           {importMode === 'manual' && importStep === 'input' && (
             <>
               <button onClick={() => setImportMode(null)} style={{ backgroundColor: 'transparent', border: 'none', color: '#F97316', fontSize: 13, cursor: 'pointer', padding: 0, marginBottom: 14 }}>← Back</button>
-              <div style={{ overflowX: 'auto', borderRadius: 8, border: '1px solid #374151' }}>
+              <div style={{ overflowX: 'auto', borderRadius: 8, border: `1px solid ${colors.border}` }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr style={{ backgroundColor: '#1A2235' }}>
-                      <th style={{ width: 36, padding: '9px 8px', textAlign: 'center', fontSize: 11, color: '#4B5563', borderRight: '1px solid #2D3748', borderBottom: '2px solid #374151' }}></th>
+                      <th style={{ width: 36, padding: '9px 8px', textAlign: 'center', fontSize: 11, color: colors.text3, borderRight: `1px solid ${colors.border}`, borderBottom: `2px solid ${colors.border}` }}></th>
                       {[{ label: 'Task Name', required: true }, { label: 'Description', required: false }, { label: 'Priority', required: false }, { label: 'Due Date', required: false }].map((col, ci) => (
-                        <th key={ci} style={{ padding: '9px 12px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: col.required ? '#F97316' : '#9CA3AF', borderRight: ci < 3 ? '1px solid #2D3748' : 'none', borderBottom: '2px solid #374151', whiteSpace: 'nowrap' }}>
-                          {col.label}{col.required && <span style={{ color: '#EF4444', marginLeft: 2 }}>*</span>}
+                        <th key={ci} style={{ padding: '9px 12px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: col.required ? '#F97316' : '#9CA3AF', borderRight: ci < 3 ? `1px solid ${colors.border}` : 'none', borderBottom: `2px solid ${colors.border}`, whiteSpace: 'nowrap' }}>
+                          {col.label}{col.required && <span style={{ color: colors.red, marginLeft: 2 }}>*</span>}
                         </th>
                       ))}
-                      <th style={{ width: 32, borderBottom: '2px solid #374151' }}></th>
+                      <th style={{ width: 32, borderBottom: `2px solid ${colors.border}` }}></th>
                     </tr>
                   </thead>
                   <tbody>
                     {manualTasks.map((task, i) => (
-                      <tr key={i} style={{ backgroundColor: i % 2 === 0 ? '#111827' : '#0D1321', borderBottom: '1px solid #1E2A3A' }}>
-                        <td style={{ padding: '5px 8px', textAlign: 'center', fontSize: 11, color: '#374151', borderRight: '1px solid #1E2A3A', userSelect: 'none' }}>{i + 1}</td>
-                        <td style={cellStyle}><input value={task.title} onChange={(e) => { const u = [...manualTasks]; u[i].title = e.target.value; setManualTasks(u); }} placeholder="Enter task name..." style={{ ...cellInputStyle, color: task.title ? '#FFFFFF' : '#4B5563', minWidth: 200 }} /></td>
-                        <td style={{ ...cellStyle, borderLeft: '1px solid #1E2A3A' }}><input value={task.description} onChange={(e) => { const u = [...manualTasks]; u[i].description = e.target.value; setManualTasks(u); }} placeholder="Optional..." style={{ ...cellInputStyle, color: task.description ? '#D1D5DB' : '#4B5563', minWidth: 150 }} /></td>
-                        <td style={{ ...cellStyle, borderLeft: '1px solid #1E2A3A', minWidth: 110 }}>
-                          <select value={task.priority} onChange={(e) => { const u = [...manualTasks]; u[i].priority = e.target.value; setManualTasks(u); }} style={{ ...cellInputStyle, cursor: 'pointer', color: task.priority === 'high' ? '#EF4444' : task.priority === 'low' ? '#6B7280' : '#F59E0B' }}>
+                      <tr key={i} style={{ backgroundColor: i % 2 === 0 ? '#111827' : colors.bg, borderBottom: `1px solid ${colors.border}` }}>
+                        <td style={{ padding: '5px 8px', textAlign: 'center', fontSize: 11, color: colors.text3, borderRight: `1px solid ${colors.border}`, userSelect: 'none' }}>{i + 1}</td>
+                        <td style={cellStyle}><input value={task.title} onChange={(e) => { const u = [...manualTasks]; u[i].title = e.target.value; setManualTasks(u); }} placeholder="Enter task name..." style={{ ...cellInputStyle, color: task.title ? colors.text : colors.text3, minWidth: 200 }} /></td>
+                        <td style={{ ...cellStyle, borderLeft: `1px solid ${colors.border}` }}><input value={task.description} onChange={(e) => { const u = [...manualTasks]; u[i].description = e.target.value; setManualTasks(u); }} placeholder="Optional..." style={{ ...cellInputStyle, color: task.description ? colors.text2 : colors.text3, minWidth: 150 }} /></td>
+                        <td style={{ ...cellStyle, borderLeft: `1px solid ${colors.border}`, minWidth: 110 }}>
+                          <select value={task.priority} onChange={(e) => { const u = [...manualTasks]; u[i].priority = e.target.value; setManualTasks(u); }} style={{ ...cellInputStyle, cursor: 'pointer', color: task.priority === 'high' ? colors.red : task.priority === 'low' ? colors.text3 : colors.amber }}>
                             <option value="low">low</option>
                             <option value="medium">medium</option>
                             <option value="high">high</option>
                           </select>
                         </td>
-                        <td style={{ ...cellStyle, borderLeft: '1px solid #1E2A3A' }}><input type="date" value={task.dueDate} onChange={(e) => { const u = [...manualTasks]; u[i].dueDate = e.target.value; setManualTasks(u); }} style={{ ...cellInputStyle, color: task.dueDate ? '#D1D5DB' : '#4B5563', minWidth: 130 }} /></td>
-                        <td style={{ padding: '4px 6px', borderLeft: '1px solid #1E2A3A' }}>
-                          {manualTasks.length > 1 && <button onClick={() => setManualTasks(manualTasks.filter((_, idx) => idx !== i))} style={{ background: 'none', border: 'none', color: '#EF4444', cursor: 'pointer', fontSize: 14, padding: '2px 4px' }}>✕</button>}
+                        <td style={{ ...cellStyle, borderLeft: `1px solid ${colors.border}` }}><input type="date" value={task.dueDate} onChange={(e) => { const u = [...manualTasks]; u[i].dueDate = e.target.value; setManualTasks(u); }} style={{ ...cellInputStyle, color: task.dueDate ? colors.text2 : colors.text3, minWidth: 130 }} /></td>
+                        <td style={{ padding: '4px 6px', borderLeft: `1px solid ${colors.border}` }}>
+                          {manualTasks.length > 1 && <button onClick={() => setManualTasks(manualTasks.filter((_, idx) => idx !== i))} style={{ background: 'none', border: 'none', color: colors.red, cursor: 'pointer', fontSize: 14, padding: '2px 4px', display: 'inline-flex' }} aria-label="Remove row"><Icon name="x" size={14} /></button>}
                         </td>
                       </tr>
                     ))}
@@ -1339,27 +1352,28 @@ async function handleSaveTask() {
                       </tr>
                     )}
                     {project?.project_type === 'checklist' && !selectedFolderManaged && manualTasks.map((task, i) => (
-                      <tr key={`checklist-${i}`} style={{ backgroundColor: i % 2 === 0 ? '#111827' : '#0D1321', borderBottom: '1px solid #1E2A3A' }}>
+                      <tr key={`checklist-${i}`} style={{ backgroundColor: i % 2 === 0 ? '#111827' : colors.bg, borderBottom: `1px solid ${colors.border}` }}>
                         <td colSpan={6} style={{ padding: '8px 16px 14px 44px' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
-                            <span style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', letterSpacing: 1 }}>CHECKLIST ITEMS (OPTIONAL)</span>
-                            <span style={{ fontSize: 11, color: '#4B5563' }}>{task.checklistItems.length}/{CHECKLIST_ITEM_CAP}</span>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: colors.text3, letterSpacing: 1 }}>CHECKLIST ITEMS (OPTIONAL)</span>
+                            <span style={{ fontSize: 11, color: colors.text3 }}>{task.checklistItems.length}/{CHECKLIST_ITEM_CAP}</span>
                           </div>
                           {task.checklistItems.length > 0 && (
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
                               {task.checklistItems.map((itemText, itemIdx) => (
-                                <span key={itemIdx} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#D1D5DB', backgroundColor: '#1F2937', border: '1px solid #374151', borderRadius: 20, padding: '4px 6px 4px 12px' }}>
+                                <span key={itemIdx} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: colors.text2, backgroundColor: colors.surface2, border: `1px solid ${colors.border}`, borderRadius: 20, padding: '4px 6px 4px 12px' }}>
                                   {itemText}
                                   <button
                                     onClick={() => { const u = [...manualTasks]; u[i].checklistItems = u[i].checklistItems.filter((_, idx) => idx !== itemIdx); setManualTasks(u); }}
-                                    style={{ background: 'none', border: 'none', color: '#6B7280', cursor: 'pointer', fontSize: 12, padding: '2px 4px', lineHeight: 1 }}
-                                  >✕</button>
+                                    style={{ background: 'none', border: 'none', color: colors.text3, cursor: 'pointer', fontSize: 12, padding: '2px 4px', lineHeight: 1, display: 'inline-flex' }}
+                                    aria-label="Remove item"
+                                  ><Icon name="x" size={12} /></button>
                                 </span>
                               ))}
                             </div>
                           )}
                           {task.checklistItems.length >= CHECKLIST_ITEM_CAP ? (
-                            <div style={{ fontSize: 12, color: '#F59E0B' }}>Checklist item limit reached ({CHECKLIST_ITEM_CAP} max).</div>
+                            <div style={{ fontSize: 12, color: colors.amber }}>Checklist item limit reached ({CHECKLIST_ITEM_CAP} max).</div>
                           ) : (
                             <div style={{ display: 'flex', gap: 8 }}>
                               <input
@@ -1370,7 +1384,7 @@ async function handleSaveTask() {
                                   const u = [...manualTasks]; u[i].checklistItems = [...u[i].checklistItems, task.newItemDraft.trim()]; u[i].newItemDraft = ''; setManualTasks(u);
                                 }}
                                 placeholder="Add checklist item..."
-                                style={{ flex: 1, maxWidth: 320, padding: '7px 12px', backgroundColor: '#1F2937', border: '1px solid #374151', borderRadius: 8, color: '#FFFFFF', fontSize: 13, outline: 'none' }}
+                                style={{ flex: 1, maxWidth: 320, padding: '7px 12px', backgroundColor: colors.surface2, border: `1px solid ${colors.border}`, borderRadius: 8, color: colors.text, fontSize: 13, outline: 'none' }}
                               />
                               <button
                                 onClick={() => {
@@ -1378,7 +1392,7 @@ async function handleSaveTask() {
                                   const u = [...manualTasks]; u[i].checklistItems = [...u[i].checklistItems, task.newItemDraft.trim()]; u[i].newItemDraft = ''; setManualTasks(u);
                                 }}
                                 disabled={!task.newItemDraft.trim()}
-                                style={{ padding: '7px 14px', backgroundColor: !task.newItemDraft.trim() ? '#374151' : '#F97316', border: 'none', borderRadius: 8, color: !task.newItemDraft.trim() ? '#6B7280' : '#0A0F1E', fontSize: 12, fontWeight: 700, cursor: !task.newItemDraft.trim() ? 'not-allowed' : 'pointer' }}
+                                style={{ padding: '7px 14px', backgroundColor: !task.newItemDraft.trim() ? colors.surface2 : '#F97316', border: 'none', borderRadius: 8, color: !task.newItemDraft.trim() ? colors.text3 : '#0A0F1E', fontSize: 12, fontWeight: 700, cursor: !task.newItemDraft.trim() ? 'not-allowed' : 'pointer' }}
                               >+ Add</button>
                             </div>
                           )}
@@ -1389,26 +1403,26 @@ async function handleSaveTask() {
                 </table>
               </div>
               <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 12 }}>
-                <button onClick={() => setManualTasks([...manualTasks, { title: '', description: '', priority: 'medium', dueDate: '', checklistItems: [], newItemDraft: '' }])} style={{ padding: '7px 14px', backgroundColor: 'transparent', border: '1px solid #374151', borderRadius: 8, color: '#9CA3AF', fontSize: 12, cursor: 'pointer' }}>+ Add Row</button>
-                <button onClick={handleSaveManual} disabled={importing || !selectedFolder || !manualTasks.some(t => t.title.trim())} style={{ padding: '10px 24px', backgroundColor: !selectedFolder || !manualTasks.some(t => t.title.trim()) || importing ? '#374151' : '#F97316', border: 'none', borderRadius: 10, color: !selectedFolder || !manualTasks.some(t => t.title.trim()) || importing ? '#6B7280' : '#0A0F1E', fontSize: 14, fontWeight: 800, cursor: !selectedFolder || importing ? 'not-allowed' : 'pointer' }}>
+                <button onClick={() => setManualTasks([...manualTasks, { title: '', description: '', priority: 'medium', dueDate: '', checklistItems: [], newItemDraft: '' }])} style={{ padding: '7px 14px', backgroundColor: 'transparent', border: `1px solid ${colors.border}`, borderRadius: 8, color: '#9CA3AF', fontSize: 12, cursor: 'pointer' }}>+ Add Row</button>
+                <button onClick={handleSaveManual} disabled={importing || !selectedFolder || !manualTasks.some(t => t.title.trim())} style={{ padding: '10px 24px', backgroundColor: !selectedFolder || !manualTasks.some(t => t.title.trim()) || importing ? colors.surface2 : '#F97316', border: 'none', borderRadius: 8, color: !selectedFolder || !manualTasks.some(t => t.title.trim()) || importing ? colors.text3 : '#0A0F1E', fontSize: 14, fontWeight: 800, cursor: !selectedFolder || importing ? 'not-allowed' : 'pointer' }}>
                   {importing ? 'Saving...' : !selectedFolder ? 'Select a folder first' : `Save ${manualTasks.filter(t => t.title.trim()).length} Task${manualTasks.filter(t => t.title.trim()).length !== 1 ? 's' : ''}`}
                 </button>
-                {manualTasks.some(t => t.title.trim()) && <span style={{ fontSize: 12, color: '#22C55E', fontWeight: 600 }}>✅ {manualTasks.filter(t => t.title.trim()).length} ready</span>}
+                {manualTasks.some(t => t.title.trim()) && <span style={{ fontSize: 12, color: colors.green, fontWeight: 600 }}><Icon name="check" size={13} strokeWidth={3} /> {manualTasks.filter(t => t.title.trim()).length} ready</span>}
               </div>
             </>
           )}
           {importMode === 'paste' && importStep === 'input' && (
             <>
               <button onClick={() => setImportMode(null)} style={{ backgroundColor: 'transparent', border: 'none', color: '#F97316', fontSize: 13, cursor: 'pointer', padding: 0, marginBottom: 14 }}>← Back</button>
-              <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 10 }}>Copy cells from Excel → click the table below → press <strong style={{ color: '#FFFFFF' }}>Ctrl+V</strong></div>
-              <div style={{ overflowX: 'auto', borderRadius: 8, border: `2px solid ${pastedText ? '#22C55E' : '#374151'}`, cursor: 'text', outline: 'none', position: 'relative' }} tabIndex={0} onPaste={(e) => { e.preventDefault(); const text = e.clipboardData.getData('text'); setPastedText(text); }}>
+              <div style={{ fontSize: 12, color: colors.text3, marginBottom: 10 }}>Copy cells from Excel → click the table below → press <strong style={{ color: colors.text }}>Ctrl+V</strong></div>
+              <div style={{ overflowX: 'auto', borderRadius: 8, border: `2px solid ${pastedText ? colors.green : colors.border}`, cursor: 'text', outline: 'none', position: 'relative' }} tabIndex={0} onPaste={(e) => { e.preventDefault(); const text = e.clipboardData.getData('text'); setPastedText(text); }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 600 }}>
                   <thead>
                     <tr style={{ backgroundColor: '#1A2235' }}>
-                      <th style={{ width: 36, padding: '9px 8px', textAlign: 'center', fontSize: 11, color: '#4B5563', borderRight: '1px solid #2D3748', borderBottom: '2px solid #374151' }}></th>
+                      <th style={{ width: 36, padding: '9px 8px', textAlign: 'center', fontSize: 11, color: colors.text3, borderRight: `1px solid ${colors.border}`, borderBottom: `2px solid ${colors.border}` }}></th>
                       {[{ label: 'A — Task Name', required: true }, { label: 'B — Description', required: false }, { label: 'C — Priority', required: false }, { label: 'D — Due Date (YYYY-MM-DD)', required: false }].map((col, ci) => (
-                        <th key={ci} style={{ padding: '9px 12px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: col.required ? '#F97316' : '#9CA3AF', borderRight: ci < 3 ? '1px solid #2D3748' : 'none', borderBottom: '2px solid #374151', whiteSpace: 'nowrap' }}>
-                          {col.label}{col.required && <span style={{ color: '#EF4444', marginLeft: 2 }}>*</span>}
+                        <th key={ci} style={{ padding: '9px 12px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: col.required ? '#F97316' : '#9CA3AF', borderRight: ci < 3 ? `1px solid ${colors.border}` : 'none', borderBottom: `2px solid ${colors.border}`, whiteSpace: 'nowrap' }}>
+                          {col.label}{col.required && <span style={{ color: colors.red, marginLeft: 2 }}>*</span>}
                         </th>
                       ))}
                     </tr>
@@ -1416,20 +1430,20 @@ async function handleSaveTask() {
                   <tbody>
                     {pastedRows.length > 0
                       ? pastedRows.map((row, i) => (
-                          <tr key={i} style={{ backgroundColor: i % 2 === 0 ? '#111827' : '#0D1321', borderBottom: '1px solid #1E2A3A' }}>
-                            <td style={{ padding: '7px 8px', textAlign: 'center', fontSize: 11, color: '#4B5563', borderRight: '1px solid #1E2A3A', userSelect: 'none' }}>{i + 1}</td>
-                            <td style={{ padding: '7px 12px', fontSize: 13, color: row.title ? '#FFFFFF' : '#374151', borderRight: '1px solid #1E2A3A' }}>{row.title || ''}</td>
-                            <td style={{ padding: '7px 12px', fontSize: 13, color: row.description ? '#D1D5DB' : '#374151', borderRight: '1px solid #1E2A3A' }}>{row.description || ''}</td>
-                            <td style={{ padding: '7px 12px', fontSize: 13, color: row.priority === 'high' ? '#EF4444' : row.priority === 'low' ? '#6B7280' : row.priority ? '#F59E0B' : '#374151', borderRight: '1px solid #1E2A3A' }}>{row.priority || ''}</td>
-                            <td style={{ padding: '7px 12px', fontSize: 13, color: row.dueDate ? '#D1D5DB' : '#374151' }}>{row.dueDate || ''}</td>
+                          <tr key={i} style={{ backgroundColor: i % 2 === 0 ? '#111827' : colors.bg, borderBottom: `1px solid ${colors.border}` }}>
+                            <td style={{ padding: '7px 8px', textAlign: 'center', fontSize: 11, color: colors.text3, borderRight: `1px solid ${colors.border}`, userSelect: 'none' }}>{i + 1}</td>
+                            <td style={{ padding: '7px 12px', fontSize: 13, color: row.title ? colors.text : colors.text3, borderRight: `1px solid ${colors.border}` }}>{row.title || ''}</td>
+                            <td style={{ padding: '7px 12px', fontSize: 13, color: row.description ? colors.text2 : colors.text3, borderRight: `1px solid ${colors.border}` }}>{row.description || ''}</td>
+                            <td style={{ padding: '7px 12px', fontSize: 13, color: row.priority === 'high' ? colors.red : row.priority === 'low' ? colors.text3 : row.priority ? colors.amber : colors.text3, borderRight: `1px solid ${colors.border}` }}>{row.priority || ''}</td>
+                            <td style={{ padding: '7px 12px', fontSize: 13, color: row.dueDate ? colors.text2 : colors.text3 }}>{row.dueDate || ''}</td>
                           </tr>
                         ))
                       : [1, 2, 3, 4, 5, 6, 7, 8].map((row) => (
-                          <tr key={row} style={{ backgroundColor: row % 2 === 0 ? '#0D1321' : '#111827', borderBottom: '1px solid #1E2A3A' }}>
-                            <td style={{ padding: '7px 8px', textAlign: 'center', fontSize: 11, color: '#374151', borderRight: '1px solid #1E2A3A', userSelect: 'none' }}>{row}</td>
-                            <td style={{ padding: '7px 12px', borderRight: '1px solid #1E2A3A', height: 34 }}></td>
-                            <td style={{ padding: '7px 12px', borderRight: '1px solid #1E2A3A' }}></td>
-                            <td style={{ padding: '7px 12px', borderRight: '1px solid #1E2A3A' }}></td>
+                          <tr key={row} style={{ backgroundColor: row % 2 === 0 ? colors.bg : '#111827', borderBottom: `1px solid ${colors.border}` }}>
+                            <td style={{ padding: '7px 8px', textAlign: 'center', fontSize: 11, color: colors.text3, borderRight: `1px solid ${colors.border}`, userSelect: 'none' }}>{row}</td>
+                            <td style={{ padding: '7px 12px', borderRight: `1px solid ${colors.border}`, height: 34 }}></td>
+                            <td style={{ padding: '7px 12px', borderRight: `1px solid ${colors.border}` }}></td>
+                            <td style={{ padding: '7px 12px', borderRight: `1px solid ${colors.border}` }}></td>
                             <td style={{ padding: '7px 12px' }}></td>
                           </tr>
                         ))
@@ -1439,56 +1453,56 @@ async function handleSaveTask() {
                 {!pastedText && (
                   <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
                     <div style={{ backgroundColor: '#1A2235CC', borderRadius: 8, padding: '10px 20px', fontSize: 13, color: '#9CA3AF', fontWeight: 600, textAlign: 'center' }}>
-                      👆 Click here then press Ctrl+V to paste your Excel data
+                      Click here then press Ctrl+V to paste your Excel data
                     </div>
                   </div>
                 )}
               </div>
               <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 10 }}>
-                {pastedText ? <span style={{ fontSize: 12, color: '#22C55E', fontWeight: 600 }}>✅ {pastedText.trim().split('\n').filter(l => l.trim()).length} rows detected</span> : <span style={{ fontSize: 12, color: '#6B7280' }}>Click the table and paste with Ctrl+V</span>}
-                {pastedText && <button onClick={() => setPastedText('')} style={{ padding: '4px 10px', backgroundColor: 'transparent', border: '1px solid #374151', borderRadius: 6, color: '#6B7280', fontSize: 11, cursor: 'pointer' }}>Clear</button>}
+                {pastedText ? <span style={{ fontSize: 12, color: colors.green, fontWeight: 600 }}><Icon name="check" size={13} strokeWidth={3} /> {pastedText.trim().split('\n').filter(l => l.trim()).length} rows detected</span> : <span style={{ fontSize: 12, color: colors.text3 }}>Click the table and paste with Ctrl+V</span>}
+                {pastedText && <button onClick={() => setPastedText('')} style={{ padding: '4px 10px', backgroundColor: 'transparent', border: `1px solid ${colors.border}`, borderRadius: 6, color: colors.text3, fontSize: 11, cursor: 'pointer' }}>Clear</button>}
               </div>
               <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
-                <button onClick={handlePastePreview} disabled={!pastedText.trim()} style={{ padding: '10px 24px', backgroundColor: pastedText.trim() ? '#F97316' : '#374151', border: 'none', borderRadius: 10, color: pastedText.trim() ? '#0A0F1E' : '#6B7280', fontSize: 14, fontWeight: 700, cursor: pastedText.trim() ? 'pointer' : 'not-allowed' }}>Preview Tasks →</button>
+                <button onClick={handlePastePreview} disabled={!pastedText.trim()} style={{ padding: '10px 24px', backgroundColor: pastedText.trim() ? '#F97316' : colors.surface2, border: 'none', borderRadius: 8, color: pastedText.trim() ? '#0A0F1E' : colors.text3, fontSize: 14, fontWeight: 700, cursor: pastedText.trim() ? 'pointer' : 'not-allowed' }}>Preview Tasks →</button>
               </div>
             </>
           )}
           {importStep === 'preview' && (
             <>
               <div style={{ display: 'flex', gap: 24, marginBottom: 16 }}>
-                <div style={{ textAlign: 'center' }}><div style={{ fontSize: 28, fontWeight: 900, color: '#22C55E' }}>{validCount}</div><div style={{ fontSize: 12, color: '#6B7280' }}>Ready</div></div>
-                <div style={{ textAlign: 'center' }}><div style={{ fontSize: 28, fontWeight: 900, color: '#EF4444' }}>{parsedTasks.length - validCount}</div><div style={{ fontSize: 12, color: '#6B7280' }}>Skipped</div></div>
+                <div style={{ textAlign: 'center' }}><div style={{ fontSize: 28, fontWeight: 900, color: colors.green }}>{validCount}</div><div style={{ fontSize: 12, color: colors.text3 }}>Ready</div></div>
+                <div style={{ textAlign: 'center' }}><div style={{ fontSize: 28, fontWeight: 900, color: colors.red }}>{parsedTasks.length - validCount}</div><div style={{ fontSize: 12, color: colors.text3 }}>Skipped</div></div>
               </div>
-              <div style={{ overflowX: 'auto', borderRadius: 8, border: '1px solid #374151', marginBottom: 16 }}>
+              <div style={{ overflowX: 'auto', borderRadius: 8, border: `1px solid ${colors.border}`, marginBottom: 16 }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr style={{ backgroundColor: '#1A2235' }}>
                       {['Task Name', 'Description', 'Priority', 'Due Date', 'Status'].map((h, i) => (
-                        <th key={i} style={{ padding: '8px 12px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: '#6B7280', borderBottom: '1px solid #374151', borderRight: i < 4 ? '1px solid #2D3748' : 'none' }}>{h}</th>
+                        <th key={i} style={{ padding: '8px 12px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: colors.text3, borderBottom: `1px solid ${colors.border}`, borderRight: i < 4 ? `1px solid ${colors.border}` : 'none' }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     {parsedTasks.map((task, i) => (
-                      <tr key={i} style={{ backgroundColor: task.valid ? (i % 2 === 0 ? '#111827' : '#0D1321') : '#2D1515', borderBottom: '1px solid #1E2A3A' }}>
-                        <td style={{ padding: '7px 12px', fontSize: 13, color: task.valid ? '#FFFFFF' : '#6B7280', borderRight: '1px solid #1E2A3A' }}>{task.title || '(empty)'}</td>
-                        <td style={{ padding: '7px 12px', fontSize: 12, color: '#9CA3AF', borderRight: '1px solid #1E2A3A' }}>{task.description || '—'}</td>
-                        <td style={{ padding: '7px 12px', fontSize: 12, borderRight: '1px solid #1E2A3A' }}><span style={{ color: task.priority === 'high' ? '#EF4444' : task.priority === 'low' ? '#6B7280' : '#F59E0B', fontWeight: 700 }}>{task.priority}</span></td>
-                        <td style={{ padding: '7px 12px', fontSize: 12, color: '#9CA3AF', borderRight: '1px solid #1E2A3A' }}>{task.dueDate || '—'}</td>
-                        <td style={{ padding: '7px 12px', fontSize: 11, fontWeight: 700 }}>{task.valid ? <span style={{ color: '#22C55E' }}>✅ Ready</span> : <span style={{ color: '#EF4444' }}>⏭ Skip</span>}</td>
+                      <tr key={i} style={{ backgroundColor: task.valid ? (i % 2 === 0 ? '#111827' : colors.bg) : '#2D1515', borderBottom: `1px solid ${colors.border}` }}>
+                        <td style={{ padding: '7px 12px', fontSize: 13, color: task.valid ? colors.text : colors.text3, borderRight: `1px solid ${colors.border}` }}>{task.title || '(empty)'}</td>
+                        <td style={{ padding: '7px 12px', fontSize: 12, color: '#9CA3AF', borderRight: `1px solid ${colors.border}` }}>{task.description || '—'}</td>
+                        <td style={{ padding: '7px 12px', fontSize: 12, borderRight: `1px solid ${colors.border}` }}><span style={{ color: task.priority === 'high' ? colors.red : task.priority === 'low' ? colors.text3 : colors.amber, fontWeight: 700 }}>{task.priority}</span></td>
+                        <td style={{ padding: '7px 12px', fontSize: 12, color: '#9CA3AF', borderRight: `1px solid ${colors.border}` }}>{task.dueDate || '—'}</td>
+                        <td style={{ padding: '7px 12px', fontSize: 11, fontWeight: 700 }}>{task.valid ? <span style={{ color: colors.green }}><Icon name="check" size={12} strokeWidth={3} /> Ready</span> : <span style={{ color: colors.red }}>Skip</span>}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
               {!selectedFolder && (
-                <div style={{ backgroundColor: '#EF444415', border: '1px solid #EF444440', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 13, color: '#EF4444' }}>
-                  ⚠ A folder is required — go back and select or create one on the left before importing.
+                <div style={{ backgroundColor: '#EF444415', border: '1px solid #EF444440', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 13, color: colors.red }}>
+                  <Icon name="alert" style={{ marginRight: 6 }} />A folder is required — go back and select or create one above before importing.
                 </div>
               )}
               <div style={{ display: 'flex', gap: 10 }}>
-                <button onClick={() => setImportStep('input')} style={{ padding: '10px 20px', backgroundColor: 'transparent', border: '1px solid #374151', borderRadius: 10, color: '#6B7280', fontSize: 14, cursor: 'pointer' }}>← Edit</button>
-                <button onClick={handleImport} disabled={importing || !selectedFolder || validCount === 0} style={{ flex: 1, padding: '10px 24px', backgroundColor: importing || !selectedFolder || validCount === 0 ? '#374151' : '#F97316', border: 'none', borderRadius: 10, color: importing || !selectedFolder || validCount === 0 ? '#6B7280' : '#0A0F1E', fontSize: 14, fontWeight: 800, cursor: importing || !selectedFolder || validCount === 0 ? 'not-allowed' : 'pointer' }}>
+                <button onClick={() => setImportStep('input')} style={{ padding: '10px 20px', backgroundColor: 'transparent', border: `1px solid ${colors.border}`, borderRadius: 8, color: colors.text3, fontSize: 14, cursor: 'pointer' }}>← Edit</button>
+                <button onClick={handleImport} disabled={importing || !selectedFolder || validCount === 0} style={{ flex: 1, padding: '10px 24px', backgroundColor: importing || !selectedFolder || validCount === 0 ? colors.surface2 : '#F97316', border: 'none', borderRadius: 8, color: importing || !selectedFolder || validCount === 0 ? colors.text3 : '#0A0F1E', fontSize: 14, fontWeight: 800, cursor: importing || !selectedFolder || validCount === 0 ? 'not-allowed' : 'pointer' }}>
                   {importing ? 'Importing...' : !selectedFolder ? 'Select a folder first' : `Import ${validCount} Tasks`}
                 </button>
               </div>
@@ -1496,27 +1510,27 @@ async function handleSaveTask() {
           )}
           {importStep === 'done' && (
             <div style={{ textAlign: 'center', padding: '20px 0' }}>
-              <div style={{ fontSize: 48, marginBottom: 12 }}>✅</div>
+              <div style={{ width: 56, height: 56, borderRadius: 28, margin: '0 auto 12px', backgroundColor: colors.green, color: colors.onAccent, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="check" size={30} strokeWidth={3} /></div>
               <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>
                 {`${parsedTasks.filter(t => t.valid !== false).length} Tasks Added!`}
               </div>
-              <button onClick={resetImport} style={{ padding: '10px 24px', backgroundColor: '#F97316', border: 'none', borderRadius: 10, color: '#0A0F1E', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>Done</button>
+              <button onClick={resetImport} style={{ padding: '10px 24px', backgroundColor: '#F97316', border: 'none', borderRadius: 8, color: '#0A0F1E', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>Done</button>
             </div>
           )}
           {importStep === 'assign-checklist' && (
             <>
-              <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>✅ Tasks created!</div>
-              <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 18 }}>
+              <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}><Icon name="check" size={18} strokeWidth={3} style={{ color: colors.green, marginRight: 8, verticalAlign: '-3px' }} />Tasks created!</div>
+              <div style={{ fontSize: 12, color: colors.text3, marginBottom: 18 }}>
                 Now add checklist items — pick a task below, then type or paste one item per line. Switching tasks (or finishing) saves what you typed automatically.
               </div>
               {assignTasksLoading ? (
-                <div style={{ color: '#F97316', fontSize: 13, marginBottom: 16 }}>Loading tasks...</div>
+                <div role="status" aria-label="Loading tasks" style={{ marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 8 }}><Skeleton height={40} radius={8} /><Skeleton height={120} radius={8} /></div>
               ) : assignableTasks.length === 0 ? (
-                <div style={{ padding: '16px 0', fontSize: 13, color: '#4B5563' }}>Every task in this project already has a checklist.</div>
+                <div style={{ padding: '16px 0', fontSize: 13, color: colors.text3 }}>Every task in this project already has a checklist.</div>
               ) : (
                 <>
                   <div style={{ marginBottom: 14 }}>
-                    <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#6B7280', letterSpacing: 2, marginBottom: 6 }}>TASK</label>
+                    <label style={labelStyle}>TASK</label>
                     <select
                       value={selectedAssignTaskId}
                       onChange={(e) => handleAssignTaskChange(e.target.value)}
@@ -1527,8 +1541,8 @@ async function handleSaveTask() {
                     </select>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
-                    <label style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', letterSpacing: 2 }}>CHECKLIST ITEMS (ONE PER LINE)</label>
-                    <span style={{ fontSize: 12, color: assignLineCount > CHECKLIST_ITEM_CAP ? '#F59E0B' : '#4B5563' }}>{assignLineCount}/{CHECKLIST_ITEM_CAP}</span>
+                    <label style={{ fontSize: 11, fontWeight: 700, color: colors.text3, letterSpacing: 2 }}>CHECKLIST ITEMS (ONE PER LINE)</label>
+                    <span style={{ fontSize: 12, color: assignLineCount > CHECKLIST_ITEM_CAP ? colors.amber : colors.text3 }}>{assignLineCount}/{CHECKLIST_ITEM_CAP}</span>
                   </div>
                   <textarea
                     value={assignItemsText}
@@ -1538,12 +1552,12 @@ async function handleSaveTask() {
                     style={{ ...inputStyle, resize: 'vertical', minHeight: 140, fontFamily: 'inherit' }}
                   />
                   {assignLineCount > CHECKLIST_ITEM_CAP && (
-                    <div style={{ fontSize: 12, color: '#F59E0B', marginTop: 6 }}>Only the first {CHECKLIST_ITEM_CAP} lines will be saved for this task.</div>
+                    <div style={{ fontSize: 12, color: colors.amber, marginTop: 6 }}>Only the first {CHECKLIST_ITEM_CAP} lines will be saved for this task.</div>
                   )}
                 </>
               )}
               <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
-                <button onClick={handleFinishAssignChecklist} disabled={assignSaving} style={{ padding: '10px 24px', backgroundColor: '#F97316', border: 'none', borderRadius: 10, color: '#0A0F1E', fontSize: 14, fontWeight: 800, cursor: assignSaving ? 'not-allowed' : 'pointer' }}>
+                <button onClick={handleFinishAssignChecklist} disabled={assignSaving} style={{ padding: '10px 24px', backgroundColor: '#F97316', border: 'none', borderRadius: 8, color: '#0A0F1E', fontSize: 14, fontWeight: 800, cursor: assignSaving ? 'not-allowed' : 'pointer' }}>
                   {assignSaving ? 'Saving...' : 'Done — Save & Close'}
                 </button>
               </div>
@@ -1573,156 +1587,187 @@ async function handleSaveTask() {
       )}
 
       {/* Tasks Tab — Main Layout */}
-      {activeTab === 'tasks' && <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: 20 }}>
-        {/* Folders Panel */}
-        <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Folders</h2>
-            {isAdmin && <button onClick={() => setShowCreateFolder(true)} style={{ padding: '6px 12px', backgroundColor: '#F97316', border: 'none', borderRadius: 8, color: '#0A0F1E', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>+ New</button>}
-          </div>
-          {showCreateFolder && (
-            <div style={{ backgroundColor: '#111827', borderRadius: 10, padding: 14, border: '1px solid #F97316', marginBottom: 12 }}>
-              <input value={newFolderName} onChange={(e) => setNewFolderName(e.target.value)} placeholder="Folder name..." onKeyDown={(e) => e.key === 'Enter' && handleCreateFolder()} style={{ ...inputStyle, marginBottom: 10 }} autoFocus />
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button onClick={() => { setShowCreateFolder(false); setNewFolderName(''); }} style={{ flex: 1, padding: '8px', backgroundColor: 'transparent', border: '1px solid #374151', borderRadius: 8, color: '#6B7280', fontSize: 13, cursor: 'pointer' }}>Cancel</button>
-                <button onClick={handleCreateFolder} disabled={creatingFolder} style={{ flex: 1, padding: '8px', backgroundColor: '#F97316', border: 'none', borderRadius: 8, color: '#0A0F1E', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>{creatingFolder ? '...' : 'Create'}</button>
-              </div>
-            </div>
-          )}
-          {editingFolder && (
-            <div style={{ backgroundColor: '#111827', borderRadius: 10, padding: 14, border: '1px solid #F97316', marginBottom: 12 }}>
-              <input value={editFolderName} onChange={(e) => setEditFolderName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleRenameFolder()} style={{ ...inputStyle, marginBottom: 10 }} autoFocus />
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button onClick={() => setEditingFolder(null)} style={{ flex: 1, padding: '8px', backgroundColor: 'transparent', border: '1px solid #374151', borderRadius: 8, color: '#6B7280', fontSize: 13, cursor: 'pointer' }}>Cancel</button>
-                <button onClick={handleRenameFolder} style={{ flex: 1, padding: '8px', backgroundColor: '#F97316', border: 'none', borderRadius: 8, color: '#0A0F1E', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Save</button>
-              </div>
-            </div>
-          )}
-          <button onClick={() => setSelectedFolder(null)} style={{ width: '100%', padding: '12px 14px', backgroundColor: !selectedFolder ? '#F9731620' : '#111827', border: '1px solid', borderColor: !selectedFolder ? '#F97316' : '#1F2937', borderRadius: 10, color: !selectedFolder ? '#F97316' : '#9CA3AF', fontSize: 13, fontWeight: 600, cursor: 'pointer', textAlign: 'left', marginBottom: 8 }}>
-            📋 All Tasks
-          </button>
-          {foldersLoading ? (
-            <div style={{ color: '#F97316', padding: 12 }}>Loading...</div>
-          ) : (
-            folders?.map((folder: any) => {
-              const pct = folder.task_count > 0 ? Math.round((folder.completed_count / folder.task_count) * 100) : 0;
-              const color = getProgressColor(pct);
-              const isSelected = selectedFolder === folder.id;
-              return (
-                <div key={folder.id} style={{ marginBottom: 8 }}>
-                  <button onClick={() => setSelectedFolder(folder.id)} style={{ width: '100%', padding: '12px 14px', backgroundColor: isSelected ? '#F9731620' : '#111827', border: '1px solid', borderColor: isSelected ? '#F97316' : '#1F2937', borderRadius: 10, cursor: 'pointer', textAlign: 'left' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                      <span style={{ fontSize: 13, fontWeight: 600, color: isSelected ? '#F97316' : '#FFFFFF' }}>📁 {folder.name}</span>
-                      <span style={{ fontSize: 12, fontWeight: 700, color }}>{pct}%</span>
-                    </div>
-                    <div style={{ height: 4, backgroundColor: '#1F2937', borderRadius: 2, overflow: 'hidden', marginBottom: 4 }}>
-                      <div style={{ height: '100%', width: `${pct}%`, backgroundColor: color, borderRadius: 2 }} />
-                    </div>
-                    <span style={{ fontSize: 11, color: '#6B7280' }}>{folder.task_count} tasks • {folder.completed_count} done</span>
+      {activeTab === 'tasks' && <div>
+        {/* Folder pills */}
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
+          <div role="group" aria-label="Folders" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', flex: '1 1 320px', minWidth: 0 }}>
+            <button className={`fo-pill${!selectedFolder ? ' is-active' : ''}`} aria-pressed={!selectedFolder} onClick={() => setSelectedFolder(null)}>
+              All tasks <span className="fo-pill-count">{totalTasks}</span>
+            </button>
+            {foldersLoading ? (
+              [0, 1, 2].map((i) => <Skeleton key={i} width={96} height={34} radius={999} />)
+            ) : (
+              folders?.map((folder: any) => {
+                const pct = folder.task_count > 0 ? Math.round((folder.completed_count / folder.task_count) * 100) : 0;
+                const isSelected = selectedFolder === folder.id;
+                return (
+                  <button
+                    key={folder.id}
+                    className={`fo-pill${isSelected ? ' is-active' : ''}`}
+                    aria-pressed={isSelected}
+                    title={`${folder.completed_count} of ${folder.task_count} done (${pct}%)`}
+                    onClick={() => setSelectedFolder(folder.id)}
+                  >
+                    {folder.name} <span className="fo-pill-count">{folder.task_count}</span>
                   </button>
-                  {isAdmin && (
-                    <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
-                      <button onClick={() => { setEditingFolder(folder); setEditFolderName(folder.name); }} style={{ flex: 1, padding: '4px 8px', backgroundColor: 'transparent', border: '1px solid #374151', borderRadius: 6, color: '#6B7280', fontSize: 11, cursor: 'pointer' }}>Rename</button>
-                      <button onClick={() => handleDeleteFolder(folder)} style={{ flex: 1, padding: '4px 8px', backgroundColor: 'transparent', border: '1px solid #EF4444', borderRadius: 6, color: '#EF4444', fontSize: 11, cursor: 'pointer' }}>Delete</button>
-                    </div>
-                  )}
-                  {folderDeleteBlock && folderDeleteBlock.folderId === folder.id && (
-                    <div role="alert" style={{ marginTop: 6, padding: '8px 10px', backgroundColor: '#7F1D1D20', border: '1px solid #EF444460', borderRadius: 8, fontSize: 12, color: '#FCA5A5', display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'flex-start' }}>
-                      <span>{folderDeleteBlock.message}</span>
-                      <button onClick={() => setFolderDeleteBlock(null)} aria-label="Dismiss" style={{ background: 'transparent', border: 'none', color: '#FCA5A5', fontSize: 12, cursor: 'pointer', padding: 0 }}>Dismiss</button>
-                    </div>
-                  )}
-                </div>
-              );
-            })
+                );
+              })
+            )}
+            {isAdmin && (
+              <button onClick={() => setShowCreateFolder(true)} {...btn('ghost', { borderRadius: radius.pill, padding: '7px 14px', fontSize: 13, borderStyle: 'dashed' })}>
+                <Icon name="plus" /> New folder
+              </button>
+            )}
+          </div>
+          {selectedFolderObj && (isAdmin || (project?.project_type === 'checklist' && canManageChecklist)) && (
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {isAdmin && <button onClick={() => { setEditingFolder(selectedFolderObj); setEditFolderName(selectedFolderObj.name); }} {...btn('ghost', small)}>Rename folder</button>}
+              {isAdmin && <button onClick={() => handleDeleteFolder(selectedFolderObj)} {...btn('ghost', { ...small, color: colors.red })}>Delete folder</button>}
+              {project?.project_type === 'checklist' && canManageChecklist && (
+                <button onClick={() => setShowFolderChecklistEditor(true)} {...btn('secondary', small)}>Edit folder checklist</button>
+              )}
+            </div>
           )}
         </div>
 
+        {showCreateFolder && (
+          <div style={{ ...card, padding: 14, marginBottom: 12, maxWidth: 420 }}>
+            <input value={newFolderName} onChange={(e) => setNewFolderName(e.target.value)} placeholder="Folder name..." onKeyDown={(e) => e.key === 'Enter' && handleCreateFolder()} style={{ ...inputStyle, marginBottom: 10 }} autoFocus />
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={() => { setShowCreateFolder(false); setNewFolderName(''); }} {...btn('ghost', { flex: 1 })}>Cancel</button>
+              <button onClick={handleCreateFolder} disabled={creatingFolder} {...btn('primary', { flex: 1 })}>{creatingFolder ? '...' : 'Create'}</button>
+            </div>
+          </div>
+        )}
+        {editingFolder && (
+          <div style={{ ...card, padding: 14, marginBottom: 12, maxWidth: 420 }}>
+            <input value={editFolderName} onChange={(e) => setEditFolderName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleRenameFolder()} style={{ ...inputStyle, marginBottom: 10 }} autoFocus />
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={() => setEditingFolder(null)} {...btn('ghost', { flex: 1 })}>Cancel</button>
+              <button onClick={handleRenameFolder} {...btn('primary', { flex: 1 })}>Save</button>
+            </div>
+          </div>
+        )}
+        {folderDeleteBlock && (
+          <div role="alert" style={{ marginBottom: 12, padding: '10px 12px', backgroundColor: colors.redSurface, border: `1px solid ${colors.red}`, borderRadius: 8, fontSize: 13, color: colors.text, display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'flex-start' }}>
+            <span style={{ display: 'inline-flex', gap: 8 }}><Icon name="alert" style={{ color: colors.red, marginTop: 1 }} />{folderDeleteBlock.message}</span>
+            <button onClick={() => setFolderDeleteBlock(null)} aria-label="Dismiss" style={{ background: 'transparent', border: 'none', color: colors.text2, fontSize: 13, fontWeight: 600, cursor: 'pointer', padding: 0 }}>Dismiss</button>
+          </div>
+        )}
+
         {/* Tasks Panel */}
-        <div style={{ backgroundColor: '#111827', borderRadius: 14, border: '1px solid #1F2937', overflow: 'hidden' }}>
-          <div style={{ padding: '16px 24px', borderBottom: '1px solid #1F2937' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>
-                {selectedFolder ? `📁 ${(folders as any[])?.find((f: any) => f.id === selectedFolder)?.name ?? 'Folder'}` : '📋 All Tasks'}
-                {filteredTasks ? ` (${filteredTasks.length})` : ''}
+        <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
+          <div style={{ padding: isMobile ? '14px 16px' : '16px 20px', borderBottom: `1px solid ${colors.border}` }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
+              <h2 style={{ margin: 0, fontFamily: fonts.display, fontSize: 22, fontWeight: 700, letterSpacing: '0.02em', minWidth: 0, overflowWrap: 'anywhere' }}>
+                {selectedFolder ? ((folders as any[])?.find((f: any) => f.id === selectedFolder)?.name ?? 'Folder') : 'All tasks'}
+                {filteredTasks && <span style={{ color: colors.text3, fontWeight: 600 }}> ({filteredTasks.length})</span>}
+                {showArchivedTasks && <span style={{ marginLeft: 8, verticalAlign: 'middle' }}><StatusChip status="archived" label="Archived view" /></span>}
               </h2>
-              {selectedFolderObj && project?.project_type === 'checklist' && canManageChecklist && (
-                <button onClick={() => setShowFolderChecklistEditor(true)} style={{ padding: '8px 14px', backgroundColor: 'transparent', border: '1px solid #F97316', borderRadius: 8, color: '#F97316', fontSize: 12, fontWeight: 700, cursor: 'pointer', marginLeft: 'auto', marginRight: 8 }}>
-                  Edit folder checklist
-                </button>
-              )}
               {isAdmin && (
-                <button onClick={() => setShowArchivedTasks(!showArchivedTasks)} style={{ padding: '8px 14px', backgroundColor: showArchivedTasks ? '#F97316' : 'transparent', border: '1px solid', borderColor: showArchivedTasks ? '#F97316' : '#374151', borderRadius: 8, color: showArchivedTasks ? '#0A0F1E' : '#6B7280', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-                  {showArchivedTasks ? '← Active Tasks' : '📦 Archived'}
+                <button onClick={() => setShowArchivedTasks(!showArchivedTasks)} {...btn('ghost', small)}>
+                  {showArchivedTasks ? 'Back to active tasks' : 'Show archived'}
                 </button>
               )}
             </div>
-            <input type="text" placeholder="Search tasks..." value={taskSearch} onChange={(e) => setTaskSearch(e.target.value)} style={{ width: '100%', padding: '10px 14px', backgroundColor: '#0D1321', border: '1px solid #1F2937', borderRadius: 8, color: '#FFFFFF', fontSize: 14, outline: 'none', boxSizing: 'border-box' as const }} />
+            <input type="text" placeholder="Search tasks..." value={taskSearch} onChange={(e) => setTaskSearch(e.target.value)} style={{ ...inputStyle, backgroundColor: colors.bg }} />
           </div>
           {tasksLoading ? (
-            <div style={{ padding: 24, color: '#F97316' }}>Loading tasks...</div>
+            <div role="status" aria-label="Loading tasks" style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {[0, 1, 2, 3].map((i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}><Skeleton width="55%" height={14} /><Skeleton width="30%" height={11} /></div>
+                  <Skeleton width={90} height={24} radius={999} />
+                </div>
+              ))}
+            </div>
           ) : filteredTasks?.length === 0 ? (
-            <div style={{ padding: 40, textAlign: 'center', color: '#4B5563' }}>
-              {taskSearch ? `No tasks match "${taskSearch}"` : showArchivedTasks ? 'No archived tasks.' : canEdit ? 'No tasks yet. Click "+ Add Tasks" to get started.' : 'No tasks have been created yet.'}
+            <div style={{ padding: 20 }}>
+              {taskSearch ? (
+                <EmptyState title="No matching tasks" message={`No tasks match "${taskSearch}".`} actionLabel="Clear search" onAction={() => setTaskSearch('')} />
+              ) : showArchivedTasks ? (
+                <EmptyState title="No archived tasks" message="Tasks you archive in this view show up here." actionLabel="Back to active tasks" onAction={() => setShowArchivedTasks(false)} />
+              ) : canEdit ? (
+                <EmptyState title="No tasks yet" message="Add the first tasks to this project to get started." actionLabel="Add Tasks" onAction={() => { resetImport(); setShowImport(true); }} />
+              ) : (
+                <EmptyState title="No tasks yet" message="No tasks have been created yet." />
+              )}
             </div>
           ) : (
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ backgroundColor: '#0D1321' }}>
-                  {['Task', 'Priority', 'Due Date', 'Status', 'Assigned To', ''].map((h) => (
-                    <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: '#6B7280', letterSpacing: 1 }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {filteredTasks?.map((task: any, i: number) => {
-                  const isOverdue = task.due_date && new Date(task.due_date) < new Date() && task.status !== 'completed';
-                  return (
-                    <tr key={task.id} style={{ borderTop: '1px solid #1F2937', backgroundColor: i % 2 === 0 ? 'transparent' : '#0D132120' }}>
-                      <td style={{ padding: '12px 16px' }}>
-                        <div style={{ fontSize: 14, fontWeight: 600 }}>{task.title}</div>
-                        {task.description && <div style={{ fontSize: 12, color: '#6B7280', marginTop: 2 }}>{task.description.slice(0, 50)}{task.description.length > 50 ? '...' : ''}</div>}
-                      </td>
-                      <td style={{ padding: '12px 16px' }}>
-                        <span style={{ fontSize: 11, fontWeight: 700, color: priorityColors[task.priority], backgroundColor: priorityColors[task.priority] + '20', padding: '3px 8px', borderRadius: 6 }}>{task.priority}</span>
-                      </td>
-                      <td style={{ padding: '12px 16px', fontSize: 12, color: isOverdue ? '#EF4444' : '#9CA3AF', fontWeight: isOverdue ? 700 : 400 }}>
-                        {task.due_date ? `${isOverdue ? '⚠️ ' : ''}${new Date(task.due_date).toLocaleDateString()}` : '—'}
-                      </td>
-                      <td style={{ padding: '12px 16px' }}>
-                        {!showArchivedTasks ? (
-                          <select value={task.status} onChange={(e) => updateStatus({ taskId: task.id, status: e.target.value })} style={{ backgroundColor: statusColors[task.status] + '20', border: `1px solid ${statusColors[task.status]}`, borderRadius: 20, color: statusColors[task.status], padding: '4px 10px', fontSize: 12, fontWeight: 700, cursor: 'pointer', outline: 'none' }}>
-                            <option value="open">Open</option>
-                            <option value="in_progress">In Progress</option>
-                            <option value="completed">Done</option>
-                          </select>
-                        ) : (
-                          <span style={{ fontSize: 11, fontWeight: 700, color: '#22C55E', backgroundColor: '#22C55E20', padding: '3px 10px', borderRadius: 20 }}>Archived</span>
-                        )}
-                      </td>
-                      <td style={{ padding: '12px 16px', fontSize: 13, color: '#9CA3AF' }}>{taskAssigneeNames(task)}</td>
-                      <td style={{ padding: '12px 16px' }}>
-                        <div style={{ display: 'flex', gap: 8 }}>
-                          {!showArchivedTasks && (
-                            <>
-                              <button onClick={() => openViewTask(task)} style={{ padding: '6px 14px', backgroundColor: '#1F2937', border: '1px solid #374151', borderRadius: 8, color: '#9CA3AF', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>View</button>
-                              {canEdit && <button onClick={() => openEditTask(task)} style={{ padding: '6px 14px', backgroundColor: '#F9731620', border: '1px solid #F97316', borderRadius: 8, color: '#F97316', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Edit</button>}
-                              {isAdmin && <button onClick={() => handleArchiveTask(task)} style={{ padding: '6px 14px', backgroundColor: 'transparent', border: '1px solid #6B7280', borderRadius: 8, color: '#6B7280', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Archive</button>}
-                            </>
-                          )}
-                          {showArchivedTasks && isAdmin && (
-                            <>
-                              <button onClick={() => handleRestoreTask(task)} style={{ padding: '6px 14px', backgroundColor: '#22C55E20', border: '1px solid #22C55E', borderRadius: 8, color: '#22C55E', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>↩ Restore</button>
-                              <button onClick={() => handleDeleteTask(task)} style={{ padding: '6px 14px', backgroundColor: '#EF444420', border: '1px solid #EF4444', borderRadius: 8, color: '#EF4444', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>🗑 Delete</button>
-                            </>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            <div>
+              {!isMobile && (
+                <div style={{ display: 'grid', gridTemplateColumns: TASK_COLS, gap: 16, padding: '10px 20px', backgroundColor: colors.bg }}>
+                  {['Task', 'Assigned', 'Due', 'Status', ''].map((h, hi) => <div key={hi} style={{ ...sectionLabel, fontSize: 10.5 }}>{h}</div>)}
+                </div>
+              )}
+              {filteredTasks?.map((task: any) => {
+                const isOverdue = isTaskOverdue(task);
+                const names = assigneeNames(task);
+                const due = (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 13, whiteSpace: 'nowrap', color: isOverdue ? colors.red : task.due_date ? colors.text2 : colors.text3, fontWeight: isOverdue ? 700 : 500 }}>
+                    {isOverdue && <Icon name="alert" size={13} title="Overdue" />}
+                    {task.due_date ? new Date(task.due_date).toLocaleDateString() : '—'}
+                  </span>
+                );
+                const status = !showArchivedTasks ? (
+                  <select
+                    aria-label={`Status of ${task.title}`}
+                    value={task.status}
+                    onChange={(e) => updateStatus({ taskId: task.id, status: e.target.value })}
+                    style={{ ...chip(task.status), border: `1px solid ${statusColor(task.status)}`, padding: '4px 8px', cursor: 'pointer', outline: 'none', maxWidth: '100%' }}
+                  >
+                    <option value="open">Open</option>
+                    <option value="in_progress">In Progress</option>
+                    <option value="completed">Done</option>
+                  </select>
+                ) : (
+                  <StatusChip status="archived" />
+                );
+                const actions = (
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: isMobile ? 'flex-start' : 'flex-end' }}>
+                    {!showArchivedTasks && (
+                      <>
+                        <button onClick={() => openViewTask(task)} {...btn('ghost', small)}>View</button>
+                        {canEdit && <button onClick={() => openEditTask(task)} {...btn('secondary', small)}>Edit</button>}
+                        {isAdmin && <button onClick={() => handleArchiveTask(task)} {...btn('ghost', small)}>Archive</button>}
+                      </>
+                    )}
+                    {showArchivedTasks && isAdmin && (
+                      <>
+                        <button onClick={() => handleRestoreTask(task)} {...btn('secondary', small)}>Restore</button>
+                        <button onClick={() => handleDeleteTask(task)} {...btn('danger', small)}>Delete</button>
+                      </>
+                    )}
+                  </div>
+                );
+                const titleBlock = (
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: colors.text, overflowWrap: 'anywhere' }}>{task.title}</div>
+                    {task.description && <div style={{ fontSize: 12, color: colors.text3, marginTop: 2 }}>{task.description.slice(0, 50)}{task.description.length > 50 ? '...' : ''}</div>}
+                    <div style={{ marginTop: 6 }}><StatusChip status={task.priority} label={`${task.priority} priority`} /></div>
+                  </div>
+                );
+                return isMobile ? (
+                  <div key={task.id} className="fo-row" style={{ padding: '14px 16px', borderTop: `1px solid ${colors.border}`, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {titleBlock}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                      <AvatarStack names={names} />
+                      {due}
+                      {status}
+                    </div>
+                    {actions}
+                  </div>
+                ) : (
+                  <div key={task.id} className="fo-row" style={{ display: 'grid', gridTemplateColumns: TASK_COLS, gap: 16, alignItems: 'center', padding: '12px 20px', borderTop: `1px solid ${colors.border}` }}>
+                    {titleBlock}
+                    <div><AvatarStack names={names} /></div>
+                    <div>{due}</div>
+                    <div>{status}</div>
+                    {actions}
+                  </div>
+                );
+              })}
+            </div>
           )}
         </div>
       </div>}
