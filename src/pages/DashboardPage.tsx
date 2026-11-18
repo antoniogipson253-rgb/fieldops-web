@@ -11,6 +11,19 @@ import StatusChip from '../components/ui/StatusChip';
 import EmptyState from '../components/ui/EmptyState';
 import Skeleton from '../components/ui/Skeleton';
 import Icon from '../components/ui/Icon';
+import { exactCount } from '../lib/fetchAllPages';
+
+/**
+ * Exact task totals for one project's progress bar: all tasks, and those completed or archived
+ * (the same rule as before). Count-only requests, so a project past 1,000 tasks is counted exactly.
+ */
+async function projectTaskCounts(projectId: string): Promise<{ total: number; completed: number }> {
+  const [total, completed] = await Promise.all([
+    exactCount(supabase.from('tasks').select('id', { count: 'exact', head: true }).eq('project_id', projectId)),
+    exactCount(supabase.from('tasks').select('id', { count: 'exact', head: true }).eq('project_id', projectId).or('status.eq.completed,archived.eq.true')),
+  ]);
+  return { total, completed };
+}
 
 // Postgres `timestamp without time zone` columns come back from PostgREST with no
 // 'Z'/offset suffix, which makes `new Date()` misparse a UTC instant as local time.
@@ -217,9 +230,11 @@ function AdminDashboard({ currentUserId }: { currentUserId: string }) {
       const { data: profile } = await supabase.from('profiles').select('company_id').eq('id', user!.id).single();
       const companyId = profile?.company_id;
 
-      const [projects, tasks, members, clockedInRes, flaggedRes, weekHours] = await Promise.all([
+      // Task totals are count-only requests: a row list would stop at 1,000 tasks.
+      const [projects, totalTasks, openTasks, members, clockedInRes, flaggedRes, weekHours] = await Promise.all([
         supabase.from('projects').select('id, status').eq('archived', false),
-        supabase.from('tasks').select('id, status').eq('archived', false),
+        exactCount(supabase.from('tasks').select('id', { count: 'exact', head: true }).eq('archived', false)),
+        exactCount(supabase.from('tasks').select('id', { count: 'exact', head: true }).eq('archived', false).eq('status', 'open')),
         supabase.from('profiles').select('id').eq('company_id', companyId),
         supabase.from('time_entries').select('id, user_id, clock_in, project:project_id(name)').is('clock_out', null),
         supabase.from('time_entries').select('id, user_id, flag_reason, clock_in, project:project_id(name)').eq('flagged', true).gte('clock_in', new Date(Date.now() - 7 * 86400000).toISOString()).order('clock_in', { ascending: false }),
@@ -258,8 +273,8 @@ function AdminDashboard({ currentUserId }: { currentUserId: string }) {
       return {
         activeProjects: (projects.data ?? []).filter((p: any) => p.status === 'active').length,
         totalProjects: (projects.data ?? []).length,
-        openTasks: (tasks.data ?? []).filter((t: any) => t.status === 'open').length,
-        totalTasks: (tasks.data ?? []).length,
+        openTasks,
+        totalTasks,
         memberCount: (members.data ?? []).length,
         clockedIn,
         flagged,
@@ -290,15 +305,11 @@ function AdminDashboard({ currentUserId }: { currentUserId: string }) {
     queryFn: async () => {
       if (!projects || projects.length === 0) return {};
       const result: Record<string, number> = {};
-      for (const p of projects) {
-        const { data } = await supabase
-          .from('tasks')
-          .select('status, archived')
-          .eq('project_id', p.id);
-        const tasks = data ?? [];
-        const completed = tasks.filter((t: any) => t.status === 'completed' || t.archived).length;
-        result[p.id] = tasks.length > 0 ? Math.round((completed / tasks.length) * 100) : 0;
-      }
+      const counts = await Promise.all(projects.map((p: any) => projectTaskCounts(p.id)));
+      projects.forEach((p: any, i: number) => {
+        const { total, completed } = counts[i];
+        result[p.id] = total > 0 ? Math.round((completed / total) * 100) : 0;
+      });
       return result;
     },
     enabled: !!projects && projects.length > 0,
@@ -509,15 +520,8 @@ function PMDashboard({ currentUserId }: { currentUserId: string }) {
     queryKey: ['pm-dash-progress', projectIdsKey],
     queryFn: async () => {
       const result: Record<string, { total: number; completed: number }> = {};
-      for (const id of projectIds) {
-        const { data } = await supabase
-          .from('tasks')
-          .select('status, archived')
-          .eq('project_id', id);
-        const tasks = data ?? [];
-        const completed = tasks.filter((t: any) => t.status === 'completed' || t.archived).length;
-        result[id] = { total: tasks.length, completed };
-      }
+      const counts = await Promise.all(projectIds.map((id) => projectTaskCounts(id)));
+      projectIds.forEach((id, i) => { result[id] = counts[i]; });
       return result;
     },
     enabled: projectIds.length > 0,
@@ -537,6 +541,21 @@ function PMDashboard({ currentUserId }: { currentUserId: string }) {
         .order('due_date', { ascending: true })
         .limit(8);
       return data ?? [];
+    },
+    enabled: projectIds.length > 0,
+    staleTime: 0,
+  });
+
+  // Under the 'pm-dash-progress' key so task changes elsewhere refresh it with the progress bars.
+  const { data: statusCounts } = useQuery({
+    queryKey: ['pm-dash-progress', 'status-counts', projectIdsKey],
+    queryFn: async () => {
+      const base = () => supabase.from('tasks').select('id', { count: 'exact', head: true }).eq('archived', false).in('project_id', projectIds);
+      const [open, inProgress] = await Promise.all([
+        exactCount(base().eq('status', 'open')),
+        exactCount(base().eq('status', 'in_progress')),
+      ]);
+      return { open, inProgress };
     },
     enabled: projectIds.length > 0,
     staleTime: 0,
@@ -592,11 +611,13 @@ function PMDashboard({ currentUserId }: { currentUserId: string }) {
     staleTime: 0,
   });
 
-  const openTasks = (tasks ?? []).filter((t: any) => t.status === 'open').length;
-  const inProgressTasks = (tasks ?? []).filter((t: any) => t.status === 'in_progress').length;
+  // The stat cards count every active task on these projects (the list above shows only 8).
+  const openTasks = statusCounts?.open ?? 0;
+  const inProgressTasks = statusCounts?.inProgress ?? 0;
   // Queries that are disabled until the project list arrives stay undefined when there are no projects.
   const noProjects = pmProjects !== undefined && projectIds.length === 0;
   const tasksReady = tasks !== undefined || noProjects;
+  const countsReady = statusCounts !== undefined || noProjects;
   const crewReady = crew !== undefined || noProjects;
   const reportsReady = reports !== undefined || noProjects;
 
@@ -606,9 +627,9 @@ function PMDashboard({ currentUserId }: { currentUserId: string }) {
 
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, minmax(0, 1fr))' : 'repeat(4, minmax(0, 1fr))', gap: 12, marginBottom: 20 }}>
         <StatCard label="My projects" tone="accent" value={pmProjects === undefined ? undefined : pmProjects.length} sub="active" />
-        <StatCard label="Open tasks" tone="gray" value={tasksReady ? openTasks : undefined} sub="across my projects" />
+        <StatCard label="Open tasks" tone="gray" value={countsReady ? openTasks : undefined} sub="across my projects" />
         <StatCard label="Crew on site" tone="green" value={crewReady ? (crew ?? []).length : undefined} sub="clocked in now" />
-        <StatCard label="In progress" tone="blue" value={tasksReady ? inProgressTasks : undefined} sub="tasks" />
+        <StatCard label="In progress" tone="blue" value={countsReady ? inProgressTasks : undefined} sub="tasks" />
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(0, 1fr) 300px', gap: 16 }}>

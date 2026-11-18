@@ -11,6 +11,7 @@ import { DailyReportSettings } from '../components/DailyReportSettings';
 import { FolderChecklistEditor } from '../components/FolderChecklistEditor';
 import FolderPanel from '../components/FolderPanel';
 import { formatDateOnly, isPastDue, localDateKey } from '../lib/dates';
+import { exactCount, fetchAllPages } from '../lib/fetchAllPages';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { btn, card, chip, colors, fonts, input as inputBase, radius, sectionLabel, statusColor } from '../theme';
 import PageHeader from '../components/ui/PageHeader';
@@ -40,18 +41,6 @@ function taskAssigneeProfiles(task: any): { id: string; full_name: string }[] {
 function taskAssigneeNames(task: any): string {
   const names = taskAssigneeProfiles(task).map((p) => p.full_name).filter(Boolean);
   return names.length > 0 ? names.join(', ') : 'Unassigned';
-}
-
-// PostgREST returns at most 1000 rows per request: keep asking for the next 1000 until a short page.
-const PAGE_SIZE = 1000;
-async function fetchAllPages<T>(fetchPage: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: any }>): Promise<T[]> {
-  const out: T[] = [];
-  for (let from = 0; ; from += PAGE_SIZE) {
-    const { data, error } = await fetchPage(from, from + PAGE_SIZE - 1);
-    if (error) throw error;
-    out.push(...(data ?? []));
-    if (!data || data.length < PAGE_SIZE) return out;
-  }
 }
 
 /** Checklist progress embedded by the tasks query, e.g. { done: 3, total: 5 }. */
@@ -497,10 +486,12 @@ export default function ProjectDetailPage() {
   // Count every task in a folder, archived ones included: the database's folder rule
   // (regular tasks must have a folder) applies to all of them.
   async function countFolderTasks(folderId: string): Promise<{ total: number; archived: number }> {
-    const { data, error } = await supabase.from('tasks').select('archived').eq('folder_id', folderId);
-    if (error) throw error;
-    const rows = data ?? [];
-    return { total: rows.length, archived: rows.filter((t: any) => t.archived).length };
+    // Count-only requests, so a folder past 1,000 tasks is still counted exactly.
+    const [total, archived] = await Promise.all([
+      exactCount(supabase.from('tasks').select('id', { count: 'exact', head: true }).eq('folder_id', folderId)),
+      exactCount(supabase.from('tasks').select('id', { count: 'exact', head: true }).eq('folder_id', folderId).eq('archived', true)),
+    ]);
+    return { total, archived };
   }
 
   function folderNotEmptyMessage(c: { total: number; archived: number }) {
@@ -881,23 +872,21 @@ async function handleSaveTask() {
   async function loadAssignableTasks() {
     setAssignTasksLoading(true);
     try {
-      const { data: allTasks, error: tasksErr } = await supabase
-        .from('tasks')
-        .select('id, title')
-        .eq('project_id', id)
-        .eq('archived', false)
-        .order('created_at', { ascending: true });
-      if (tasksErr) throw tasksErr;
+      // Every active task in the project (paged past 1,000) with its checklist item count embedded,
+      // instead of one huge task_id list that could also cut the checklist rows off at 1,000.
+      const allTasks = await fetchAllPages<any>((from, to) =>
+        supabase
+          .from('tasks')
+          .select('id, title, ci_total:checklist_items(count)')
+          .eq('project_id', id)
+          .eq('archived', false)
+          .order('created_at', { ascending: true })
+          .order('id', { ascending: true })
+          .range(from, to));
 
-      const taskIds = (allTasks ?? []).map((t: any) => t.id);
-      const { data: existingItems, error: itemsErr } = await supabase
-        .from('checklist_items')
-        .select('task_id')
-        .in('task_id', taskIds.length > 0 ? taskIds : ['00000000-0000-0000-0000-000000000000']);
-      if (itemsErr) throw itemsErr;
-
-      const withChecklist = new Set((existingItems ?? []).map((r: any) => r.task_id));
-      const withoutChecklist = (allTasks ?? []).filter((t: any) => !withChecklist.has(t.id));
+      const withoutChecklist = allTasks
+        .filter((t: any) => (t.ci_total?.[0]?.count ?? 0) === 0)
+        .map((t: any) => ({ id: t.id, title: t.title }));
       setAssignableTasks(withoutChecklist);
       setSelectedAssignTaskId((prev) => (withoutChecklist.some((t: any) => t.id === prev) ? prev : (withoutChecklist[0]?.id ?? '')));
     } catch (e: any) {
