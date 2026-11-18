@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { formatDateOnly, isPastDue } from '../lib/dates';
 
 // task_assignees is embedded as task_assignees(profile:profiles(full_name)).
 function taskAssigneeNames(task: any): string {
@@ -109,7 +110,7 @@ export default function TasksPage() {
             </thead>
             <tbody>
               {filtered?.map((task, i) => {
-                const isOverdue = task.due_date && new Date(task.due_date) < new Date() && task.status !== 'completed';
+                const isOverdue = isPastDue(task.due_date) && task.status !== 'completed';
                 return (
                   <tr key={task.id} style={{ borderTop: '1px solid #1F2937', backgroundColor: i % 2 === 0 ? 'transparent' : '#0D132110' }}>
                     <td style={{ padding: '12px 16px' }}>
@@ -120,7 +121,7 @@ export default function TasksPage() {
                       {(task.project as any)?.name ?? 'Unknown'}
                     </td>
                     <td style={{ padding: '12px 16px', fontSize: 12, color: isOverdue ? '#EF4444' : '#9CA3AF', fontWeight: isOverdue ? 700 : 400 }}>
-                      {task.due_date ? `${isOverdue ? '⚠️ ' : ''}${new Date(task.due_date).toLocaleDateString()}` : '—'}
+                      {task.due_date ? `${isOverdue ? '⚠️ ' : ''}${formatDateOnly(task.due_date)}` : '—'}
                     </td>
                     <td style={{ padding: '12px 16px' }}>
                       <span style={{ fontSize: 11, fontWeight: 700, color: priorityColors[task.priority], backgroundColor: priorityColors[task.priority] + '20', padding: '3px 8px', borderRadius: 6 }}>

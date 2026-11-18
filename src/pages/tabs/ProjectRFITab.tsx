@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../lib/supabase';
+import { formatDateOnly, isPastDue } from '../../lib/dates';
 
 interface Props {
   projectId: string;
@@ -137,7 +138,7 @@ export function ProjectRFITab({ projectId, isAdmin, canEdit }: Props) {
             </thead>
             <tbody>
               {filtered.map((rfi: any, i: number) => {
-                const isOverdue = rfi.due_date && new Date(rfi.due_date) < new Date() && rfi.status === 'open';
+                const isOverdue = isPastDue(rfi.due_date) && rfi.status === 'open';
                 return (
                   <React.Fragment key={rfi.id}>
                     <tr onClick={() => setExpandedId(expandedId === rfi.id ? null : rfi.id)} style={{ borderTop: '1px solid #1F2937', backgroundColor: expandedId === rfi.id ? '#1F293760' : i % 2 === 0 ? 'transparent' : '#0D132120', cursor: 'pointer' }}>
@@ -145,7 +146,7 @@ export function ProjectRFITab({ projectId, isAdmin, canEdit }: Props) {
                       <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600 }}>{rfi.subject}</td>
                       <td style={{ padding: '12px 16px', fontSize: 12, color: '#9CA3AF' }}>{rfi.directed_to ?? '—'}</td>
                       <td style={{ padding: '12px 16px', fontSize: 12, color: isOverdue ? '#EF4444' : '#9CA3AF', fontWeight: isOverdue ? 700 : 400 }}>
-                        {rfi.due_date ? `${isOverdue ? '⚠️ ' : ''}${new Date(rfi.due_date).toLocaleDateString()}` : '—'}
+                        {rfi.due_date ? `${isOverdue ? '⚠️ ' : ''}${formatDateOnly(rfi.due_date)}` : '—'}
                       </td>
                       <td style={{ padding: '12px 16px' }}>
                         <span style={{ fontSize: 11, fontWeight: 700, color: statusColors[rfi.status] ?? '#6B7280', backgroundColor: (statusColors[rfi.status] ?? '#6B7280') + '20', padding: '3px 10px', borderRadius: 20 }}>{rfi.status}</span>
@@ -176,7 +177,7 @@ export function ProjectRFITab({ projectId, isAdmin, canEdit }: Props) {
                                   {[
                                     { label: 'Submitted By', value: (rfi.submitter as any)?.full_name ?? '—', color: '#FFFFFF' },
                                     { label: 'Date', value: new Date(rfi.created_at).toLocaleDateString(), color: '#9CA3AF' },
-                                    { label: 'Due Date', value: rfi.due_date ? new Date(rfi.due_date).toLocaleDateString() : '—', color: isOverdue ? '#EF4444' : '#FFFFFF' },
+                                    { label: 'Due Date', value: rfi.due_date ? formatDateOnly(rfi.due_date) : '—', color: isOverdue ? '#EF4444' : '#FFFFFF' },
                                     { label: 'Status', value: rfi.status, color: statusColors[rfi.status] ?? '#6B7280' },
                                   ].map((item) => (
                                     <div key={item.label} style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: 8, marginBottom: 8, borderBottom: '1px solid #1F2937' }}>

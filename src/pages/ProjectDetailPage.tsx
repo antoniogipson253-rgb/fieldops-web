@@ -10,6 +10,7 @@ import { ProjectClientMessagesTab } from './tabs/ProjectClientMessagesTab';
 import { DailyReportSettings } from '../components/DailyReportSettings';
 import { FolderChecklistEditor } from '../components/FolderChecklistEditor';
 import FolderPanel from '../components/FolderPanel';
+import { formatDateOnly, isPastDue, localDateKey } from '../lib/dates';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { btn, card, chip, colors, fonts, input as inputBase, radius, sectionLabel, statusColor } from '../theme';
 import PageHeader from '../components/ui/PageHeader';
@@ -51,18 +52,6 @@ async function fetchAllPages<T>(fetchPage: (from: number, to: number) => Promise
     out.push(...(data ?? []));
     if (!data || data.length < PAGE_SIZE) return out;
   }
-}
-
-/** Today's (or a date's) local calendar day as YYYY-MM-DD, matching the tasks.due_date date column. */
-function localDateKey(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-/** Shows a date-only value (YYYY-MM-DD) as that calendar day, not shifted by the time zone. */
-function formatDueDate(value: string): string {
-  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(value ?? '');
-  if (!m) return new Date(value).toLocaleDateString();
-  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).toLocaleDateString();
 }
 
 /** Checklist progress embedded by the tasks query, e.g. { done: 3, total: 5 }. */
@@ -205,7 +194,9 @@ export default function ProjectDetailPage() {
         const completedTasks = folderTasks.filter((t) => t.status === 'completed' || t.archived);
         // Counted from the rows already fetched above (no extra request), for the In progress stat card.
         const inProgressTasks = folderTasks.filter((t) => t.status === 'in_progress' && !t.archived);
-        return { ...folder, task_count: folderTasks.length, completed_count: completedTasks.length, in_progress_count: inProgressTasks.length };
+        // Shown in the folder panel: the same rows the task list shows (active, or archived in the archived view).
+        const activeCount = folderTasks.filter((t) => !t.archived).length;
+        return { ...folder, task_count: folderTasks.length, completed_count: completedTasks.length, in_progress_count: inProgressTasks.length, active_count: activeCount, archived_count: folderTasks.length - activeCount };
       });
     },
     enabled: !!id,
@@ -232,12 +223,12 @@ export default function ProjectDetailPage() {
     enabled: !!id,
   });
 
-  // Exact number of tasks in the project (all folders, archived included, same basis as the folder counts):
-  // a count-only request. Keyed under 'web-folders' so it refreshes whenever the folder counts do.
+  // Exact number of tasks the "All tasks" list shows (active, or archived in the archived view): a count-only
+  // request. Keyed under 'web-folders' so it refreshes whenever the folder counts do.
   const { data: projectTaskTotal } = useQuery({
-    queryKey: ['web-folders', id, 'project-total'],
+    queryKey: ['web-folders', id, 'list-total', showArchivedTasks],
     queryFn: async () => {
-      const { count, error } = await supabase.from('tasks').select('id', { count: 'exact', head: true }).eq('project_id', id);
+      const { count, error } = await supabase.from('tasks').select('id', { count: 'exact', head: true }).eq('project_id', id).eq('archived', showArchivedTasks);
       if (error) throw error;
       return count ?? 0;
     },
@@ -966,8 +957,7 @@ async function handleSaveTask() {
   const assignLineCount = assignItemsText.split('\n').map((l) => l.trim()).filter(Boolean).length;
 
   // Past due = the due day is before today's local date and the task is not done (same rule as the exact count).
-  const todayKey = localDateKey(new Date());
-  const isTaskOverdue = (task: any) => !!task.due_date && String(task.due_date).slice(0, 10) < todayKey && task.status !== 'completed';
+  const isTaskOverdue = (task: any) => isPastDue(task.due_date) && task.status !== 'completed';
   const overdueScope = showArchivedTasks ? 'in archived tasks' : selectedFolderObj ? `in ${selectedFolderObj.name}` : 'across all tasks';
 
   const inputStyle: React.CSSProperties = inputBase;
@@ -1016,10 +1006,15 @@ async function handleSaveTask() {
     )
   ) : null;
 
+  // Panel counts match the task list: active tasks, or archived ones while "Show archived" is on.
+  const panelFolders = ((folders as any[] | undefined) ?? []).map((f: any) => ({ id: f.id, name: f.name, task_count: showArchivedTasks ? f.archived_count : f.active_count }));
+  const listTotal = projectTaskTotal ?? panelFolders.reduce((s, f) => s + f.task_count, 0);
+  const selectedPanelCount = selectedFolder ? panelFolders.find((f) => f.id === selectedFolder)?.task_count ?? 0 : listTotal;
+
   const folderPanel = (
     <FolderPanel
-      folders={(folders as any[] | undefined) ?? []}
-      allCount={projectTaskTotal ?? totalTasks}
+      folders={panelFolders}
+      allCount={listTotal}
       selectedId={selectedFolder}
       onSelect={(folderId) => { setSelectedFolder(folderId); setFolderSheetOpen(false); }}
       footer={folderPanelFooter}
@@ -1231,7 +1226,7 @@ async function handleSaveTask() {
               {viewTask.due_date && (
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <span style={{ fontSize: 12, color: colors.text3, fontWeight: 600 }}>DUE DATE</span>
-                  <span style={{ fontSize: 13, color: colors.text, fontWeight: 600 }}>{formatDueDate(viewTask.due_date)}</span>
+                  <span style={{ fontSize: 13, color: colors.text, fontWeight: 600 }}>{formatDateOnly(viewTask.due_date)}</span>
                 </div>
               )}
             </div>
@@ -1707,7 +1702,7 @@ async function handleSaveTask() {
             {...btn('secondary', { width: '100%', justifyContent: 'space-between', marginBottom: 12, padding: '12px 14px' })}
           >
             <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              Folders: <strong style={{ fontWeight: 700 }}>{selectedFolderObj ? selectedFolderObj.name : 'All tasks'}</strong> ({selectedFolderObj ? selectedFolderObj.task_count : (projectTaskTotal ?? totalTasks)})
+              Folders: <strong style={{ fontWeight: 700 }}>{selectedFolderObj ? selectedFolderObj.name : 'All tasks'}</strong> ({selectedPanelCount})
             </span>
             <Icon name="chevron-right" size={16} style={{ transform: 'rotate(90deg)' }} />
           </button>
@@ -1790,7 +1785,7 @@ async function handleSaveTask() {
                 const due = (
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 13, whiteSpace: 'nowrap', color: isOverdue ? colors.red : task.due_date ? colors.text2 : colors.text3, fontWeight: isOverdue ? 700 : 500 }}>
                     {isOverdue && <Icon name="alert" size={13} title="Overdue" />}
-                    {task.due_date ? formatDueDate(task.due_date) : '—'}
+                    {task.due_date ? formatDateOnly(task.due_date) : '—'}
                   </span>
                 );
                 const status = !showArchivedTasks ? (

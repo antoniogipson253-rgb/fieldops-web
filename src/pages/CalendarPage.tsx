@@ -10,6 +10,7 @@ import StatusChip from '../components/ui/StatusChip';
 import EmptyState from '../components/ui/EmptyState';
 import Skeleton from '../components/ui/Skeleton';
 import Icon from '../components/ui/Icon';
+import { isPastDue } from '../lib/dates';
 
 // task_assignees is embedded as task_assignees(profile:profiles(full_name)).
 function taskAssigneeNames(task: any): string {
@@ -73,11 +74,8 @@ export default function CalendarPage() {
 
   /** Status key used for the chip color: completed, overdue, in_progress or open. */
   function getTaskTone(task: any): string {
-    const due = new Date(task.due_date);
-    const now = new Date();
-    now.setHours(0, 0, 0, 0);
     if (task.status === 'completed') return 'completed';
-    if (due < now) return 'overdue';
+    if (isPastDue(task.due_date)) return 'overdue';
     if (task.status === 'in_progress') return 'in_progress';
     return 'open';
   }
@@ -128,12 +126,7 @@ export default function CalendarPage() {
 
   const monthStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`;
   const monthTasks = tasks?.filter((t) => t.due_date?.startsWith(monthStr)) ?? [];
-  const overdueTasks = tasks?.filter((t) => {
-    const due = new Date(t.due_date);
-    const now = new Date();
-    now.setHours(0, 0, 0, 0);
-    return due < now && t.status !== 'completed';
-  }) ?? [];
+  const overdueTasks = tasks?.filter((t) => isPastDue(t.due_date) && t.status !== 'completed') ?? [];
 
   const navButton = { padding: '8px 10px', minWidth: 38 };
 
