@@ -215,6 +215,11 @@ function AppLayout({ children }: { children: React.ReactNode }) {
         </TrialGuard>
       </main>
       <style>{`
+        /* Desktop: let the window scroll the page so sticky panels (project folder list) stay in view.
+           overflow-x: clip still stops anything spilling sideways, without making main a scroll box. */
+        @media (min-width: 768px) {
+          .app-main { overflow-x: clip !important; overflow-y: visible !important; }
+        }
         @media (max-width: 767px) {
           .app-main { padding-bottom: calc(64px + env(safe-area-inset-bottom)) !important; }
         }

@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useIsAdmin, useIsProjectOwner, useIsProjectManager } from '../lib/useIsAdmin';
 import { ProjectBudgetTab } from './tabs/ProjectBudgetTab';
@@ -9,6 +9,7 @@ import { ProjectRFITab } from './tabs/ProjectRFITab';
 import { ProjectClientMessagesTab } from './tabs/ProjectClientMessagesTab';
 import { DailyReportSettings } from '../components/DailyReportSettings';
 import { FolderChecklistEditor } from '../components/FolderChecklistEditor';
+import FolderPanel from '../components/FolderPanel';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { btn, card, chip, colors, fonts, input as inputBase, radius, sectionLabel, statusColor } from '../theme';
 import PageHeader from '../components/ui/PageHeader';
@@ -40,6 +41,37 @@ function taskAssigneeNames(task: any): string {
   return names.length > 0 ? names.join(', ') : 'Unassigned';
 }
 
+// PostgREST returns at most 1000 rows per request: keep asking for the next 1000 until a short page.
+const PAGE_SIZE = 1000;
+async function fetchAllPages<T>(fetchPage: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: any }>): Promise<T[]> {
+  const out: T[] = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await fetchPage(from, from + PAGE_SIZE - 1);
+    if (error) throw error;
+    out.push(...(data ?? []));
+    if (!data || data.length < PAGE_SIZE) return out;
+  }
+}
+
+/** Today's (or a date's) local calendar day as YYYY-MM-DD, matching the tasks.due_date date column. */
+function localDateKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/** Shows a date-only value (YYYY-MM-DD) as that calendar day, not shifted by the time zone. */
+function formatDueDate(value: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(value ?? '');
+  if (!m) return new Date(value).toLocaleDateString();
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).toLocaleDateString();
+}
+
+/** Checklist progress embedded by the tasks query, e.g. { done: 3, total: 5 }. */
+function checklistProgress(task: any): { done: number; total: number } {
+  const total = task?.ci_total?.[0]?.count ?? 0;
+  const done = task?.ci_done?.[0]?.count ?? 0;
+  return { done, total };
+}
+
 export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -60,6 +92,13 @@ export default function ProjectDetailPage() {
   const [editFolderName, setEditFolderName] = useState('');
   const [folderDeleteBlock, setFolderDeleteBlock] = useState<{ folderId: string; message: string } | null>(null);
   const [showFolderChecklistEditor, setShowFolderChecklistEditor] = useState(false);
+  const [folderSheetOpen, setFolderSheetOpen] = useState(false);
+  useEffect(() => {
+    if (!folderSheetOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setFolderSheetOpen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [folderSheetOpen]);
   const [downloadingSheet, setDownloadingSheet] = useState(false);
   const [downloadSheetError, setDownloadSheetError] = useState<string | null>(null);
   const [taskSearch, setTaskSearch] = useState('');
@@ -152,13 +191,15 @@ export default function ProjectDetailPage() {
   const { data: folders, isLoading: foldersLoading } = useQuery({
     queryKey: ['web-folders', id],
     queryFn: async () => {
-      const [foldersRes, tasksRes] = await Promise.all([
+      // The API returns at most 1000 rows per request, so the task rows behind the folder counts are
+      // read in pages until the last one; otherwise projects with more than 1000 tasks get short counts.
+      const [foldersRes, tasks] = await Promise.all([
         supabase.from('folders').select('*').eq('project_id', id).order('created_at', { ascending: true }),
-        supabase.from('tasks').select('id, folder_id, status, archived').eq('project_id', id),
+        fetchAllPages<{ id: string; folder_id: string | null; status: string; archived: boolean }>((from, to) =>
+          supabase.from('tasks').select('id, folder_id, status, archived').eq('project_id', id).order('id').range(from, to)),
       ]);
       if (foldersRes.error) throw foldersRes.error;
       const folders = foldersRes.data ?? [];
-      const tasks = tasksRes.data ?? [];
       return folders.map((folder) => {
         const folderTasks = tasks.filter((t) => t.folder_id === folder.id);
         const completedTasks = folderTasks.filter((t) => t.status === 'completed' || t.archived);
@@ -173,16 +214,52 @@ export default function ProjectDetailPage() {
   const { data: tasks, isLoading: tasksLoading } = useQuery({
     queryKey: ['web-folder-tasks', id, selectedFolder, showArchivedTasks],
     queryFn: async () => {
+      // Read in pages of 1000 (the API's per-request limit) so large folders and "All tasks" are complete.
+      // ci_total / ci_done are per-task checklist counts computed by the database in the same request.
+      return fetchAllPages<any>((from, to) => {
+        let query = supabase
+          .from('tasks')
+          .select('*, task_assignees(user_id, profile:profiles(id, full_name)), ci_total:checklist_items(count), ci_done:checklist_items(count)')
+          .eq('project_id', id)
+          .eq('archived', showArchivedTasks)
+          .eq('ci_done.status', 'done')
+          .order('created_at', { ascending: false })
+          .order('id', { ascending: false });
+        if (selectedFolder) query = query.eq('folder_id', selectedFolder);
+        return query.range(from, to);
+      });
+    },
+    enabled: !!id,
+  });
+
+  // Exact number of tasks in the project (all folders, archived included, same basis as the folder counts):
+  // a count-only request. Keyed under 'web-folders' so it refreshes whenever the folder counts do.
+  const { data: projectTaskTotal } = useQuery({
+    queryKey: ['web-folders', id, 'project-total'],
+    queryFn: async () => {
+      const { count, error } = await supabase.from('tasks').select('id', { count: 'exact', head: true }).eq('project_id', id);
+      if (error) throw error;
+      return count ?? 0;
+    },
+    enabled: !!id,
+  });
+
+  // Exact overdue count for the current view (whole project or the selected folder): one count-only request.
+  // Keyed under 'web-folder-tasks' so it refreshes whenever the task list does.
+  const { data: overdueExact } = useQuery({
+    queryKey: ['web-folder-tasks', id, 'overdue-count', selectedFolder, showArchivedTasks],
+    queryFn: async () => {
       let query = supabase
         .from('tasks')
-        .select('*, task_assignees(user_id, profile:profiles(id, full_name))')
+        .select('id', { count: 'exact', head: true })
         .eq('project_id', id)
         .eq('archived', showArchivedTasks)
-        .order('created_at', { ascending: false });
+        .neq('status', 'completed')
+        .lt('due_date', localDateKey(new Date()));
       if (selectedFolder) query = query.eq('folder_id', selectedFolder);
-      const { data, error } = await query;
+      const { count, error } = await query;
       if (error) throw error;
-      return data;
+      return count ?? 0;
     },
     enabled: !!id,
   });
@@ -888,9 +965,9 @@ async function handleSaveTask() {
   const validCount = parsedTasks.filter((t) => t.valid).length;
   const assignLineCount = assignItemsText.split('\n').map((l) => l.trim()).filter(Boolean).length;
 
-  // Overdue count for the stat card, from the task list the page already has loaded for the current view.
-  const isTaskOverdue = (task: any) => !!task.due_date && new Date(task.due_date) < new Date() && task.status !== 'completed';
-  const overdueCount = (tasks ?? []).filter(isTaskOverdue).length;
+  // Past due = the due day is before today's local date and the task is not done (same rule as the exact count).
+  const todayKey = localDateKey(new Date());
+  const isTaskOverdue = (task: any) => !!task.due_date && String(task.due_date).slice(0, 10) < todayKey && task.status !== 'completed';
   const overdueScope = showArchivedTasks ? 'in archived tasks' : selectedFolderObj ? `in ${selectedFolderObj.name}` : 'across all tasks';
 
   const inputStyle: React.CSSProperties = inputBase;
@@ -921,6 +998,34 @@ async function handleSaveTask() {
   const labelStyle: React.CSSProperties = { ...sectionLabel, display: 'block', marginBottom: 6 };
   const assigneeNames = (task: any) => taskAssigneeProfiles(task).map((p) => p.full_name).filter(Boolean);
   const TASK_COLS = 'minmax(0, 1fr) 96px 112px 132px auto';
+
+  const folderPanelFooter = isAdmin ? (
+    showCreateFolder ? (
+      <div>
+        <label htmlFor="new-folder-name" className="fo-sr-only">New folder name</label>
+        <input id="new-folder-name" value={newFolderName} onChange={(e) => setNewFolderName(e.target.value)} placeholder="Folder name..." onKeyDown={(e) => e.key === 'Enter' && handleCreateFolder()} style={{ ...inputStyle, padding: '8px 10px', fontSize: 13, marginBottom: 8 }} autoFocus />
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button onClick={() => { setShowCreateFolder(false); setNewFolderName(''); }} {...btn('ghost', { ...small, flex: 1 })}>Cancel</button>
+          <button onClick={handleCreateFolder} disabled={creatingFolder} {...btn('primary', { ...small, flex: 1 })}>{creatingFolder ? '...' : 'Create'}</button>
+        </div>
+      </div>
+    ) : (
+      <button onClick={() => setShowCreateFolder(true)} {...btn('ghost', { ...small, width: '100%', borderStyle: 'dashed' })}>
+        <Icon name="plus" /> New folder
+      </button>
+    )
+  ) : null;
+
+  const folderPanel = (
+    <FolderPanel
+      folders={(folders as any[] | undefined) ?? []}
+      allCount={projectTaskTotal ?? totalTasks}
+      selectedId={selectedFolder}
+      onSelect={(folderId) => { setSelectedFolder(folderId); setFolderSheetOpen(false); }}
+      footer={folderPanelFooter}
+      loading={foldersLoading}
+    />
+  );
 
   return (
     <div style={{ padding: isMobile ? 16 : 32, color: colors.text }}>
@@ -962,7 +1067,7 @@ async function handleSaveTask() {
         <StatCard label="Tasks" tone="accent" value={folders ? totalTasks : undefined} sub={folders ? `across ${folders.length} folder${folders.length !== 1 ? 's' : ''}` : undefined} />
         <StatCard label="Done" tone="green" value={folders ? completedTasks : undefined} sub="completed or archived" />
         <StatCard label="In progress" tone="blue" value={folders ? inProgressTasks : undefined} sub="being worked on" />
-        <StatCard label="Overdue" tone="gray" alert={overdueCount > 0} value={tasks ? overdueCount : undefined} sub={overdueScope} />
+        <StatCard label="Overdue" tone="gray" alert={(overdueExact ?? 0) > 0} value={overdueExact} sub={overdueScope} />
       </div>
 
       {/* Progress Bar */}
@@ -1126,7 +1231,7 @@ async function handleSaveTask() {
               {viewTask.due_date && (
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <span style={{ fontSize: 12, color: colors.text3, fontWeight: 600 }}>DUE DATE</span>
-                  <span style={{ fontSize: 13, color: colors.text, fontWeight: 600 }}>{new Date(viewTask.due_date).toLocaleDateString()}</span>
+                  <span style={{ fontSize: 13, color: colors.text, fontWeight: 600 }}>{formatDueDate(viewTask.due_date)}</span>
                 </div>
               )}
             </div>
@@ -1587,58 +1692,37 @@ async function handleSaveTask() {
       )}
 
       {/* Tasks Tab — Main Layout */}
-      {activeTab === 'tasks' && <div>
-        {/* Folder pills */}
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
-          <div role="group" aria-label="Folders" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', flex: '1 1 320px', minWidth: 0 }}>
-            <button className={`fo-pill${!selectedFolder ? ' is-active' : ''}`} aria-pressed={!selectedFolder} onClick={() => setSelectedFolder(null)}>
-              All tasks <span className="fo-pill-count">{totalTasks}</span>
-            </button>
-            {foldersLoading ? (
-              [0, 1, 2].map((i) => <Skeleton key={i} width={96} height={34} radius={999} />)
-            ) : (
-              folders?.map((folder: any) => {
-                const pct = folder.task_count > 0 ? Math.round((folder.completed_count / folder.task_count) * 100) : 0;
-                const isSelected = selectedFolder === folder.id;
-                return (
-                  <button
-                    key={folder.id}
-                    className={`fo-pill${isSelected ? ' is-active' : ''}`}
-                    aria-pressed={isSelected}
-                    title={`${folder.completed_count} of ${folder.task_count} done (${pct}%)`}
-                    onClick={() => setSelectedFolder(folder.id)}
-                  >
-                    {folder.name} <span className="fo-pill-count">{folder.task_count}</span>
-                  </button>
-                );
-              })
-            )}
-            {isAdmin && (
-              <button onClick={() => setShowCreateFolder(true)} {...btn('ghost', { borderRadius: radius.pill, padding: '7px 14px', fontSize: 13, borderStyle: 'dashed' })}>
-                <Icon name="plus" /> New folder
-              </button>
-            )}
-          </div>
-          {selectedFolderObj && (isAdmin || (project?.project_type === 'checklist' && canManageChecklist)) && (
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {isAdmin && <button onClick={() => { setEditingFolder(selectedFolderObj); setEditFolderName(selectedFolderObj.name); }} {...btn('ghost', small)}>Rename folder</button>}
-              {isAdmin && <button onClick={() => handleDeleteFolder(selectedFolderObj)} {...btn('ghost', { ...small, color: colors.red })}>Delete folder</button>}
-              {project?.project_type === 'checklist' && canManageChecklist && (
-                <button onClick={() => setShowFolderChecklistEditor(true)} {...btn('secondary', small)}>Edit folder checklist</button>
-              )}
-            </div>
-          )}
-        </div>
+      {activeTab === 'tasks' && <div style={{ display: isMobile ? 'block' : 'grid', gridTemplateColumns: '240px minmax(0, 1fr)', gap: 20, alignItems: 'start' }}>
+        {/* Folder panel (desktop): grouped, searchable, sticky */}
+        {!isMobile && <aside className="fo-folder-aside" aria-label="Folders">{folderPanel}</aside>}
 
-        {showCreateFolder && (
-          <div style={{ ...card, padding: 14, marginBottom: 12, maxWidth: 420 }}>
-            <input value={newFolderName} onChange={(e) => setNewFolderName(e.target.value)} placeholder="Folder name..." onKeyDown={(e) => e.key === 'Enter' && handleCreateFolder()} style={{ ...inputStyle, marginBottom: 10 }} autoFocus />
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={() => { setShowCreateFolder(false); setNewFolderName(''); }} {...btn('ghost', { flex: 1 })}>Cancel</button>
-              <button onClick={handleCreateFolder} disabled={creatingFolder} {...btn('primary', { flex: 1 })}>{creatingFolder ? '...' : 'Create'}</button>
-            </div>
+        <div style={{ minWidth: 0 }}>
+        {/* Folder picker (phone): opens the same panel as a bottom sheet */}
+        {isMobile && (
+          <button
+            type="button"
+            onClick={() => setFolderSheetOpen(true)}
+            aria-haspopup="dialog"
+            aria-expanded={folderSheetOpen}
+            {...btn('secondary', { width: '100%', justifyContent: 'space-between', marginBottom: 12, padding: '12px 14px' })}
+          >
+            <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              Folders: <strong style={{ fontWeight: 700 }}>{selectedFolderObj ? selectedFolderObj.name : 'All tasks'}</strong> ({selectedFolderObj ? selectedFolderObj.task_count : (projectTaskTotal ?? totalTasks)})
+            </span>
+            <Icon name="chevron-right" size={16} style={{ transform: 'rotate(90deg)' }} />
+          </button>
+        )}
+
+        {selectedFolderObj && (isAdmin || (project?.project_type === 'checklist' && canManageChecklist)) && (
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end', marginBottom: 12 }}>
+            {isAdmin && <button onClick={() => { setEditingFolder(selectedFolderObj); setEditFolderName(selectedFolderObj.name); }} {...btn('ghost', small)}>Rename folder</button>}
+            {isAdmin && <button onClick={() => handleDeleteFolder(selectedFolderObj)} {...btn('ghost', { ...small, color: colors.red })}>Delete folder</button>}
+            {project?.project_type === 'checklist' && canManageChecklist && (
+              <button onClick={() => setShowFolderChecklistEditor(true)} {...btn('secondary', small)}>Edit folder checklist</button>
+            )}
           </div>
         )}
+
         {editingFolder && (
           <div style={{ ...card, padding: 14, marginBottom: 12, maxWidth: 420 }}>
             <input value={editFolderName} onChange={(e) => setEditFolderName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleRenameFolder()} style={{ ...inputStyle, marginBottom: 10 }} autoFocus />
@@ -1706,7 +1790,7 @@ async function handleSaveTask() {
                 const due = (
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 13, whiteSpace: 'nowrap', color: isOverdue ? colors.red : task.due_date ? colors.text2 : colors.text3, fontWeight: isOverdue ? 700 : 500 }}>
                     {isOverdue && <Icon name="alert" size={13} title="Overdue" />}
-                    {task.due_date ? new Date(task.due_date).toLocaleDateString() : '—'}
+                    {task.due_date ? formatDueDate(task.due_date) : '—'}
                   </span>
                 );
                 const status = !showArchivedTasks ? (
@@ -1744,7 +1828,18 @@ async function handleSaveTask() {
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontSize: 14, fontWeight: 600, color: colors.text, overflowWrap: 'anywhere' }}>{task.title}</div>
                     {task.description && <div style={{ fontSize: 12, color: colors.text3, marginTop: 2 }}>{task.description.slice(0, 50)}{task.description.length > 50 ? '...' : ''}</div>}
-                    <div style={{ marginTop: 6 }}><StatusChip status={task.priority} label={`${task.priority} priority`} /></div>
+                    <div style={{ marginTop: 6, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <StatusChip status={task.priority} label={`${task.priority} priority`} />
+                      {project?.project_type === 'checklist' && (() => {
+                        const p = checklistProgress(task);
+                        const complete = p.total > 0 && p.done === p.total;
+                        return (
+                          <span title={`Checklist: ${p.done} of ${p.total} items done`} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: radius.pill, border: `1px solid ${complete ? colors.green : colors.border}`, color: complete ? colors.green : colors.text2, fontSize: 12, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
+                            {complete && <Icon name="check" size={11} strokeWidth={3} />}Checklist {p.done}/{p.total}
+                          </span>
+                        );
+                      })()}
+                    </div>
                   </div>
                 );
                 return isMobile ? (
@@ -1770,7 +1865,22 @@ async function handleSaveTask() {
             </div>
           )}
         </div>
+        </div>
       </div>}
+
+      {isMobile && folderSheetOpen && activeTab === 'tasks' && (
+        <div className="fo-sheet-backdrop" onClick={() => setFolderSheetOpen(false)}>
+          <div className="fo-sheet" role="dialog" aria-modal="true" aria-labelledby="folder-sheet-title" onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderBottom: `1px solid ${colors.border}` }}>
+              <h2 id="folder-sheet-title" style={{ margin: 0, fontFamily: fonts.display, fontSize: 22, fontWeight: 700, letterSpacing: '0.02em' }}>Folders</h2>
+              <button type="button" onClick={() => setFolderSheetOpen(false)} {...btn('secondary', { padding: '8px 12px' })}>
+                <Icon name="x" size={14} /> Close
+              </button>
+            </div>
+            <div className="fo-sheet-body">{folderPanel}</div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
