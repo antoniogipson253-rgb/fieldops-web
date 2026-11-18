@@ -4,6 +4,13 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useIsAdmin, useCurrentUser, useUserRole } from '../lib/useIsAdmin';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { card as baseCard, colors, fonts, radius, sectionLabel, statusColor, tint } from '../theme';
+import PageHeader from '../components/ui/PageHeader';
+import StatCard from '../components/ui/StatCard';
+import StatusChip from '../components/ui/StatusChip';
+import EmptyState from '../components/ui/EmptyState';
+import Skeleton from '../components/ui/Skeleton';
+import Icon from '../components/ui/Icon';
 
 // Postgres `timestamp without time zone` columns come back from PostgREST with no
 // 'Z'/offset suffix, which makes `new Date()` misparse a UTC instant as local time.
@@ -45,62 +52,73 @@ function timeAgo(dateStr: string) {
 
 const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
 
-const card: React.CSSProperties = {
-  background: '#111827',
-  border: '0.5px solid #1F2937',
-  borderRadius: 14,
-  padding: '18px 20px',
-  marginBottom: 14,
-};
+const card: React.CSSProperties = { ...baseCard, marginBottom: 16 };
 
-const cardTitle: React.CSSProperties = {
-  fontSize: 11,
-  fontWeight: 700,
-  color: '#6B7280',
-  letterSpacing: 2,
-  textTransform: 'uppercase',
-  margin: '0 0 14px',
-};
-
-const statCard = (accentColor: string): React.CSSProperties => ({
-  background: '#111827',
-  border: '0.5px solid #1F2937',
-  borderLeft: `3px solid ${accentColor}`,
-  borderRadius: 12,
-  padding: '14px 16px',
-});
-
-const badge = (bg: string, color: string): React.CSSProperties => ({
-  fontSize: 11,
-  padding: '3px 8px',
-  borderRadius: 6,
-  fontWeight: 600,
-  background: bg,
-  color,
-  whiteSpace: 'nowrap',
-});
-
-const priorityBadge: Record<string, React.CSSProperties> = {
-  high: badge('#FCEBEB', '#A32D2D'),
-  medium: badge('#FAEEDA', '#854F0B'),
-  low: badge('#EAF3DE', '#3B6D11'),
-};
-
-const statusBadge: Record<string, React.CSSProperties> = {
-  open: badge('#1F2937', '#9CA3AF'),
-  in_progress: badge('#E6F1FB', '#185FA5'),
-  completed: badge('#EAF3DE', '#3B6D11'),
-};
+const cardTitle: React.CSSProperties = { ...sectionLabel, margin: '0 0 14px' };
 
 const statusLabel: Record<string, string> = {
   open: 'Open', in_progress: 'In Progress', completed: 'Done',
 };
 
-const statusColors: Record<string, string> = {
-  active: '#22C55E',
-  on_hold: '#F97316',
-  completed: '#6B7280',
+// Map pin colors for the project statuses shown on the map (same colors as StatusChip).
+const MAP_STATUSES = ['active', 'on_hold', 'completed'];
+
+/** A row inside a card list: hover background, rounded, divider under it. */
+const listRow: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 10,
+  padding: '10px 8px',
+  margin: '0 -8px',
+  borderRadius: 8,
+  borderBottom: `1px solid ${colors.border}`,
 };
+
+const rowTitle: React.CSSProperties = { fontSize: 14, fontWeight: 600, color: colors.text };
+const rowMeta: React.CSSProperties = { fontSize: 12, color: colors.text3, marginTop: 2 };
+
+function avatar(name: string) {
+  return (
+    <div style={{ width: 30, height: 30, borderRadius: 15, background: colors.surface2, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600, color: colors.text, flexShrink: 0 }}>
+      {initials(name)}
+    </div>
+  );
+}
+
+function LiveDot() {
+  return <div aria-hidden="true" style={{ width: 8, height: 8, borderRadius: 4, background: colors.green, flexShrink: 0 }} />;
+}
+
+function ListSkeleton({ rows = 3 }: { rows?: number }) {
+  return (
+    <div role="status" aria-label="Loading" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {Array.from({ length: rows }, (_, i) => (
+        <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <Skeleton width="60%" height={14} />
+          <Skeleton width="35%" height={11} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ProgressRow({ name, pct }: { name: string; pct: number }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+      <span style={{ fontSize: 14, fontWeight: 500, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
+      <div style={{ flex: 2, height: 6, background: colors.track, borderRadius: 3, overflow: 'hidden', minWidth: 80 }}>
+        <div style={{ height: '100%', width: `${pct}%`, background: colors.accent, borderRadius: 3, transition: 'width 0.4s ease' }} />
+      </div>
+      <span style={{ fontFamily: fonts.display, fontSize: 18, fontWeight: 700, color: colors.text, minWidth: 44, textAlign: 'right' }}>{pct}%</span>
+    </div>
+  );
+}
+
+function DateBadge() {
+  return (
+    <div style={{ fontSize: 12, color: colors.text2, background: colors.surface, border: `1px solid ${colors.border}`, borderRadius: radius.control, padding: '6px 12px' }}>{today}</div>
+  );
+}
 
 function ProjectMap({ projects, projectProgress }: { projects: any[]; projectProgress: Record<string, number> }) {
   const mapRef = useRef<any>(null);
@@ -132,7 +150,7 @@ function ProjectMap({ projects, projectProgress }: { projects: any[]; projectPro
       }).addTo(map);
 
       mappedProjects.forEach((p: any) => {
-        const color = statusColors[p.status] ?? '#6B7280';
+        const color = statusColor(p.status);
         const icon = L.divIcon({
           className: '',
           html: `<div style="width:24px;height:24px;border-radius:50%;background:${color};border:3px solid #FFFFFF;box-shadow:0 2px 6px rgba(0,0,0,0.4);"></div>`,
@@ -149,8 +167,8 @@ function ProjectMap({ projects, projectProgress }: { projects: any[]; projectPro
               <div style="width:8px;height:8px;border-radius:50%;background:${color};"></div>
               <span style="font-size:12px;color:#666;">${p.status?.replace('_', ' ')}</span>
             </div>
-            <a href="/projects/${p.id}" style="display:block;text-align:center;padding:6px 12px;background:#F97316;color:#FFFFFF;border-radius:6px;font-size:12px;font-weight:700;text-decoration:none;">
-              View Project →
+            <a href="/projects/${p.id}" style="display:block;text-align:center;padding:6px 12px;background:#F97316;color:#0A0F1E;border-radius:8px;font-size:12px;font-weight:700;text-decoration:none;">
+              View Project
             </a>
           </div>
         `);
@@ -180,15 +198,10 @@ function ProjectMap({ projects, projectProgress }: { projects: any[]; projectPro
       <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
       <div
         ref={mapRef}
-        style={{ height: 300, borderRadius: 10, overflow: 'hidden', border: '1px solid #1F2937', marginTop: 14 }}
+        style={{ height: 300, borderRadius: 10, overflow: 'hidden', border: `1px solid ${colors.border}`, marginTop: 14 }}
       />
-      <div style={{ display: 'flex', gap: 16, marginTop: 10 }}>
-        {Object.entries(statusColors).map(([status, color]) => (
-          <div key={status} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <div style={{ width: 8, height: 8, borderRadius: '50%', background: color }} />
-            <span style={{ fontSize: 11, color: '#6B7280' }}>{status.replace('_', ' ')}</span>
-          </div>
-        ))}
+      <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
+        {MAP_STATUSES.map((status) => <StatusChip key={status} status={status} />)}
       </div>
     </>
   );
@@ -196,6 +209,7 @@ function ProjectMap({ projects, projectProgress }: { projects: any[]; projectPro
 
 function AdminDashboard({ currentUserId }: { currentUserId: string }) {
   const isMobile = useIsMobile();
+  const navigate = useNavigate();
   const { data: stats } = useQuery({
     queryKey: ['admin-dash-stats'],
     queryFn: async () => {
@@ -355,70 +369,38 @@ function AdminDashboard({ currentUserId }: { currentUserId: string }) {
     staleTime: 0,
   });
 
-  const barColors = ['#378ADD', '#EF9F27', '#1D9E75', '#E24B4A', '#8B5CF6'];
   const mappedProjects = (projects ?? []).filter((p: any) => p.latitude && p.longitude);
+  const flaggedCount = stats?.flagged?.length ?? 0;
 
   return (
-    <div style={{ padding: isMobile ? 16 : 32, color: '#FFFFFF' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24, flexWrap: 'wrap', gap: 10 }}>
-        <div>
-          <h1 style={{ fontSize: 26, fontWeight: 700, margin: '0 0 4px' }}>Dashboard</h1>
-          <p style={{ color: '#6B7280', fontSize: 13, margin: 0 }}>Good morning — here's what's happening today</p>
-        </div>
-        <div style={{ fontSize: 12, color: '#6B7280', background: '#111827', border: '0.5px solid #1F2937', borderRadius: 8, padding: '6px 12px' }}>{today}</div>
+    <div style={{ padding: isMobile ? 16 : 32, color: colors.text }}>
+      <PageHeader title="Dashboard" subtitle="Good morning — here's what's happening today" actions={<DateBadge />} />
+
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, minmax(0, 1fr))' : 'repeat(5, minmax(0, 1fr))', gap: 12, marginBottom: 20 }}>
+        <StatCard label="Active projects" tone="accent" value={stats?.activeProjects} sub={stats ? `of ${stats.totalProjects} total` : undefined} />
+        <StatCard label="Open tasks" tone="gray" value={stats?.openTasks} sub={stats ? `of ${stats.totalTasks} total` : undefined} />
+        <StatCard label="Clocked in now" tone="green" value={stats?.clockedIn?.length} sub={stats ? `of ${stats.memberCount} members` : undefined} />
+        <StatCard label="Hours this week" tone="blue" value={stats?.weekHours} sub="all employees" />
+        <StatCard label="Flagged clock-ins" tone="red" alert={flaggedCount > 0} value={stats ? flaggedCount : undefined} sub="this week" />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(5, 1fr)', gap: 12, marginBottom: 20 }}>
-        <div style={statCard('#378ADD')}>
-          <p style={{ fontSize: 12, color: '#6B7280', margin: '0 0 6px' }}>Active projects</p>
-          <p style={{ fontSize: 24, fontWeight: 700, margin: 0 }}>{stats?.activeProjects ?? 0}</p>
-          <p style={{ fontSize: 11, color: '#4B5563', margin: '3px 0 0' }}>of {stats?.totalProjects ?? 0} total</p>
-        </div>
-        <div style={statCard('#EF9F27')}>
-          <p style={{ fontSize: 12, color: '#6B7280', margin: '0 0 6px' }}>Open tasks</p>
-          <p style={{ fontSize: 24, fontWeight: 700, margin: 0 }}>{stats?.openTasks ?? 0}</p>
-          <p style={{ fontSize: 11, color: '#4B5563', margin: '3px 0 0' }}>of {stats?.totalTasks ?? 0} total</p>
-        </div>
-        <div style={statCard('#1D9E75')}>
-          <p style={{ fontSize: 12, color: '#6B7280', margin: '0 0 6px' }}>Clocked in now</p>
-          <p style={{ fontSize: 24, fontWeight: 700, margin: 0 }}>{stats?.clockedIn?.length ?? 0}</p>
-          <p style={{ fontSize: 11, color: '#4B5563', margin: '3px 0 0' }}>of {stats?.memberCount ?? 0} members</p>
-        </div>
-        <div style={statCard('#639922')}>
-          <p style={{ fontSize: 12, color: '#6B7280', margin: '0 0 6px' }}>Hours this week</p>
-          <p style={{ fontSize: 24, fontWeight: 700, margin: 0 }}>{stats?.weekHours ?? 0}</p>
-          <p style={{ fontSize: 11, color: '#4B5563', margin: '3px 0 0' }}>all employees</p>
-        </div>
-        <div style={statCard('#E24B4A')}>
-          <p style={{ fontSize: 12, color: '#6B7280', margin: '0 0 6px' }}>Flagged clock-ins</p>
-          <p style={{ fontSize: 24, fontWeight: 700, margin: 0 }}>{stats?.flagged?.length ?? 0}</p>
-          <p style={{ fontSize: 11, color: '#4B5563', margin: '3px 0 0' }}>this week</p>
-        </div>
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 320px', gap: 16 }}>
-        <div>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(0, 1fr) 320px', gap: 16 }}>
+        <div style={{ minWidth: 0 }}>
           <div style={card}>
             <p style={cardTitle}>Project progress</p>
-            {(projects ?? []).length === 0 && <p style={{ color: '#4B5563', fontSize: 13 }}>No active projects.</p>}
-            {(projects ?? []).map((p: any, i: number) => {
-              const pct = projectProgress?.[p.id] ?? 0;
-              return (
-                <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-                  <span style={{ fontSize: 13, fontWeight: 500, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
-                  <div style={{ flex: 2, height: 5, background: '#1F2937', borderRadius: 3, overflow: 'hidden', minWidth: 80 }}>
-                    <div style={{ height: '100%', width: `${pct}%`, background: barColors[i % barColors.length], borderRadius: 3, transition: 'width 0.4s ease' }} />
-                  </div>
-                  <span style={{ fontSize: 12, color: '#6B7280', minWidth: 36, textAlign: 'right' }}>{pct}%</span>
-                </div>
-              );
-            })}
+            {projects === undefined && <ListSkeleton />}
+            {projects !== undefined && projects.length === 0 && (
+              <EmptyState compact title="No active projects" message="Active projects and their progress show up here." actionLabel="Go to Projects" onAction={() => navigate('/projects')} />
+            )}
+            {(projects ?? []).map((p: any) => (
+              <ProgressRow key={p.id} name={p.name} pct={projectProgress?.[p.id] ?? 0} />
+            ))}
             {mappedProjects.length > 0 && (
               <ProjectMap projects={projects ?? []} projectProgress={projectProgress ?? {}} />
             )}
             {mappedProjects.length === 0 && (projects ?? []).length > 0 && (
-              <div style={{ marginTop: 12, padding: '10px 14px', background: '#0D1321', borderRadius: 8, border: '1px solid #1F2937' }}>
-                <p style={{ fontSize: 12, color: '#4B5563', margin: 0 }}>
+              <div style={{ marginTop: 12, padding: '10px 14px', background: colors.bg, borderRadius: 8, border: `1px solid ${colors.border}` }}>
+                <p style={{ fontSize: 13, color: colors.text2, margin: 0 }}>
                   No job site coordinates set yet. Open the mobile app and set coordinates on your projects to see them on the map.
                 </p>
               </div>
@@ -427,67 +409,74 @@ function AdminDashboard({ currentUserId }: { currentUserId: string }) {
 
           <div style={card}>
             <p style={cardTitle}>Tasks due this week</p>
-            {(dueTasks ?? []).length === 0 && <p style={{ color: '#4B5563', fontSize: 13 }}>No tasks due this week.</p>}
+            {dueTasks === undefined && <ListSkeleton />}
+            {dueTasks !== undefined && dueTasks.length === 0 && (
+              <EmptyState compact title="Nothing due this week" message="Tasks due in the next 7 days will appear here." actionLabel="View tasks" onAction={() => navigate('/tasks')} />
+            )}
             {(dueTasks ?? []).map((t: any) => (
-              <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', borderBottom: '0.5px solid #1F2937' }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 500 }}>{t.title}</div>
-                  <div style={{ fontSize: 11, color: '#6B7280', marginTop: 2 }}>{(t.project as any)?.name} · {taskAssigneeNames(t)}</div>
+              <div key={t.id} className="fo-row" style={{ ...listRow, flexWrap: 'wrap' }}>
+                <div style={{ flex: '1 1 180px', minWidth: 0 }}>
+                  <div style={rowTitle}>{t.title}</div>
+                  <div style={rowMeta}>{(t.project as any)?.name} · {taskAssigneeNames(t)}</div>
                 </div>
-                <span style={priorityBadge[t.priority] ?? badge('#1F2937', '#9CA3AF')}>{t.priority}</span>
-                <span style={statusBadge[t.status] ?? badge('#1F2937', '#9CA3AF')}>{statusLabel[t.status] ?? t.status}</span>
+                <StatusChip status={t.priority} />
+                <StatusChip status={t.status} label={statusLabel[t.status] ?? t.status} />
               </div>
             ))}
           </div>
 
-          {(stats?.flagged ?? []).length > 0 && (
+          {flaggedCount > 0 && (
             <div style={card}>
               <p style={cardTitle}>Flagged clock-ins this week</p>
               {(stats?.flagged ?? []).map((f: any) => (
-                <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: '#FCEBEB10', borderRadius: 8, marginBottom: 8, border: '0.5px solid #A32D2D40' }}>
-                  <span style={{ fontSize: 13, color: '#EF4444', flex: 1 }}>{(f.profiles as any)?.full_name} — {f.flag_reason}</span>
-                  <span style={{ fontSize: 11, color: '#6B7280' }}>{timeAgo(f.clock_in)}</span>
+                <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: colors.redSurface, borderRadius: 8, marginBottom: 8, border: `1px solid ${tint(colors.red, 0.4)}` }}>
+                  <Icon name="alert" size={15} style={{ color: colors.red }} />
+                  <span style={{ fontSize: 14, color: colors.text, flex: 1, minWidth: 0 }}>
+                    <strong style={{ color: colors.red, fontWeight: 600 }}>{(f.profiles as any)?.full_name}</strong> — {f.flag_reason}
+                  </span>
+                  <span style={{ fontSize: 12, color: colors.text3, whiteSpace: 'nowrap' }}>{timeAgo(f.clock_in)}</span>
                 </div>
               ))}
             </div>
           )}
         </div>
 
-        <div>
+        <div style={{ minWidth: 0 }}>
           <div style={card}>
             <p style={cardTitle}>Clocked in now</p>
-            {(stats?.clockedIn ?? []).length === 0 && <p style={{ color: '#4B5563', fontSize: 13 }}>Nobody clocked in yet.</p>}
+            {stats === undefined && <ListSkeleton rows={2} />}
+            {stats !== undefined && (stats.clockedIn ?? []).length === 0 && (
+              <EmptyState compact title="Nobody clocked in yet" message="Crew members appear here when they clock in from the mobile app." actionLabel="View timesheet" onAction={() => navigate('/timesheet')} />
+            )}
             {(stats?.clockedIn ?? []).map((e: any) => (
-              <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '0.5px solid #1F2937' }}>
-                <div style={{ width: 28, height: 28, borderRadius: 14, background: '#1F2937', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: '#F97316', flexShrink: 0 }}>
-                  {initials((e.profiles as any)?.full_name ?? '?')}
+              <div key={e.id} style={listRow}>
+                {avatar((e.profiles as any)?.full_name ?? '?')}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={rowTitle}>{(e.profiles as any)?.full_name}</div>
+                  <div style={rowMeta}>Since {formatTime(e.clock_in)} · {(e.project as any)?.name ?? 'No project'}</div>
                 </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 500 }}>{(e.profiles as any)?.full_name}</div>
-                  <div style={{ fontSize: 11, color: '#6B7280' }}>Since {formatTime(e.clock_in)} · {(e.project as any)?.name ?? 'No project'}</div>
-                </div>
-                <div style={{ width: 7, height: 7, borderRadius: 4, background: '#1D9E75', flexShrink: 0 }} />
+                <LiveDot />
               </div>
             ))}
           </div>
 
           <div style={card}>
-            <p style={cardTitle}>Recent Activity</p>
-            {(activity ?? []).length === 0 && (
-              <p style={{ color: '#4B5563', fontSize: 13 }}>No recent activity.</p>
+            <p style={cardTitle}>Recent activity</p>
+            {activity === undefined && <ListSkeleton />}
+            {activity !== undefined && activity.length === 0 && (
+              <EmptyState compact title="No recent activity" message="Comments, status changes and reports from your team show up here." actionLabel="Go to Projects" onAction={() => navigate('/projects')} />
             )}
             {(activity ?? []).map((n: any) => (
               <div
                 key={n.id}
+                className={n.project_id ? 'fo-row' : undefined}
                 onClick={() => { if (n.project_id) window.location.href = `/projects/${n.project_id}`; }}
-                style={{ display: 'flex', gap: 10, padding: '9px 0', borderBottom: '0.5px solid #1F2937', alignItems: 'flex-start', cursor: n.project_id ? 'pointer' : 'default', borderRadius: 6 }}
-                onMouseOver={(e) => { if (n.project_id) (e.currentTarget as HTMLDivElement).style.background = '#1F293740'; }}
-                onMouseOut={(e) => { (e.currentTarget as HTMLDivElement).style.background = 'transparent'; }}
+                style={{ ...listRow, alignItems: 'flex-start', cursor: n.project_id ? 'pointer' : 'default' }}
               >
-                <div style={{ width: 7, height: 7, borderRadius: 4, marginTop: 5, flexShrink: 0, background: n.title?.includes('Comment') ? '#378ADD' : n.title?.includes('Status') ? '#F97316' : n.title?.includes('Report') ? '#1D9E75' : '#6B7280' }} />
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, lineHeight: 1.5, color: '#FFFFFF' }}>{n.body}</div>
-                  <div style={{ fontSize: 11, color: '#4B5563', marginTop: 2 }}>{timeAgo(n.created_at)}</div>
+                <div style={{ width: 8, height: 8, borderRadius: 4, marginTop: 6, flexShrink: 0, background: n.title?.includes('Comment') ? colors.blue : n.title?.includes('Status') ? colors.amber : n.title?.includes('Report') ? colors.green : colors.gray }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14, lineHeight: 1.5, color: colors.text }}>{n.body}</div>
+                  <div style={rowMeta}>{timeAgo(n.created_at)}</div>
                 </div>
               </div>
             ))}
@@ -603,113 +592,96 @@ function PMDashboard({ currentUserId }: { currentUserId: string }) {
     staleTime: 0,
   });
 
-  const barColors = ['#378ADD', '#EF9F27', '#1D9E75', '#E24B4A'];
   const openTasks = (tasks ?? []).filter((t: any) => t.status === 'open').length;
   const inProgressTasks = (tasks ?? []).filter((t: any) => t.status === 'in_progress').length;
+  // Queries that are disabled until the project list arrives stay undefined when there are no projects.
+  const noProjects = pmProjects !== undefined && projectIds.length === 0;
+  const tasksReady = tasks !== undefined || noProjects;
+  const crewReady = crew !== undefined || noProjects;
+  const reportsReady = reports !== undefined || noProjects;
 
   return (
-    <div style={{ padding: isMobile ? 16 : 32, color: '#FFFFFF' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24, flexWrap: 'wrap', gap: 10 }}>
-        <div>
-          <h1 style={{ fontSize: 26, fontWeight: 700, margin: '0 0 4px' }}>My Projects</h1>
-          <p style={{ color: '#6B7280', fontSize: 13, margin: 0 }}>Overview of projects you're managing</p>
-        </div>
-        <div style={{ fontSize: 12, color: '#6B7280', background: '#111827', border: '0.5px solid #1F2937', borderRadius: 8, padding: '6px 12px' }}>{today}</div>
+    <div style={{ padding: isMobile ? 16 : 32, color: colors.text }}>
+      <PageHeader title="My Projects" subtitle="Overview of projects you're managing" actions={<DateBadge />} />
+
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, minmax(0, 1fr))' : 'repeat(4, minmax(0, 1fr))', gap: 12, marginBottom: 20 }}>
+        <StatCard label="My projects" tone="accent" value={pmProjects === undefined ? undefined : pmProjects.length} sub="active" />
+        <StatCard label="Open tasks" tone="gray" value={tasksReady ? openTasks : undefined} sub="across my projects" />
+        <StatCard label="Crew on site" tone="green" value={crewReady ? (crew ?? []).length : undefined} sub="clocked in now" />
+        <StatCard label="In progress" tone="blue" value={tasksReady ? inProgressTasks : undefined} sub="tasks" />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: 12, marginBottom: 20 }}>
-        <div style={statCard('#378ADD')}>
-          <p style={{ fontSize: 12, color: '#6B7280', margin: '0 0 6px' }}>My projects</p>
-          <p style={{ fontSize: 24, fontWeight: 700, margin: 0 }}>{(pmProjects ?? []).length}</p>
-          <p style={{ fontSize: 11, color: '#4B5563', margin: '3px 0 0' }}>active</p>
-        </div>
-        <div style={statCard('#EF9F27')}>
-          <p style={{ fontSize: 12, color: '#6B7280', margin: '0 0 6px' }}>Open tasks</p>
-          <p style={{ fontSize: 24, fontWeight: 700, margin: 0 }}>{openTasks}</p>
-          <p style={{ fontSize: 11, color: '#4B5563', margin: '3px 0 0' }}>across my projects</p>
-        </div>
-        <div style={statCard('#1D9E75')}>
-          <p style={{ fontSize: 12, color: '#6B7280', margin: '0 0 6px' }}>Crew on site</p>
-          <p style={{ fontSize: 24, fontWeight: 700, margin: 0 }}>{(crew ?? []).length}</p>
-          <p style={{ fontSize: 11, color: '#4B5563', margin: '3px 0 0' }}>clocked in now</p>
-        </div>
-        <div style={statCard('#E24B4A')}>
-          <p style={{ fontSize: 12, color: '#6B7280', margin: '0 0 6px' }}>In progress</p>
-          <p style={{ fontSize: 24, fontWeight: 700, margin: 0 }}>{inProgressTasks}</p>
-          <p style={{ fontSize: 11, color: '#4B5563', margin: '3px 0 0' }}>tasks</p>
-        </div>
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 300px', gap: 16 }}>
-        <div>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(0, 1fr) 300px', gap: 16 }}>
+        <div style={{ minWidth: 0 }}>
           <div style={card}>
             <p style={cardTitle}>Project progress</p>
-            {(pmProjects ?? []).length === 0 && <p style={{ color: '#4B5563', fontSize: 13 }}>No projects assigned.</p>}
-            {(pmProjects ?? []).map((p: any, i: number) => {
+            {pmProjects === undefined && <ListSkeleton />}
+            {noProjects && (
+              <EmptyState compact title="No projects assigned" message="Projects you're added to as a manager appear here." actionLabel="Go to Projects" onAction={() => navigate('/projects')} />
+            )}
+            {(pmProjects ?? []).map((p: any) => {
               const prog = projectProgress?.[p.id];
               const pct = prog && prog.total > 0 ? Math.round((prog.completed / prog.total) * 100) : 0;
-              return (
-                <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-                  <span style={{ fontSize: 13, fontWeight: 500, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
-                  <div style={{ flex: 2, height: 5, background: '#1F2937', borderRadius: 3, overflow: 'hidden', minWidth: 80 }}>
-                    <div style={{ height: '100%', width: `${pct}%`, background: barColors[i % barColors.length], borderRadius: 3, transition: 'width 0.4s ease' }} />
-                  </div>
-                  <span style={{ fontSize: 12, color: '#6B7280', minWidth: 36, textAlign: 'right' }}>{pct}%</span>
-                </div>
-              );
+              return <ProgressRow key={p.id} name={p.name} pct={pct} />;
             })}
           </div>
 
           <div style={card}>
             <p style={cardTitle}>Tasks needing attention</p>
-            {(tasks ?? []).length === 0 && <p style={{ color: '#4B5563', fontSize: 13 }}>No open tasks.</p>}
+            {!tasksReady && <ListSkeleton />}
+            {tasksReady && (tasks ?? []).length === 0 && (
+              <EmptyState compact title="No open tasks" message="Open and in-progress tasks on your projects show up here." actionLabel="View tasks" onAction={() => navigate('/tasks')} />
+            )}
             {(tasks ?? []).map((t: any) => (
-              <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', borderBottom: '0.5px solid #1F2937' }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 500 }}>{t.title}</div>
-                  <div style={{ fontSize: 11, color: '#6B7280', marginTop: 2 }}>{(t.project as any)?.name} · {taskAssigneeNames(t)}</div>
+              <div key={t.id} className="fo-row" style={{ ...listRow, flexWrap: 'wrap' }}>
+                <div style={{ flex: '1 1 180px', minWidth: 0 }}>
+                  <div style={rowTitle}>{t.title}</div>
+                  <div style={rowMeta}>{(t.project as any)?.name} · {taskAssigneeNames(t)}</div>
                 </div>
-                <span style={priorityBadge[t.priority] ?? badge('#1F2937', '#9CA3AF')}>{t.priority}</span>
-                <span style={statusBadge[t.status] ?? badge('#1F2937', '#9CA3AF')}>{statusLabel[t.status] ?? t.status}</span>
+                <StatusChip status={t.priority} />
+                <StatusChip status={t.status} label={statusLabel[t.status] ?? t.status} />
               </div>
             ))}
           </div>
         </div>
 
-        <div>
+        <div style={{ minWidth: 0 }}>
           <div style={card}>
             <p style={cardTitle}>Crew on site now</p>
-            {(crew ?? []).length === 0 && <p style={{ color: '#4B5563', fontSize: 13 }}>Nobody clocked in.</p>}
+            {!crewReady && <ListSkeleton rows={2} />}
+            {crewReady && (crew ?? []).length === 0 && (
+              <EmptyState compact title="Nobody on site" message="Crew members appear here when they clock in on one of your projects." actionLabel="View team" onAction={() => navigate('/team')} />
+            )}
             {(crew ?? []).map((e: any) => (
-              <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '0.5px solid #1F2937' }}>
-                <div style={{ width: 28, height: 28, borderRadius: 14, background: '#1F2937', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: '#F97316', flexShrink: 0 }}>
-                  {initials((e.profiles as any)?.full_name ?? '?')}
+              <div key={e.id} style={listRow}>
+                {avatar((e.profiles as any)?.full_name ?? '?')}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={rowTitle}>{(e.profiles as any)?.full_name}</div>
+                  <div style={rowMeta}>{(e.project as any)?.name} · Since {formatTime(e.clock_in)}</div>
                 </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 500 }}>{(e.profiles as any)?.full_name}</div>
-                  <div style={{ fontSize: 11, color: '#6B7280' }}>{(e.project as any)?.name} · Since {formatTime(e.clock_in)}</div>
-                </div>
-                <div style={{ width: 7, height: 7, borderRadius: 4, background: '#1D9E75', flexShrink: 0 }} />
+                <LiveDot />
               </div>
             ))}
           </div>
 
           <div style={card}>
             <p style={cardTitle}>Recent reports</p>
-            {(reports ?? []).length === 0 && <p style={{ color: '#4B5563', fontSize: 13 }}>No reports sent yet.</p>}
+            {!reportsReady && <ListSkeleton rows={2} />}
+            {reportsReady && (reports ?? []).length === 0 && (
+              <EmptyState compact title="No reports sent yet." message="Automatic daily reports appear here after they are emailed." actionLabel="Open Reports" onAction={() => navigate('/reports')} />
+            )}
             {(reports ?? []).map((r: any) => (
               <button
                 key={r.id}
+                className="fo-row"
                 onClick={() => navigate(`/projects/${r.project_id}/daily-reports`)}
-                style={{ display: 'flex', gap: 10, padding: '9px 0', borderTop: 'none', borderLeft: 'none', borderRight: 'none', borderBottom: '0.5px solid #1F2937', alignItems: 'flex-start', width: '100%', background: 'transparent', color: 'inherit', textAlign: 'left', cursor: 'pointer', font: 'inherit' }}
+                style={{ ...listRow, width: 'calc(100% + 16px)', borderTop: 'none', borderLeft: 'none', borderRight: 'none', background: 'transparent', color: 'inherit', textAlign: 'left', font: 'inherit' }}
               >
-                <div style={{ width: 7, height: 7, borderRadius: 4, background: r.status === 'sent' ? '#378ADD' : r.status === 'failed' ? '#E24B4A' : '#EF9F27', marginTop: 5, flexShrink: 0 }} />
-                <div>
-                  <div style={{ fontSize: 13 }}>Daily report: {(r.project as any)?.name}</div>
-                  <div style={{ fontSize: 11, color: '#4B5563', marginTop: 2 }}>
-                    {new Date(r.report_date + 'T12:00:00').toLocaleDateString()} · {r.status === 'sent' ? 'Sent' : r.status === 'failed' ? 'Not delivered' : 'Delivery uncertain'}
-                  </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={rowTitle}>{(r.project as any)?.name}</div>
+                  <div style={rowMeta}>Daily report · {new Date(r.report_date + 'T12:00:00').toLocaleDateString()}</div>
                 </div>
+                <StatusChip status={r.status} />
               </button>
             ))}
           </div>
@@ -721,6 +693,7 @@ function PMDashboard({ currentUserId }: { currentUserId: string }) {
 
 function WorkerDashboard({ currentUserId }: { currentUserId: string }) {
   const isMobile = useIsMobile();
+  const navigate = useNavigate();
   const { data: clockStatus } = useQuery({
     queryKey: ['worker-clock-status', currentUserId],
     queryFn: async () => {
@@ -807,86 +780,105 @@ function WorkerDashboard({ currentUserId }: { currentUserId: string }) {
   const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   const isClockedIn = !!clockStatus;
 
-  return (
-    <div style={{ padding: isMobile ? 16 : 32, color: '#FFFFFF' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24, flexWrap: 'wrap', gap: 10 }}>
-        <div>
-          <h1 style={{ fontSize: 26, fontWeight: 700, margin: '0 0 4px' }}>My Day</h1>
-          <p style={{ color: '#6B7280', fontSize: 13, margin: 0 }}>
-            {isClockedIn ? `On site — ${(clockStatus.project as any)?.name ?? 'No project'}` : 'Not clocked in'}
-          </p>
-        </div>
-        <div style={{ fontSize: 12, color: '#6B7280', background: '#111827', border: '0.5px solid #1F2937', borderRadius: 8, padding: '6px 12px' }}>{today}</div>
-      </div>
+  const hoursReady = weekEntries !== undefined;
 
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 14, marginBottom: 14 }}>
-        <div style={{ background: isClockedIn ? '#0F2D1F' : '#111827', border: `0.5px solid ${isClockedIn ? '#1D9E75' : '#1F2937'}`, borderRadius: 14, padding: 20 }}>
-          <p style={{ fontSize: 13, fontWeight: 600, color: isClockedIn ? '#1D9E75' : '#6B7280', margin: '0 0 4px' }}>
-            {isClockedIn ? 'Clocked in' : 'Clocked out'}
-          </p>
-          <p style={{ fontSize: 12, color: isClockedIn ? '#5DCAA5' : '#4B5563', margin: '0 0 16px' }}>
+  return (
+    <div style={{ padding: isMobile ? 16 : 32, color: colors.text }}>
+      <PageHeader
+        title="My Day"
+        subtitle={isClockedIn ? `On site — ${(clockStatus.project as any)?.name ?? 'No project'}` : 'Not clocked in'}
+        actions={<DateBadge />}
+      />
+
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(0, 1fr) minmax(0, 1fr)', gap: 16, marginBottom: 16 }}>
+        <div style={{ ...baseCard, background: isClockedIn ? tint(colors.green, 0.1) : colors.surface, borderColor: isClockedIn ? colors.green : colors.border }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+            {isClockedIn && <LiveDot />}
+            <span style={{ fontFamily: fonts.display, fontSize: 24, fontWeight: 700, letterSpacing: '0.02em', color: isClockedIn ? colors.green : colors.text }}>
+              {isClockedIn ? 'Clocked in' : 'Clocked out'}
+            </span>
+          </div>
+          <p style={{ fontSize: 14, color: colors.text2, margin: '0 0 14px' }}>
             {isClockedIn ? `Since ${formatTime(clockStatus.clock_in)}` : 'Tap Time Clock to clock in'}
           </p>
-          <div style={{ fontSize: 11, color: '#4B5563', marginTop: 4 }}>Use the Time Clock page to clock in/out</div>
+          <div style={{ fontSize: 12, color: colors.text3 }}>Use the Time Clock page to clock in/out</div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-          <div style={statCard('#378ADD')}>
-            <p style={{ fontSize: 12, color: '#6B7280', margin: '0 0 6px' }}>Today</p>
-            <p style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>{todayHours}h</p>
-          </div>
-          <div style={statCard('#1D9E75')}>
-            <p style={{ fontSize: 12, color: '#6B7280', margin: '0 0 6px' }}>This week</p>
-            <p style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>{weekHours}h</p>
-          </div>
-          <div style={statCard('#EF9F27')}>
-            <p style={{ fontSize: 12, color: '#6B7280', margin: '0 0 6px' }}>Regular</p>
-            <p style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>{regularHours}h</p>
-          </div>
-          <div style={statCard(overtimeHours > 0 ? '#E24B4A' : '#4B5563')}>
-            <p style={{ fontSize: 12, color: '#6B7280', margin: '0 0 6px' }}>Overtime</p>
-            <p style={{ fontSize: 22, fontWeight: 700, margin: 0, color: overtimeHours > 0 ? '#EF4444' : '#FFFFFF' }}>{overtimeHours}h</p>
-          </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12 }}>
+          <StatCard label="Today" tone="accent" value={hoursReady ? `${todayHours}h` : undefined} />
+          <StatCard label="This week" tone="blue" value={hoursReady ? `${weekHours}h` : undefined} />
+          <StatCard label="Regular" tone="green" value={hoursReady ? `${regularHours}h` : undefined} />
+          <StatCard label="Overtime" tone="gray" alert={overtimeHours > 0} value={hoursReady ? `${overtimeHours}h` : undefined} />
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 14 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(0, 1fr) minmax(0, 1fr)', gap: 16 }}>
         <div style={card}>
           <p style={cardTitle}>My tasks</p>
-          {(myTasks ?? []).length === 0 && <p style={{ color: '#4B5563', fontSize: 13 }}>No tasks assigned to you.</p>}
-          {(myTasks ?? []).map((t: any) => (
-            <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', borderBottom: '0.5px solid #1F2937' }}>
-              <div style={{ width: 16, height: 16, borderRadius: 4, border: t.status === 'completed' ? 'none' : '1.5px solid #374151', background: t.status === 'completed' ? '#1D9E75' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                {t.status === 'completed' && <span style={{ color: '#fff', fontSize: 10 }}>✓</span>}
+          {myTasks === undefined && <ListSkeleton />}
+          {myTasks !== undefined && myTasks.length === 0 && (
+            <EmptyState compact title="No tasks assigned to you" message="Tasks your manager assigns to you will show up here." actionLabel="View tasks" onAction={() => navigate('/tasks')} />
+          )}
+          {(myTasks ?? []).map((t: any) => {
+            const done = t.status === 'completed';
+            return (
+              <div key={t.id} className="fo-row" style={listRow}>
+                <div style={{ width: 18, height: 18, borderRadius: 5, border: done ? 'none' : `1.5px solid ${colors.text3}`, background: done ? colors.green : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: colors.onAccent }}>
+                  {done && <Icon name="check" size={12} strokeWidth={3} />}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ ...rowTitle, textDecoration: done ? 'line-through' : 'none', color: done ? colors.text3 : colors.text }}>{t.title}</div>
+                  <div style={rowMeta}>{(t.project as any)?.name}</div>
+                </div>
+                <StatusChip status={t.status} label={statusLabel[t.status] ?? t.status} />
               </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 13, fontWeight: 500, textDecoration: t.status === 'completed' ? 'line-through' : 'none', color: t.status === 'completed' ? '#6B7280' : '#FFFFFF' }}>{t.title}</div>
-                <div style={{ fontSize: 11, color: '#6B7280', marginTop: 2 }}>{(t.project as any)?.name}</div>
-              </div>
-              <span style={statusBadge[t.status] ?? badge('#1F2937', '#9CA3AF')}>{statusLabel[t.status] ?? t.status}</span>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         <div style={card}>
           <p style={cardTitle}>My hours this week</p>
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: 80, marginBottom: 8 }}>
-            {dailyHours.map((h, i) => {
-              const isToday = days[i].toDateString() === new Date().toDateString();
-              return (
-                <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                  <span style={{ fontSize: 10, color: '#6B7280' }}>{h > 0 ? h : ''}</span>
-                  <div style={{ width: '100%', height: h > 0 ? `${Math.round((h / maxHours) * 60)}px` : '4px', background: isToday ? '#F97316' : h > 0 ? '#378ADD' : '#1F2937', borderRadius: '3px 3px 0 0', minHeight: 4 }} />
-                </div>
-              );
-            })}
-          </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            {dayLabels.map((d, i) => (
-              <div key={i} style={{ flex: 1, textAlign: 'center', fontSize: 10, color: days[i].toDateString() === new Date().toDateString() ? '#F97316' : '#6B7280' }}>{d}</div>
-            ))}
-          </div>
+          {!hoursReady ? (
+            <Skeleton height={100} radius={8} />
+          ) : (
+            <>
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: 84, marginBottom: 8 }}>
+                {dailyHours.map((h, i) => {
+                  const isToday = days[i].toDateString() === new Date().toDateString();
+                  return (
+                    <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                      <span style={{ fontSize: 11, fontWeight: 600, color: isToday ? colors.text : colors.text3 }}>{h > 0 ? h : ''}</span>
+                      <div style={{ width: '100%', height: h > 0 ? `${Math.round((h / maxHours) * 60)}px` : '4px', background: h > 0 ? colors.blue : colors.track, borderRadius: '3px 3px 0 0', minHeight: 4, outline: isToday ? `2px solid ${colors.text}` : 'none', outlineOffset: 1 }} />
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                {dayLabels.map((d, i) => {
+                  const isToday = days[i].toDateString() === new Date().toDateString();
+                  return <div key={i} style={{ flex: 1, textAlign: 'center', fontSize: 11, fontWeight: isToday ? 700 : 500, color: isToday ? colors.text : colors.text3 }}>{d}</div>;
+                })}
+              </div>
+            </>
+          )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function DashboardSkeleton() {
+  const isMobile = useIsMobile();
+  return (
+    <div style={{ padding: isMobile ? 16 : 32 }} role="status" aria-label="Loading dashboard">
+      <Skeleton width={220} height={34} />
+      <Skeleton width={280} height={14} style={{ marginTop: 10, marginBottom: 24 }} />
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, minmax(0, 1fr))' : 'repeat(4, minmax(0, 1fr))', gap: 12, marginBottom: 20 }}>
+        {Array.from({ length: 4 }, (_, i) => <Skeleton key={i} height={96} radius={12} />)}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(0, 1fr) 320px', gap: 16 }}>
+        <Skeleton height={220} radius={12} />
+        <Skeleton height={220} radius={12} />
       </div>
     </div>
   );
@@ -898,7 +890,7 @@ export default function DashboardPage() {
   const { data: userRole } = useUserRole();
 
   if (!currentUser || userRole === undefined) {
-    return <div style={{ padding: 32, color: '#F97316' }}>Loading...</div>;
+    return <DashboardSkeleton />;
   }
 
   if (isAdmin) return <AdminDashboard currentUserId={currentUser.id} />;

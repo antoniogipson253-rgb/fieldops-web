@@ -18,6 +18,8 @@
   --accent-hover: #FB923C;
   --on-accent: #0A0F1E;
 
+  --track: #1F2937;
+
   /* Status */
   --status-green: #22C55E;
   --status-blue: #60A5FA;
@@ -111,12 +113,305 @@ button,
   opacity: 0.6;
 }
 
+/* Secondary and ghost buttons: brighten the outline and text on hover */
+.fo-btn-secondary:hover:not(:disabled),
+.fo-btn-ghost:hover:not(:disabled) {
+  filter: none;
+  border-color: var(--text-3) !important;
+  color: var(--text) !important;
+}
+.fo-btn-ghost:hover:not(:disabled) {
+  background-color: var(--surface-2) !important;
+}
+
+/* Clickable card: lifts 1px and its border warms to orange */
 .fo-card-link {
   cursor: pointer;
 }
 .fo-card-link:hover {
   transform: translateY(-1px);
-  box-shadow: 0 0 0 1px rgba(249, 115, 22, 0.45);
+  border-color: rgba(249, 115, 22, 0.7) !important;
+}
+
+/* List rows: hover background. Rows must not set their own inline background. */
+.fo-row {
+  transition: background-color var(--ease);
+}
+.fo-row:hover {
+  background-color: var(--surface-2);
+}
+button.fo-row {
+  cursor: pointer;
+}
+
+/* Tabs */
+.fo-tab {
+  padding: 10px 16px 9px;
+  background: none;
+  border: none;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -1px;
+  color: var(--text-2);
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color var(--ease), border-color var(--ease);
+}
+.fo-tab:hover {
+  color: var(--text);
+}
+.fo-tab.is-active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+/* Pills (folder filter) */
+.fo-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background-color: transparent;
+  color: var(--text-2);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color var(--ease), border-color var(--ease), color var(--ease);
+}
+.fo-pill:hover {
+  border-color: var(--text-3);
+  color: var(--text);
+}
+.fo-pill.is-active,
+.fo-pill.is-active:hover {
+  background-color: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+}
+.fo-pill-count {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  background-color: var(--surface-2);
+  color: var(--text-2);
+}
+.fo-pill.is-active .fo-pill-count {
+  background-color: rgba(10, 15, 30, 0.2);
+  color: var(--on-accent);
+}
+
+/* Visually hidden but read by screen readers */
+.fo-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Grouped folder panel (project page) */
+.fo-folder-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.fo-folder-search {
+  width: 100%;
+  padding: 9px 12px;
+  margin-bottom: 8px;
+  background-color: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  outline: none;
+}
+.fo-folder-search::placeholder {
+  color: var(--text-3);
+}
+.fo-folder-search:focus-visible {
+  border-color: var(--accent);
+}
+.fo-folder-row,
+.fo-folder-group-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  border-radius: var(--radius-control);
+  transition: background-color var(--ease), color var(--ease);
+}
+.fo-folder-row {
+  justify-content: space-between;
+  padding: 7px 10px;
+  color: var(--text-2);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 500;
+}
+.fo-folder-group-list .fo-folder-row {
+  padding-left: 28px;
+}
+.fo-folder-row:hover {
+  background-color: var(--surface-2);
+  color: var(--text);
+}
+.fo-folder-row.is-empty {
+  opacity: 0.55;
+}
+.fo-folder-row.is-active,
+.fo-folder-row.is-active:hover {
+  background-color: var(--accent);
+  color: var(--on-accent);
+  font-weight: 700;
+  opacity: 1;
+}
+.fo-folder-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fo-folder-count {
+  flex-shrink: 0;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  background-color: var(--track, #1F2937);
+  color: var(--text-2);
+}
+.fo-folder-row.is-active .fo-folder-count {
+  background-color: var(--on-accent);
+  color: var(--accent);
+}
+.fo-folder-group {
+  margin-top: 6px;
+}
+.fo-folder-group-header {
+  padding: 7px 8px;
+  color: var(--text-2);
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+.fo-folder-group-header:hover {
+  background-color: var(--surface-2);
+  color: var(--text);
+}
+.fo-folder-group-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fo-chevron {
+  display: inline-flex;
+  transition: transform var(--ease);
+}
+.fo-chevron.is-open {
+  transform: rotate(90deg);
+}
+.fo-folder-group-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 2px;
+}
+.fo-folder-hint {
+  padding: 10px;
+  font-size: 13px;
+  color: var(--text-3);
+}
+.fo-folder-footer {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+/* Desktop column holding the folder panel: sticky, scrolls inside itself */
+.fo-folder-aside {
+  position: sticky;
+  top: 16px;
+  align-self: start;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  padding: 12px;
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+}
+
+/* Phone: bottom sheet */
+.fo-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  background-color: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: flex-end;
+}
+.fo-sheet {
+  width: 100%;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--surface);
+  border-top: 1px solid var(--border);
+  border-radius: 16px 16px 0 0;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.fo-sheet-body {
+  overflow-y: auto;
+  padding: 12px 16px 20px;
+}
+
+/* Calendar day cell */
+.fo-cal-day {
+  min-height: 74px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background-color: var(--surface);
+  cursor: pointer;
+  min-width: 0;
+  transition: border-color var(--ease), background-color var(--ease);
+}
+.fo-cal-day.is-selected {
+  background-color: var(--surface-2);
+}
+.fo-cal-day.is-today {
+  border: 2px solid var(--accent);
+  padding: 5px;
+}
+.fo-cal-day.is-other {
+  opacity: 0.55;
+}
+.fo-cal-day:hover {
+  border-color: var(--accent);
+  background-color: var(--surface-2);
 }
 
 /* Sidebar navigation */

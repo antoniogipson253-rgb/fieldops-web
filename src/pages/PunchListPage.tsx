@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { isPastDue } from '../lib/dates';
 import { useIsAdmin } from '../lib/useIsAdmin';
 import { useUserRole } from '../lib/useIsAdmin';
 
@@ -246,7 +247,7 @@ const { data: punchItems, isLoading: itemsLoading } = useQuery({
                         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                           <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6, fontWeight: 600, background: priorityColors[item.priority] + '20', color: priorityColors[item.priority] }}>{item.priority}</span>
                           {item.due_date && (
-                            <span style={{ fontSize: 11, color: new Date(item.due_date) < new Date() ? '#EF4444' : '#6B7280' }}>
+                            <span style={{ fontSize: 11, color: isPastDue(item.due_date) ? '#EF4444' : '#6B7280' }}>
                               Due {new Date(item.due_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                             </span>
                           )}
