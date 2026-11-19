@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { fetchAllPages } from '../lib/fetchAllPages';
 
 import { btn, card, chip, colors, fonts, input as inputSt, radius, sectionLabel, tint } from '../theme';
 import PageHeader from '../components/ui/PageHeader';
@@ -123,12 +124,17 @@ export default function ClientPortalPage() {
       if (error) throw error;
       const projs = (data ?? []).map((d: any) => d.project).filter(Boolean);
       if (!projs.length) return [];
-      const { data: tasks } = await supabase
-        .from('tasks')
-        .select('project_id, status, archived')
-        .in('project_id', projs.map((p: any) => p.id));
+      // Paged past the 1,000-row cap so a large project's progress is right.
+      // Errors are ignored here as before (progress shows 0).
+      const tasks = await fetchAllPages<any>((from, to) =>
+        supabase
+          .from('tasks')
+          .select('id, project_id, status, archived')
+          .in('project_id', projs.map((p: any) => p.id))
+          .order('id')
+          .range(from, to)).catch(() => [] as any[]);
       return projs.map((p: any) => {
-        const pt = (tasks ?? []).filter((t: any) => t.project_id === p.id);
+        const pt = tasks.filter((t: any) => t.project_id === p.id);
         const done = pt.filter((t: any) => t.status === 'completed' || t.archived).length;
         return { ...p, progress: pt.length > 0 ? Math.round((done / pt.length) * 100) : 0 };
       });
@@ -144,8 +150,10 @@ export default function ClientPortalPage() {
         supabase.from('task_photos').select('*, task:task_id (title, project_id)').eq('task.project_id', selectedProject).order('created_at', { ascending: false }).limit(20),
       ]);
       const folders = foldersRes.data ?? [];
-      const tasksRes = await supabase.from('tasks').select('id, folder_id, status, archived').eq('project_id', selectedProject);
-      const tasks = tasksRes.data ?? [];
+      // Paged past the 1,000-row cap; errors are ignored as before.
+      const tasks = await fetchAllPages<{ id: string; folder_id: string | null; status: string; archived: boolean }>((from, to) =>
+        supabase.from('tasks').select('id, folder_id, status, archived').eq('project_id', selectedProject).order('id').range(from, to)
+      ).catch(() => [] as { id: string; folder_id: string | null; status: string; archived: boolean }[]);
       const foldersWithProgress = folders.map((folder) => {
         const ft = tasks.filter((t) => t.folder_id === folder.id);
         const done = ft.filter((t) => t.status === 'completed' || t.archived);

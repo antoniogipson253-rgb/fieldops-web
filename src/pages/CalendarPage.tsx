@@ -11,6 +11,7 @@ import EmptyState from '../components/ui/EmptyState';
 import Skeleton from '../components/ui/Skeleton';
 import Icon from '../components/ui/Icon';
 import { isPastDue } from '../lib/dates';
+import { chunk, fetchAllPages } from '../lib/fetchAllPages';
 
 // task_assignees is embedded as task_assignees(profile:profiles(full_name)).
 function taskAssigneeNames(task: any): string {
@@ -50,24 +51,33 @@ export default function CalendarPage() {
       // control for non-admins on this page, not cosmetic.
       let taskIdsFilter: string[] | null = null;
       if (!isAdmin && currentUser) {
-        const { data: myAssignments, error: assignErr } = await supabase
-          .from('task_assignees')
-          .select('task_id')
-          .eq('user_id', currentUser.id);
-        if (assignErr) throw assignErr;
-        taskIdsFilter = (myAssignments ?? []).map((a: any) => a.task_id);
+        const myAssignments = await fetchAllPages<{ task_id: string }>((from, to) =>
+          supabase
+            .from('task_assignees')
+            .select('task_id')
+            .eq('user_id', currentUser.id)
+            .order('task_id')
+            .range(from, to));
+        taskIdsFilter = myAssignments.map((a) => a.task_id);
         if (taskIdsFilter.length === 0) return [];
       }
 
-      let query = supabase
-        .from('tasks')
-        .select('id, title, due_date, status, priority, project:project_id(name), task_assignees(profile:profiles(full_name))')
-        .not('due_date', 'is', null)
-        .eq('archived', false);
-      if (taskIdsFilter) query = query.in('id', taskIdsFilter);
-      const { data, error } = await query;
-      if (error) throw error;
-      return data ?? [];
+      // Every scheduled task, paged past the 1,000-row cap. The stat cards (this month, overdue,
+      // total scheduled) need all of them, not just the visible month.
+      const pageOf = (ids: string[] | null) => fetchAllPages<any>((from, to) => {
+        let query = supabase
+          .from('tasks')
+          .select('id, title, due_date, status, priority, project:project_id(name), task_assignees(profile:profiles(full_name))')
+          .not('due_date', 'is', null)
+          .eq('archived', false)
+          .order('due_date', { ascending: true })
+          .order('id', { ascending: true });
+        if (ids) query = query.in('id', ids);
+        return query.range(from, to);
+      });
+      if (!taskIdsFilter) return pageOf(null);
+      const parts = await Promise.all(chunk(taskIdsFilter).map((ids) => pageOf(ids)));
+      return parts.flat();
     },
     enabled: isAdmin !== undefined && !!currentUser,
   });

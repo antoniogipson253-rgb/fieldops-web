@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { chunk, fetchAllPages } from '../lib/fetchAllPages';
 
 // "Edit folder checklist" (Tasks + Checklist projects; company admins and project managers).
 // Every task in the folder shares this checklist. Saving runs save_folder_checklist, one atomic
@@ -62,16 +63,14 @@ export function FolderChecklistEditor({ folder, onClose, onSaved }: { folder: Fo
         } else {
           // No folder checklist saved yet: start from the items the folder's tasks already use,
           // in first-seen order (the same columns the spreadsheet shows for this folder).
-          const { data: tasks, error: tErr } = await supabase.from('tasks')
-            .select('id, created_at, title').eq('folder_id', folder.id).order('created_at').order('title');
-          if (tErr) throw tErr;
-          const ids = (tasks ?? []).map((t: any) => t.id);
+          // Both reads are paged: 150 tasks can carry more than 1,000 checklist rows between them.
+          const tasks = await fetchAllPages<any>((from, to) => supabase.from('tasks')
+            .select('id, created_at, title').eq('folder_id', folder.id).order('created_at').order('title').order('id').range(from, to));
+          const ids = tasks.map((t: any) => t.id);
           const items: any[] = [];
-          for (let i = 0; i < ids.length; i += 150) {
-            const { data, error } = await supabase.from('checklist_items')
-              .select('task_id, item_text, sort_order').in('task_id', ids.slice(i, i + 150));
-            if (error) throw error;
-            items.push(...(data ?? []));
+          for (const part of chunk(ids, 150)) {
+            items.push(...await fetchAllPages<any>((from, to) => supabase.from('checklist_items')
+              .select('id, task_id, item_text, sort_order').in('task_id', part).order('id').range(from, to)));
           }
           const order = new Map(ids.map((id: string, i: number) => [id, i]));
           items.sort((a, b) => (order.get(a.task_id)! - order.get(b.task_id)!) || a.sort_order - b.sort_order);
