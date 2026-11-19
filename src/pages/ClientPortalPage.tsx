@@ -3,22 +3,22 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { useIsMobile } from '../hooks/useIsMobile';
 
-const statusColors: Record<string, string> = { active: '#22C55E', on_hold: '#F59E0B', completed: '#6B7280' };
+import { btn, card, chip, colors, fonts, input as inputSt, radius, sectionLabel, tint } from '../theme';
+import PageHeader from '../components/ui/PageHeader';
+import StatusChip from '../components/ui/StatusChip';
+import EmptyState from '../components/ui/EmptyState';
+import Skeleton from '../components/ui/Skeleton';
+import Icon from '../components/ui/Icon';
+
+// Client-facing portal: same dark tokens as the staff pages, calmer layout, no staff controls.
 const statusLabels: Record<string, string> = { active: 'Active', on_hold: 'On Hold', completed: 'Completed' };
 
-const coStatusColors: Record<string, string> = { sent: '#378ADD', under_review: '#F97316' };
 const coStatusLabels: Record<string, string> = { sent: 'Sent', under_review: 'Under Review' };
 
-function getProgressColor(pct: number) {
-  if (pct >= 100) return '#22C55E';
-  if (pct >= 50) return '#F97316';
-  return '#3B82F6';
-}
-
 function getBudgetColor(pct: number) {
-  if (pct >= 80) return '#EF4444';
-  if (pct >= 50) return '#F97316';
-  return '#22C55E';
+  if (pct >= 80) return colors.red;
+  if (pct >= 50) return colors.amber;
+  return colors.green;
 }
 
 function daysAgo(dateStr: string) {
@@ -36,25 +36,39 @@ function detectAttachmentType(filename: string) {
   return 'other';
 }
 
-const card: React.CSSProperties = {
-  backgroundColor: '#F9FAFB',
-  border: '1px solid #E5E7EB',
-  borderRadius: 12,
-  padding: 24,
-};
+const cardTitle: React.CSSProperties = { ...sectionLabel, fontSize: 12, color: colors.text2, margin: '0 0 14px' };
+const fieldLabel: React.CSSProperties = { display: 'block', fontSize: 12, fontWeight: 600, color: colors.text2, marginBottom: 6 };
 
-const inputSt: React.CSSProperties = {
-  width: '100%',
-  padding: '10px 14px',
-  border: '1px solid #E5E7EB',
-  borderRadius: 8,
-  fontSize: 14,
-  color: '#111827',
-  backgroundColor: '#FFFFFF',
-  outline: 'none',
-  boxSizing: 'border-box',
-  fontFamily: 'inherit',
-};
+function ProgressBar({ pct, height = 8, label }: { pct: number; height?: number; label: string }) {
+  return (
+    <div role="progressbar" aria-label={label} aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} style={{ height, backgroundColor: colors.track, borderRadius: height / 2, overflow: 'hidden' }}>
+      <div style={{ height: '100%', width: `${Math.min(pct, 100)}%`, backgroundColor: colors.accent, borderRadius: height / 2, transition: 'width 0.5s ease' }} />
+    </div>
+  );
+}
+
+function Modal({ title, onClose, children, maxWidth = 520, scroll = false }: { title: string; onClose: () => void; children: React.ReactNode; maxWidth?: number; scroll?: boolean }) {
+  return (
+    <div
+      style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.75)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 2000, padding: 16 }}
+      onClick={onClose}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        style={{ ...card, padding: 24, width: '100%', maxWidth, maxHeight: scroll ? '80vh' : '90vh', overflowY: 'auto' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+          <h3 style={{ margin: 0, fontFamily: fonts.display, fontSize: 24, fontWeight: 700, letterSpacing: '0.02em' }}>{title}</h3>
+          <button type="button" className="fo-icon-btn" aria-label="Close" onClick={onClose}><Icon name="x" size={16} /></button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
 
 export default function ClientPortalPage() {
   const queryClient = useQueryClient();
@@ -344,185 +358,181 @@ export default function ClientPortalPage() {
     setMobileThreadOpen(false);
   }
 
+  const closeCompose = () => { setShowCompose(false); setComposeSubject(''); setComposeBody(''); setComposeFile(null); };
+  const recentThreads = [...threads].sort((a, b) => String(b.lastMsg?.created_at ?? '').localeCompare(String(a.lastMsg?.created_at ?? ''))).slice(0, 3);
+  const photosEnabled = !!(selectedProjectData as any)?.client_photos_enabled;
+
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#FFFFFF', color: '#111827', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}>
-      <style>{`
-        .client-portal-tabs::-webkit-scrollbar { display: none; }
-      `}</style>
-
+    <div style={{ minHeight: '100vh', backgroundColor: colors.bg, color: colors.text, fontFamily: fonts.ui }}>
       {/* Header */}
-      <div style={{ height: 64, backgroundColor: '#FFFFFF', borderBottom: '1px solid #E5E7EB', padding: isMobile ? '0 16px' : '0 32px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, zIndex: 100 }}>
-        <div>
-          <div style={{ fontSize: 15, fontWeight: 900, color: '#111827', letterSpacing: 4 }}>FIELDOPS PRO</div>
-          <div style={{ fontSize: 10, color: '#9CA3AF', fontWeight: 500, letterSpacing: 2, textTransform: 'uppercase' }}>client portal</div>
+      <header style={{ height: 64, backgroundColor: colors.bg, borderBottom: `1px solid ${colors.border}`, padding: isMobile ? '0 16px' : '0 32px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, position: 'sticky', top: 0, zIndex: 100 }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontFamily: fonts.display, fontSize: 20, fontWeight: 700, letterSpacing: '0.06em', lineHeight: 1, whiteSpace: 'nowrap' }}>
+            FIELDOPS<span style={{ color: colors.accent }}> PRO</span>
+          </div>
+          <div style={{ fontSize: 11, color: colors.text3, fontWeight: 600, letterSpacing: '0.12em', textTransform: 'uppercase', marginTop: 3 }}>Client portal</div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 8 : 12 }}>
-          {!isMobile && <span style={{ fontSize: 13, color: '#6B7280' }}>{user?.email}</span>}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+          {!isMobile && <span style={{ fontSize: 13, color: colors.text2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user?.email}</span>}
           <button
+            type="button"
             onClick={() => { setEditNameValue((profile as any)?.full_name ?? ''); setShowEditName(true); }}
-            style={{ padding: isMobile ? '7px 12px' : '7px 16px', backgroundColor: 'transparent', border: '1px solid #E5E7EB', borderRadius: 8, color: '#6B7280', fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}
+            {...btn('ghost', { padding: isMobile ? '7px 10px' : '7px 14px', fontSize: 13, whiteSpace: 'nowrap' })}
           >
-            Edit Name
+            Edit name
           </button>
-          <button onClick={() => supabase.auth.signOut()} style={{ padding: isMobile ? '7px 12px' : '7px 16px', backgroundColor: 'transparent', border: '1px solid #E5E7EB', borderRadius: 8, color: '#6B7280', fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-            Sign Out
+          <button type="button" onClick={() => supabase.auth.signOut()} {...btn('ghost', { padding: isMobile ? '7px 10px' : '7px 14px', fontSize: 13, whiteSpace: 'nowrap' })}>
+            Sign out
           </button>
         </div>
-      </div>
+      </header>
 
-      <div style={{ padding: isMobile ? '20px 16px' : '32px 32px', maxWidth: 1100, margin: '0 auto' }}>
+      <main style={{ padding: isMobile ? '20px 16px' : '32px 32px', maxWidth: 1100, margin: '0 auto' }}>
 
         {/* ===== PROJECT LIST ===== */}
         {!selectedProject ? (
           <>
-            <h1 style={{ fontSize: 28, fontWeight: 800, color: '#111827', marginBottom: 6 }}>Welcome back, {displayName}</h1>
-            <p style={{ color: '#6B7280', fontSize: 15, marginBottom: 32 }}>Here's a live view of your active projects.</p>
+            <PageHeader title={`Welcome back, ${displayName}`} subtitle="Here's a live view of your active projects." />
 
             {projectsLoading ? (
-              <div style={{ color: '#F97316', fontSize: 14 }}>Loading your projects...</div>
-            ) : !projects?.length ? (
-              <div style={{ textAlign: 'center', padding: '80px 0' }}>
-                <div style={{ fontSize: 56, marginBottom: 16 }}>📋</div>
-                <div style={{ fontSize: 20, fontWeight: 700, color: '#111827', marginBottom: 8 }}>No projects yet</div>
-                <div style={{ fontSize: 14, color: '#6B7280' }}>Your contractor hasn't added you to any projects yet.</div>
+              <div role="status" aria-label="Loading your projects" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 300px), 1fr))', gap: 16 }}>
+                {[0, 1].map((i) => <Skeleton key={i} height={180} radius={12} />)}
               </div>
+            ) : !projects?.length ? (
+              <EmptyState title="No projects yet" message="Your contractor hasn't added you to any projects yet." />
             ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(300px, 1fr))', gap: 20 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 300px), 1fr))', gap: 16 }}>
                 {projects.map((project: any) => (
-                  <div
+                  <button
                     key={project.id}
+                    type="button"
+                    className="fo-card fo-card-link"
                     onClick={() => { setSelectedProject(project.id); setActiveTab('overview'); }}
-                    style={{ ...card, cursor: 'pointer', transition: 'box-shadow 0.2s, transform 0.15s', padding: 28 }}
-                    onMouseOver={(e) => { (e.currentTarget as HTMLDivElement).style.boxShadow = '0 8px 24px rgba(0,0,0,0.09)'; (e.currentTarget as HTMLDivElement).style.transform = 'translateY(-2px)'; }}
-                    onMouseOut={(e) => { (e.currentTarget as HTMLDivElement).style.boxShadow = 'none'; (e.currentTarget as HTMLDivElement).style.transform = 'none'; }}
+                    style={{ ...card, padding: 22, textAlign: 'left', color: colors.text, font: 'inherit', display: 'flex', flexDirection: 'column', minWidth: 0 }}
                   >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
-                      <div style={{ fontSize: 17, fontWeight: 700, color: '#111827', flex: 1, marginRight: 12 }}>{project.name}</div>
-                      <span style={{ flexShrink: 0, fontSize: 11, fontWeight: 700, color: statusColors[project.status], backgroundColor: statusColors[project.status] + '18', padding: '3px 10px', borderRadius: 20 }}>
-                        {statusLabels[project.status]}
-                      </span>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 10, width: '100%' }}>
+                      <span style={{ fontFamily: fonts.display, fontSize: 22, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.01em', lineHeight: 1.1, flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>{project.name}</span>
+                      <StatusChip status={project.status} label={statusLabels[project.status]} />
                     </div>
                     {project.description && (
-                      <div style={{ fontSize: 13, color: '#6B7280', marginBottom: 16, lineHeight: 1.6 }}>
+                      <span style={{ fontSize: 13, color: colors.text2, marginBottom: 14, lineHeight: 1.6, overflowWrap: 'anywhere' }}>
                         {project.description.length > 100 ? project.description.slice(0, 100) + '…' : project.description}
-                      </div>
+                      </span>
                     )}
-                    <div style={{ marginBottom: 16 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                        <span style={{ fontSize: 12, color: '#6B7280' }}>Progress</span>
-                        <span style={{ fontSize: 12, fontWeight: 700, color: getProgressColor(project.progress ?? 0) }}>{project.progress ?? 0}%</span>
-                      </div>
-                      <div style={{ height: 6, backgroundColor: '#E5E7EB', borderRadius: 3, overflow: 'hidden' }}>
-                        <div style={{ height: '100%', width: `${project.progress ?? 0}%`, backgroundColor: getProgressColor(project.progress ?? 0), borderRadius: 3 }} />
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontSize: 12, color: '#9CA3AF' }}>Created {new Date(project.created_at).toLocaleDateString()}</span>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: '#F97316' }}>View Project →</span>
-                    </div>
-                  </div>
+                    <span style={{ display: 'block', width: '100%', marginTop: 'auto', marginBottom: 14 }}>
+                      <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+                        <span style={{ fontSize: 12, color: colors.text2 }}>Progress</span>
+                        <span style={{ fontFamily: fonts.display, fontSize: 20, fontWeight: 700 }}>{project.progress ?? 0}%</span>
+                      </span>
+                      <ProgressBar pct={project.progress ?? 0} height={6} label={`${project.name} progress`} />
+                    </span>
+                    <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', gap: 8 }}>
+                      <span style={{ fontSize: 12, color: colors.text3 }}>Created {new Date(project.created_at).toLocaleDateString()}</span>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: colors.text, display: 'inline-flex', alignItems: 'center', gap: 6 }}>View project <Icon name="arrow-right" size={14} /></span>
+                    </span>
+                  </button>
                 ))}
               </div>
             )}
           </>
         ) : (
           <>
-            <button onClick={goBack} style={{ backgroundColor: 'transparent', border: 'none', color: '#F97316', fontSize: 14, fontWeight: 600, cursor: 'pointer', padding: 0, marginBottom: 20 }}>
-              ← Back to Projects
-            </button>
-
             {/* Project header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
-              <div>
-                <h1 style={{ fontSize: 26, fontWeight: 800, color: '#111827', margin: '0 0 4px' }}>{selectedProjectData?.name}</h1>
-                {selectedProjectData?.description && <p style={{ color: '#6B7280', fontSize: 14, margin: 0 }}>{selectedProjectData.description}</p>}
-              </div>
-              {selectedProjectData?.status && (
-                <span style={{ fontSize: 12, fontWeight: 700, color: statusColors[selectedProjectData.status], backgroundColor: statusColors[selectedProjectData.status] + '18', padding: '5px 14px', borderRadius: 20 }}>
-                  {statusLabels[selectedProjectData.status]}
-                </span>
-              )}
-            </div>
+            <PageHeader
+              breadcrumb={[{ label: 'Your projects', onClick: goBack }, { label: selectedProjectData?.name ?? 'Project' }]}
+              title={selectedProjectData?.name ?? ''}
+              subtitle={selectedProjectData?.description || undefined}
+              actions={
+                <>
+                  {selectedProjectData?.status && <StatusChip status={selectedProjectData.status} label={statusLabels[selectedProjectData.status]} />}
+                  <button type="button" onClick={goBack} {...btn('secondary')}>
+                    <Icon name="chevron-left" size={14} /> Back to projects
+                  </button>
+                </>
+              }
+            />
 
             {/* Change orders banner */}
             {!!pendingCOs?.length && (
-              <div style={{ backgroundColor: '#FFF7ED', border: '1px solid #FED7AA', borderRadius: 10, padding: '14px 20px', marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <span>📋</span>
-                  <span style={{ fontSize: 14, fontWeight: 600, color: '#92400E' }}>
+              <div role="status" style={{ ...card, backgroundColor: tint(colors.amber, 0.08), borderColor: tint(colors.amber, 0.5), padding: '14px 18px', marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: colors.amber, minWidth: 0 }}>
+                  <Icon name="clipboard" size={18} />
+                  <span style={{ fontSize: 14, fontWeight: 600, color: colors.text }}>
                     You have {pendingCOs.length} change order{pendingCOs.length > 1 ? 's' : ''} awaiting your review
                   </span>
                 </div>
-                <button
-                  onClick={() => setShowChangeOrders(true)}
-                  style={{ padding: '7px 16px', backgroundColor: '#F97316', border: 'none', borderRadius: 8, color: '#FFFFFF', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}
-                >
-                  View Details
+                <button type="button" onClick={() => setShowChangeOrders(true)} {...btn('primary', { padding: '8px 16px', fontSize: 13 })}>
+                  View details
                 </button>
               </div>
             )}
 
             {/* Tab bar */}
-            <div className="client-portal-tabs" style={{ display: 'flex', borderBottom: '2px solid #E5E7EB', marginBottom: 28, gap: 0, overflowX: 'auto', scrollbarWidth: 'none' as const }}>
+            <div role="tablist" aria-label="Project sections" style={{ display: 'flex', borderBottom: `1px solid ${colors.border}`, marginBottom: 24, overflowX: 'auto', scrollbarWidth: 'none' as const }}>
               {([
                 { key: 'overview' as const, label: 'Overview' },
                 { key: 'photos' as const, label: 'Site Photos' },
                 { key: 'messages' as const, label: 'Messages', dot: hasUnreadMessages },
-              ].filter((t) => t.key !== 'photos' || !!(selectedProjectData as any)?.client_photos_enabled) as Array<{ key: typeof activeTab; label: string; dot?: boolean }>).map((tab) => (
+              ].filter((t) => t.key !== 'photos' || photosEnabled) as Array<{ key: typeof activeTab; label: string; dot?: boolean }>).map((tab) => (
                 <button
                   key={tab.key}
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab === tab.key}
+                  className={`fo-tab${activeTab === tab.key ? ' is-active' : ''}`}
                   onClick={() => setActiveTab(tab.key)}
-                  style={{ padding: '12px 20px', backgroundColor: 'transparent', border: 'none', borderBottom: `2px solid ${activeTab === tab.key ? '#F97316' : 'transparent'}`, marginBottom: -2, color: activeTab === tab.key ? '#F97316' : '#6B7280', fontSize: 14, fontWeight: activeTab === tab.key ? 700 : 500, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: isMobile ? '10px 12px 9px' : undefined }}
                 >
                   {tab.label}
-                  {'dot' in tab && tab.dot && <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: '#F97316', display: 'inline-block' }} />}
+                  {'dot' in tab && tab.dot && <span aria-label="unread" style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: colors.blue, display: 'inline-block' }} />}
                 </button>
               ))}
             </div>
 
             {projectLoading ? (
-              <div style={{ color: '#F97316', fontSize: 14, padding: '40px 0' }}>Loading project data...</div>
+              <div role="status" aria-label="Loading project" style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(0, 3fr) minmax(0, 2fr)', gap: 20 }}>
+                <Skeleton height={160} radius={12} />
+                <Skeleton height={160} radius={12} />
+              </div>
             ) : (
               <>
                 {/* ===== OVERVIEW ===== */}
                 {activeTab === 'overview' && projectData && (
-                  <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: 24, flexWrap: 'wrap' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(0, 3fr) minmax(0, 2fr)', gap: 20, alignItems: 'start' }}>
                     {/* Left column */}
-                    <div style={{ flex: isMobile ? '1 1 auto' : '3 1 300px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 20 }}>
+                    <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 20 }}>
 
                       {/* Progress */}
                       <div style={card}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-                          <span style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>Project Progress</span>
-                          <span style={{ fontSize: 28, fontWeight: 900, color: getProgressColor(projectData.projectProgress) }}>{projectData.projectProgress}%</span>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, marginBottom: 12 }}>
+                          <p style={{ ...cardTitle, margin: 0 }}>Project progress</p>
+                          <span style={{ fontFamily: fonts.display, fontSize: 40, fontWeight: 700, lineHeight: 1 }}>{projectData.projectProgress}%</span>
                         </div>
-                        <div style={{ height: 10, backgroundColor: '#E5E7EB', borderRadius: 5, overflow: 'hidden', marginBottom: 10 }}>
-                          <div style={{ height: '100%', width: `${projectData.projectProgress}%`, backgroundColor: getProgressColor(projectData.projectProgress), borderRadius: 5, transition: 'width 0.5s ease' }} />
-                        </div>
-                        <span style={{ fontSize: 13, color: '#6B7280' }}>{projectData.completedTasks} of {projectData.totalTasks} tasks completed</span>
+                        <ProgressBar pct={projectData.projectProgress} height={10} label="Project progress" />
+                        <div style={{ fontSize: 13, color: colors.text2, marginTop: 10 }}>{projectData.completedTasks} of {projectData.totalTasks} tasks completed</div>
                       </div>
 
                       {/* Budget summary — only when budget is set */}
                       {budget && (
                         <div style={card}>
-                          <div style={{ fontSize: 14, fontWeight: 700, color: '#111827', marginBottom: 16 }}>Budget Summary</div>
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: isMobile ? 8 : 12, marginBottom: 16 }}>
+                          <p style={cardTitle}>Budget summary</p>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: isMobile ? 8 : 12, marginBottom: 16 }}>
                             {[
-                              { label: 'Budget', value: `$${budget.budgetAmount.toLocaleString()}`, color: '#111827' },
+                              { label: 'Budget', value: `$${budget.budgetAmount.toLocaleString()}`, color: colors.text },
                               { label: 'Spent', value: `$${budget.spent.toLocaleString()}`, color: getBudgetColor(budget.pct) },
-                              { label: 'Remaining', value: `$${budget.remaining.toLocaleString()}`, color: budget.remaining < 0 ? '#EF4444' : '#22C55E' },
+                              { label: 'Remaining', value: `$${budget.remaining.toLocaleString()}`, color: budget.remaining < 0 ? colors.red : colors.green },
                             ].map((item) => (
-                              <div key={item.label} style={{ textAlign: 'center', backgroundColor: '#FFFFFF', borderRadius: 10, padding: isMobile ? '10px 4px' : '12px 8px', border: '1px solid #E5E7EB', minWidth: 0, overflow: 'hidden' }}>
-                                <div style={{ fontSize: isMobile ? 10 : 11, color: '#9CA3AF', fontWeight: 600, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 1 }}>{item.label}</div>
-                                <div style={{ fontSize: isMobile ? 14 : 17, fontWeight: 800, color: item.color, overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.value}</div>
+                              <div key={item.label} style={{ backgroundColor: colors.bg, borderRadius: radius.control, padding: isMobile ? '10px 8px' : '12px 12px', border: `1px solid ${colors.border}`, minWidth: 0 }}>
+                                <div style={{ ...sectionLabel, fontSize: 10.5, marginBottom: 6 }}>{item.label}</div>
+                                <div style={{ fontFamily: fonts.display, fontSize: isMobile ? 18 : 22, fontWeight: 700, color: item.color, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.value}</div>
                               </div>
                             ))}
                           </div>
                           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                            <span style={{ fontSize: 12, color: '#6B7280' }}>Budget used</span>
+                            <span style={{ fontSize: 12, color: colors.text2 }}>Budget used</span>
                             <span style={{ fontSize: 12, fontWeight: 700, color: getBudgetColor(budget.pct) }}>{budget.pct}%</span>
                           </div>
-                          <div style={{ height: 8, backgroundColor: '#E5E7EB', borderRadius: 4, overflow: 'hidden' }}>
+                          <div style={{ height: 8, backgroundColor: colors.track, borderRadius: 4, overflow: 'hidden' }}>
                             <div style={{ height: '100%', width: `${Math.min(budget.pct, 100)}%`, backgroundColor: getBudgetColor(budget.pct), borderRadius: 4, transition: 'width 0.5s ease' }} />
                           </div>
                         </div>
@@ -531,18 +541,16 @@ export default function ClientPortalPage() {
                       {/* Work breakdown */}
                       {projectData.folders.length > 0 && (
                         <div style={card}>
-                          <div style={{ fontSize: 14, fontWeight: 700, color: '#111827', marginBottom: 16 }}>Work Breakdown</div>
+                          <p style={cardTitle}>Work breakdown</p>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                             {projectData.folders.map((folder: any) => (
                               <div key={folder.id}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                                  <span style={{ fontSize: 13, fontWeight: 600, color: '#111827' }}>📁 {folder.name}</span>
-                                  <span style={{ fontSize: 13, fontWeight: 700, color: getProgressColor(folder.pct) }}>{folder.pct}%</span>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, marginBottom: 6 }}>
+                                  <span style={{ fontSize: 14, fontWeight: 600, minWidth: 0, overflowWrap: 'anywhere' }}>{folder.name}</span>
+                                  <span style={{ fontFamily: fonts.display, fontSize: 18, fontWeight: 700 }}>{folder.pct}%</span>
                                 </div>
-                                <div style={{ height: 5, backgroundColor: '#E5E7EB', borderRadius: 3, overflow: 'hidden', marginBottom: 4 }}>
-                                  <div style={{ height: '100%', width: `${folder.pct}%`, backgroundColor: getProgressColor(folder.pct), borderRadius: 3 }} />
-                                </div>
-                                <span style={{ fontSize: 11, color: '#9CA3AF' }}>{folder.completed_count} of {folder.task_count} tasks done</span>
+                                <ProgressBar pct={folder.pct} height={5} label={`${folder.name} progress`} />
+                                <span style={{ display: 'block', fontSize: 12, color: colors.text3, marginTop: 4 }}>{folder.completed_count} of {folder.task_count} tasks done</span>
                               </div>
                             ))}
                           </div>
@@ -551,38 +559,71 @@ export default function ClientPortalPage() {
                     </div>
 
                     {/* Right column */}
-                    <div style={{ flex: isMobile ? '1 1 auto' : '2 1 240px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 20 }}>
+                    <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 20 }}>
 
-                      {/* Project details */}
+                      {/* Task summary */}
                       <div style={card}>
-                        <div style={{ fontSize: 14, fontWeight: 700, color: '#111827', marginBottom: 16 }}>Project Details</div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+                        <p style={cardTitle}>Task summary</p>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
                           {[
-                            { label: 'Status', value: statusLabels[selectedProjectData?.status], valueColor: statusColors[selectedProjectData?.status] },
-                            { label: 'Created', value: new Date(selectedProjectData?.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }), valueColor: '#111827' },
-                            ...(projectData.lastUpdatedAt ? [{ label: 'Last Updated', value: daysAgo(projectData.lastUpdatedAt), valueColor: '#111827' }] : []),
-                          ].map((item, i, arr) => (
-                            <div key={item.label} style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderBottom: i < arr.length - 1 ? '1px solid #E5E7EB' : 'none' }}>
-                              <span style={{ fontSize: 13, color: '#6B7280' }}>{item.label}</span>
-                              <span style={{ fontSize: 13, fontWeight: 700, color: item.valueColor }}>{item.value}</span>
+                            { label: 'Total', value: projectData.totalTasks, color: colors.text },
+                            { label: 'Completed', value: projectData.completedTasks, color: colors.green },
+                            { label: 'In progress', value: projectData.inProgressTasks, color: colors.blue },
+                            { label: 'Open', value: projectData.openTasks, color: colors.text2 },
+                          ].map((s) => (
+                            <div key={s.label} style={{ backgroundColor: colors.bg, borderRadius: radius.control, padding: '12px 12px', border: `1px solid ${colors.border}`, minWidth: 0 }}>
+                              <div style={{ fontFamily: fonts.display, fontSize: 28, fontWeight: 700, lineHeight: 1, color: s.color, marginBottom: 6 }}>{s.value.toLocaleString()}</div>
+                              <div style={{ ...sectionLabel, fontSize: 10.5 }}>{s.label}</div>
                             </div>
                           ))}
                         </div>
                       </div>
 
-                      {/* Task summary */}
+                      {/* Recent updates (from data this page already loads) */}
                       <div style={card}>
-                        <div style={{ fontSize: 14, fontWeight: 700, color: '#111827', marginBottom: 16 }}>Task Summary</div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                        <p style={cardTitle}>Recent updates</p>
+                        {recentThreads.length === 0 && !projectData.lastUpdatedAt ? (
+                          <p style={{ fontSize: 13, color: colors.text2, margin: 0 }}>No updates yet. Messages from your contractor will show here.</p>
+                        ) : (
+                          <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            {recentThreads.map((t, i) => {
+                              const from = t.lastMsg?.sender_type === 'client' ? 'You' : ((t.lastMsg?.sender as any)?.full_name ?? 'Contractor');
+                              return (
+                                <div key={t.subject} style={{ padding: '10px 0', borderTop: i === 0 ? 'none' : `1px solid ${colors.border}`, minWidth: 0 }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    <Icon name="mail" size={14} style={{ color: colors.text3 }} />
+                                    <span style={{ fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, minWidth: 0 }}>{t.subject}</span>
+                                    {t.hasUnread && <StatusChip status="in_progress" label="New" />}
+                                  </div>
+                                  <div style={{ fontSize: 12, color: colors.text3, marginTop: 3, paddingLeft: 22 }}>{from} · {t.lastMsg?.created_at ? new Date(t.lastMsg.created_at).toLocaleDateString() : ''}</div>
+                                </div>
+                              );
+                            })}
+                            {projectData.lastUpdatedAt && photosEnabled && (
+                              <div style={{ padding: '10px 0', borderTop: recentThreads.length ? `1px solid ${colors.border}` : 'none', display: 'flex', alignItems: 'center', gap: 8, fontSize: 14 }}>
+                                <Icon name="image" size={14} style={{ color: colors.text3 }} />
+                                <span>Latest site photo {daysAgo(projectData.lastUpdatedAt)}</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        <button type="button" onClick={() => setActiveTab('messages')} {...btn('secondary', { width: '100%', marginTop: 12, fontSize: 13, padding: '8px 12px' })}>
+                          Open messages
+                        </button>
+                      </div>
+
+                      {/* Project details */}
+                      <div style={card}>
+                        <p style={cardTitle}>Project details</p>
+                        <div style={{ display: 'flex', flexDirection: 'column' }}>
                           {[
-                            { label: 'Total', value: projectData.totalTasks, color: '#111827' },
-                            { label: 'Completed', value: projectData.completedTasks, color: '#22C55E' },
-                            { label: 'In Progress', value: projectData.inProgressTasks, color: '#F97316' },
-                            { label: 'Open', value: projectData.openTasks, color: '#6B7280' },
-                          ].map((s) => (
-                            <div key={s.label} style={{ backgroundColor: '#FFFFFF', borderRadius: 10, padding: isMobile ? '12px 10px' : '14px 12px', border: '1px solid #E5E7EB', textAlign: 'center', minWidth: 0 }}>
-                              <div style={{ fontSize: isMobile ? 22 : 26, fontWeight: 900, color: s.color, marginBottom: 4 }}>{s.value}</div>
-                              <div style={{ fontSize: isMobile ? 10 : 11, color: '#9CA3AF', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1 }}>{s.label}</div>
+                            { label: 'Status', value: <StatusChip status={selectedProjectData?.status} label={statusLabels[selectedProjectData?.status]} /> },
+                            { label: 'Created', value: new Date(selectedProjectData?.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) },
+                            ...(projectData.lastUpdatedAt ? [{ label: 'Last Updated', value: daysAgo(projectData.lastUpdatedAt) }] : []),
+                          ].map((item, i, arr) => (
+                            <div key={item.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '11px 0', borderBottom: i < arr.length - 1 ? `1px solid ${colors.border}` : 'none' }}>
+                              <span style={{ fontSize: 13, color: colors.text2 }}>{item.label}</span>
+                              <span style={{ fontSize: 13, fontWeight: 600, textAlign: 'right' }}>{item.value}</span>
                             </div>
                           ))}
                         </div>
@@ -594,17 +635,20 @@ export default function ClientPortalPage() {
                 {/* ===== SITE PHOTOS ===== */}
                 {activeTab === 'photos' && (
                   !projectData?.photos.length ? (
-                    <div style={{ ...card, textAlign: 'center', padding: '60px 0' }}>
-                      <div style={{ fontSize: 48, marginBottom: 12 }}>📸</div>
-                      <div style={{ fontSize: 18, fontWeight: 700, color: '#111827', marginBottom: 8 }}>No site photos yet</div>
-                      <div style={{ fontSize: 14, color: '#6B7280' }}>Photos taken during work will appear here.</div>
-                    </div>
+                    <EmptyState title="No site photos yet" message="Photos taken during work will appear here." />
                   ) : (
-                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, minmax(0, 1fr))' : 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12 }}>
                       {projectData.photos.map((photo: any) => (
-                        <div key={photo.id} onClick={() => setViewingPhoto(photo.url)} style={{ aspectRatio: '1', borderRadius: 10, overflow: 'hidden', cursor: 'pointer', backgroundColor: '#F3F4F6', border: '1px solid #E5E7EB' }}>
-                          <img src={photo.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', transition: 'opacity 0.15s' }} onMouseOver={(e) => ((e.target as HTMLImageElement).style.opacity = '0.8')} onMouseOut={(e) => ((e.target as HTMLImageElement).style.opacity = '1')} />
-                        </div>
+                        <button
+                          key={photo.id}
+                          type="button"
+                          className="fo-card-link"
+                          aria-label="View photo"
+                          onClick={() => setViewingPhoto(photo.url)}
+                          style={{ aspectRatio: '1', borderRadius: radius.card, overflow: 'hidden', padding: 0, backgroundColor: colors.surface, border: `1px solid ${colors.border}` }}
+                        >
+                          <img src={photo.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                        </button>
                       ))}
                     </div>
                   )
@@ -612,262 +656,245 @@ export default function ClientPortalPage() {
 
                 {/* ===== MESSAGES ===== */}
                 {activeTab === 'messages' && (
-                    <div style={{ ...card, padding: 0, display: 'flex', minHeight: 520, overflow: 'hidden' }}>
-                      {/* Thread list */}
-                      {(!isMobile || !mobileThreadOpen) && (
-                        <div style={{ width: isMobile ? '100%' : '30%', borderRight: isMobile ? 'none' : '1px solid #E5E7EB', display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
-                          <div style={{ padding: '14px 16px', borderBottom: '1px solid #E5E7EB', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span style={{ fontSize: 13, fontWeight: 700, color: '#111827' }}>Conversations</span>
-                            <button onClick={() => setShowCompose(true)} style={{ padding: '5px 12px', backgroundColor: '#F97316', border: 'none', borderRadius: 6, color: '#FFFFFF', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>+ New</button>
-                          </div>
-                          <div style={{ overflowY: 'auto', flex: 1 }}>
-                            {!threads.length && (
-                              <div style={{ textAlign: 'center', padding: '40px 20px' }}>
-                                <div style={{ fontSize: 28, marginBottom: 8 }}>✉️</div>
-                                <div style={{ fontSize: 13, fontWeight: 600, color: '#6B7280', marginBottom: 4 }}>No conversations yet</div>
-                                <div style={{ fontSize: 12, color: '#9CA3AF' }}>Tap "+ New" to start one.</div>
-                              </div>
-                            )}
-                            {threads.map((thread) => {
-                              const isSelected = !isMobile && selectedThread === thread.subject;
-                              const lastMsg = thread.lastMsg;
-                              const preview = lastMsg?.message?.slice(0, 55) ?? '';
-                              const senderName = (lastMsg?.sender as any)?.full_name ?? (lastMsg?.sender_type === 'client' ? 'You' : 'Contractor');
-                              return (
-                                <div key={thread.subject} onClick={() => selectThread(thread.subject)} style={{ padding: '14px 16px', cursor: 'pointer', borderBottom: '1px solid #E5E7EB', backgroundColor: isSelected ? '#FFF7ED' : '#FFFFFF', transition: 'background 0.1s' }}>
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                                    <span style={{ fontSize: 13, fontWeight: 700, color: isSelected ? '#F97316' : '#111827', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginRight: 8 }}>{thread.subject}</span>
-                                    {thread.hasUnread && <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: '#F97316', flexShrink: 0 }} />}
-                                  </div>
-                                  <div style={{ fontSize: 12, color: '#6B7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 4 }}>{preview || '—'}</div>
-                                  <div style={{ fontSize: 11, color: '#9CA3AF' }}>{senderName} · {lastMsg?.created_at ? new Date(lastMsg.created_at).toLocaleDateString() : ''}</div>
-                                </div>
-                              );
-                            })}
-                          </div>
+                  <div style={{ ...card, padding: 0, display: 'flex', minHeight: 520, overflow: 'hidden' }}>
+                    {/* Thread list */}
+                    {(!isMobile || !mobileThreadOpen) && (
+                      <div style={{ width: isMobile ? '100%' : '32%', borderRight: isMobile ? 'none' : `1px solid ${colors.border}`, display: 'flex', flexDirection: 'column', flexShrink: 0, minWidth: 0 }}>
+                        <div style={{ padding: '12px 16px', borderBottom: `1px solid ${colors.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                          <span style={{ ...sectionLabel, fontSize: 12, color: colors.text2 }}>Conversations</span>
+                          <button type="button" onClick={() => setShowCompose(true)} {...btn('primary', { padding: '6px 12px', fontSize: 13 })}>
+                            <Icon name="plus" size={13} strokeWidth={2.75} /> New
+                          </button>
                         </div>
-                      )}
+                        <div style={{ overflowY: 'auto', flex: 1 }}>
+                          {!threads.length && (
+                            <EmptyState compact title="No conversations yet" message='Tap "New" to start one.' />
+                          )}
+                          {threads.map((thread) => {
+                            const isSelected = !isMobile && selectedThread === thread.subject;
+                            const lastMsg = thread.lastMsg;
+                            const preview = lastMsg?.message?.slice(0, 55) ?? '';
+                            const senderName = (lastMsg?.sender as any)?.full_name ?? (lastMsg?.sender_type === 'client' ? 'You' : 'Contractor');
+                            return (
+                              <button
+                                key={thread.subject}
+                                type="button"
+                                className={isSelected ? undefined : 'fo-row'}
+                                onClick={() => selectThread(thread.subject)}
+                                aria-current={isSelected ? 'true' : undefined}
+                                style={{ display: 'block', width: '100%', textAlign: 'left', font: 'inherit', color: colors.text, padding: '12px 16px', border: 'none', borderBottom: `1px solid ${colors.border}`, cursor: 'pointer', background: isSelected ? tint(colors.accent, 0.1) : 'transparent', boxShadow: isSelected ? `inset 3px 0 0 ${colors.accent}` : 'none' }}
+                              >
+                                <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                                  <span style={{ fontSize: 14, fontWeight: 700, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{thread.subject}</span>
+                                  {thread.hasUnread && <span aria-label="unread" style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: colors.blue, flexShrink: 0 }} />}
+                                </span>
+                                <span style={{ display: 'block', fontSize: 13, color: colors.text2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 4 }}>{preview || '—'}</span>
+                                <span style={{ display: 'block', fontSize: 12, color: colors.text3 }}>{senderName} · {lastMsg?.created_at ? new Date(lastMsg.created_at).toLocaleDateString() : ''}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
 
-                      {/* Thread detail */}
-                      {(!isMobile || mobileThreadOpen) && (
-                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-                          {!selectedThread ? (
-                            <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', color: '#9CA3AF', fontSize: 14 }}>
-                              Select a conversation to view messages
+                    {/* Thread detail */}
+                    {(!isMobile || mobileThreadOpen) && (
+                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                        {!selectedThread ? (
+                          <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', color: colors.text2, fontSize: 14, padding: 20, textAlign: 'center' }}>
+                            Select a conversation to view messages
+                          </div>
+                        ) : (
+                          <>
+                            <div style={{ padding: '12px 16px', borderBottom: `1px solid ${colors.border}`, display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                              {isMobile && (
+                                <button type="button" className="fo-icon-btn" aria-label="Back to conversations" onClick={() => setMobileThreadOpen(false)}>
+                                  <Icon name="chevron-left" size={16} />
+                                </button>
+                              )}
+                              <span style={{ fontSize: 15, fontWeight: 700, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{selectedThread}</span>
+                              <span style={{ fontSize: 12, color: colors.text3, flexShrink: 0 }}>{selectedMessages.length} message{selectedMessages.length !== 1 ? 's' : ''}</span>
                             </div>
-                          ) : (
-                            <>
-                              <div style={{ padding: '14px 20px', borderBottom: '1px solid #E5E7EB', display: 'flex', alignItems: 'center', gap: 12 }}>
-                                {isMobile && (
-                                  <button onClick={() => setMobileThreadOpen(false)} style={{ backgroundColor: 'transparent', border: 'none', color: '#F97316', fontSize: 13, fontWeight: 600, cursor: 'pointer', padding: 0 }}>←</button>
-                                )}
-                                <span style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>{selectedThread}</span>
-                                <span style={{ fontSize: 12, color: '#9CA3AF' }}>{selectedMessages.length} message{selectedMessages.length !== 1 ? 's' : ''}</span>
-                              </div>
 
-                              <div style={{ flex: 1, overflowY: 'auto', padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
-                                {selectedMessages.map((msg: any) => {
-                                  const isClient = msg.sender_type === 'client';
-                                  const senderName = isClient ? 'You' : ((msg.sender as any)?.full_name ?? 'Contractor');
-                                  const attachmentUrl = msg.attachment_key
-                                    ? `${process.env.REACT_APP_SUPABASE_URL}/storage/v1/object/public/project-files/${msg.attachment_key}`
-                                    : null;
-                                  const lastMsg = selectedMessages[selectedMessages.length - 1];
-                                  const isLastMsg = msg.id === lastMsg?.id;
-                                  return (
-                                    <div key={msg.id}>
-                                      <div style={{ backgroundColor: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: 10, padding: 16 }}>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, flexWrap: 'wrap', gap: 6 }}>
-                                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                            <span style={{ fontSize: 13, fontWeight: 700, color: '#111827' }}>{senderName}</span>
-                                            <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 4, backgroundColor: isClient ? '#EFF6FF' : '#FFF7ED', color: isClient ? '#3B82F6' : '#F97316' }}>
-                                              {isClient ? 'CLIENT' : 'CONTRACTOR'}
-                                            </span>
-                                          </div>
-                                          <span style={{ fontSize: 11, color: '#9CA3AF' }}>{new Date(msg.created_at).toLocaleString()}</span>
+                            <div style={{ flex: 1, overflowY: 'auto', padding: isMobile ? 12 : 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                              {selectedMessages.map((msg: any) => {
+                                const isClient = msg.sender_type === 'client';
+                                const senderName = isClient ? 'You' : ((msg.sender as any)?.full_name ?? 'Contractor');
+                                const attachmentUrl = msg.attachment_key
+                                  ? `${process.env.REACT_APP_SUPABASE_URL}/storage/v1/object/public/project-files/${msg.attachment_key}`
+                                  : null;
+                                const lastMsg = selectedMessages[selectedMessages.length - 1];
+                                const isLastMsg = msg.id === lastMsg?.id;
+                                return (
+                                  <div key={msg.id}>
+                                    <div style={{ backgroundColor: isClient ? colors.surface2 : colors.bg, border: `1px solid ${colors.border}`, borderRadius: 10, padding: 14 }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexWrap: 'wrap', gap: 6 }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                          <span style={{ fontSize: 13, fontWeight: 700 }}>{senderName}</span>
+                                          <span style={{ ...chip(isClient ? 'in_progress' : 'open'), fontSize: 11, padding: '1px 8px' }}>{isClient ? 'Client' : 'Contractor'}</span>
                                         </div>
-                                        <p style={{ margin: 0, fontSize: 14, color: '#374151', lineHeight: 1.7 }}>{msg.message}</p>
-                                        {attachmentUrl && msg.attachment_name && (
-                                          <a href={attachmentUrl} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginTop: 12, padding: '8px 14px', backgroundColor: '#F9FAFB', border: '1px solid #E5E7EB', borderRadius: 8, textDecoration: 'none', color: '#6B7280', fontSize: 12 }}>
-                                            📎 {msg.attachment_name}
-                                            {msg.attachment_type && <span style={{ fontSize: 10, backgroundColor: '#E5E7EB', padding: '2px 6px', borderRadius: 4 }}>{msg.attachment_type}</span>}
-                                          </a>
-                                        )}
+                                        <span style={{ fontSize: 12, color: colors.text3 }}>{new Date(msg.created_at).toLocaleString()}</span>
                                       </div>
-                                      {/* Read receipt (client messages only) */}
-                                      {isClient && (
-                                        <div style={{ textAlign: 'right', marginTop: 4, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8 }}>
-                                          <span style={{ fontSize: 11, color: msg.read_by_admin ? '#22C55E' : '#9CA3AF', fontWeight: 500 }}>
-                                            {msg.read_by_admin ? '✓ Read' : 'Sent'}
-                                          </span>
-                                          {isLastMsg && !msg.read_by_admin && (
-                                            <span style={{ fontSize: 11, color: '#9CA3AF' }}>· Your contractor has been notified</span>
-                                          )}
-                                        </div>
+                                      <p style={{ margin: 0, fontSize: 14, color: colors.text, lineHeight: 1.65, overflowWrap: 'anywhere', whiteSpace: 'pre-wrap' }}>{msg.message}</p>
+                                      {attachmentUrl && msg.attachment_name && (
+                                        <a href={attachmentUrl} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginTop: 10, padding: '7px 12px', backgroundColor: colors.surface, border: `1px solid ${colors.border}`, borderRadius: radius.control, textDecoration: 'none', color: colors.text, fontSize: 13, maxWidth: '100%' }}>
+                                          <Icon name="paperclip" size={14} />
+                                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{msg.attachment_name}</span>
+                                          {msg.attachment_type && <span style={{ ...chip('open'), fontSize: 11, padding: '1px 7px' }}>{msg.attachment_type}</span>}
+                                        </a>
                                       )}
                                     </div>
-                                  );
-                                })}
-                                <div ref={threadEndRef} />
-                              </div>
-
-                              {/* Reply box */}
-                              <div style={{ padding: '16px 20px', borderTop: '1px solid #E5E7EB' }}>
-                                {replyFile && (
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, padding: '8px 12px', backgroundColor: '#F9FAFB', borderRadius: 8, border: '1px solid #E5E7EB' }}>
-                                    <span style={{ fontSize: 12, color: '#6B7280', flex: 1 }}>📎 {replyFile.name}</span>
-                                    <button onClick={() => setReplyFile(null)} style={{ backgroundColor: 'transparent', border: 'none', color: '#9CA3AF', cursor: 'pointer', fontSize: 14 }}>✕</button>
+                                    {/* Read receipt (client messages only) */}
+                                    {isClient && (
+                                      <div style={{ marginTop: 4, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                        <span style={{ fontSize: 12, color: msg.read_by_admin ? colors.green : colors.text3, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                          {msg.read_by_admin ? <><Icon name="check" size={12} strokeWidth={3} /> Read</> : 'Sent'}
+                                        </span>
+                                        {isLastMsg && !msg.read_by_admin && (
+                                          <span style={{ fontSize: 12, color: colors.text3 }}>· Your contractor has been notified</span>
+                                        )}
+                                      </div>
+                                    )}
                                   </div>
-                                )}
-                                <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
-                                  <label style={{ cursor: 'pointer', padding: '10px 13px', border: '1px solid #E5E7EB', borderRadius: 8, color: '#6B7280', fontSize: 16, backgroundColor: '#F9FAFB', flexShrink: 0 }} title="Attach file">
-                                    📎
-                                    <input type="file" accept="image/*,application/pdf" onChange={(e) => setReplyFile(e.target.files?.[0] ?? null)} style={{ display: 'none' }} />
-                                  </label>
-                                  <textarea
-                                    value={replyText}
-                                    onChange={(e) => setReplyText(e.target.value)}
-                                    onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSendReply(); }}
-                                    placeholder="Type a reply… (Ctrl+Enter to send)"
-                                    rows={3}
-                                    style={{ ...inputSt, resize: 'none', flex: 1 }}
-                                  />
-                                  <button
-                                    onClick={handleSendReply}
-                                    disabled={sendingReply || !replyText.trim()}
-                                    style={{ padding: '10px 20px', backgroundColor: replyText.trim() ? '#F97316' : '#E5E7EB', border: 'none', borderRadius: 8, color: replyText.trim() ? '#FFFFFF' : '#9CA3AF', fontSize: 14, fontWeight: 700, cursor: replyText.trim() ? 'pointer' : 'not-allowed', minWidth: 72, flexShrink: 0, alignSelf: 'stretch' }}
-                                  >
-                                    {sendingReply ? '…' : 'Send'}
-                                  </button>
+                                );
+                              })}
+                              <div ref={threadEndRef} />
+                            </div>
+
+                            {/* Reply box */}
+                            <div style={{ padding: isMobile ? 12 : '14px 20px', borderTop: `1px solid ${colors.border}` }}>
+                              {replyFile && (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, padding: '6px 10px', backgroundColor: colors.bg, borderRadius: radius.control, border: `1px solid ${colors.border}` }}>
+                                  <Icon name="paperclip" size={14} style={{ color: colors.text2 }} />
+                                  <span style={{ fontSize: 13, color: colors.text2, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{replyFile.name}</span>
+                                  <button type="button" className="fo-icon-btn" aria-label="Remove attachment" onClick={() => setReplyFile(null)} style={{ width: 28, height: 28 }}><Icon name="x" size={14} /></button>
                                 </div>
+                              )}
+                              <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
+                                <label className="fo-icon-btn" title="Attach file" style={{ height: 'auto', minHeight: 44, width: 44 }}>
+                                  <Icon name="paperclip" size={17} />
+                                  <span className="fo-sr-only">Attach file</span>
+                                  <input type="file" accept="image/*,application/pdf" onChange={(e) => setReplyFile(e.target.files?.[0] ?? null)} style={{ display: 'none' }} />
+                                </label>
+                                <label htmlFor="client-reply" className="fo-sr-only">Reply</label>
+                                <textarea
+                                  id="client-reply"
+                                  value={replyText}
+                                  onChange={(e) => setReplyText(e.target.value)}
+                                  onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSendReply(); }}
+                                  placeholder="Type a reply… (Ctrl+Enter to send)"
+                                  rows={3}
+                                  style={{ ...inputSt, resize: 'none', flex: 1, minWidth: 0 }}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={handleSendReply}
+                                  disabled={sendingReply || !replyText.trim()}
+                                  {...btn('primary', { minWidth: 68, flexShrink: 0, padding: '10px 14px' })}
+                                >
+                                  {sendingReply ? '…' : 'Send'}
+                                </button>
                               </div>
-                            </>
-                          )}
-                        </div>
-                      )}
-                    </div>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 )}
               </>
             )}
           </>
         )}
-      </div>
+      </main>
 
       {/* Compose modal */}
       {showCompose && (
-        <div
-          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 2000, padding: 20 }}
-          onClick={() => { setShowCompose(false); setComposeSubject(''); setComposeBody(''); setComposeFile(null); }}
-        >
-          <div style={{ backgroundColor: '#FFFFFF', borderRadius: 14, padding: isMobile ? 20 : 28, width: '100%', maxWidth: isMobile ? 'calc(100% - 32px)' : 540, boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-              <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: '#111827' }}>New Message</h3>
-              <button onClick={() => { setShowCompose(false); setComposeSubject(''); setComposeBody(''); setComposeFile(null); }} style={{ backgroundColor: 'transparent', border: '1px solid #E5E7EB', borderRadius: 8, color: '#6B7280', fontSize: 14, cursor: 'pointer', padding: '4px 10px' }}>✕</button>
-            </div>
-            <div style={{ marginBottom: 14 }}>
-              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#6B7280', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 6 }}>Subject</label>
-              <input type="text" value={composeSubject} onChange={(e) => setComposeSubject(e.target.value)} placeholder="Enter subject..." style={inputSt} />
-            </div>
-            <div style={{ marginBottom: 14 }}>
-              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#6B7280', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 6 }}>Message</label>
-              <textarea value={composeBody} onChange={(e) => setComposeBody(e.target.value)} placeholder="Type your message..." style={{ ...inputSt, resize: 'vertical' as const, minHeight: 120 }} />
-            </div>
-            {composeFile && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, padding: '8px 12px', backgroundColor: '#F9FAFB', borderRadius: 8, border: '1px solid #E5E7EB' }}>
-                <span style={{ fontSize: 12, color: '#6B7280', flex: 1 }}>📎 {composeFile.name}</span>
-                <button onClick={() => setComposeFile(null)} style={{ backgroundColor: 'transparent', border: 'none', color: '#9CA3AF', cursor: 'pointer', fontSize: 14 }}>✕</button>
-              </div>
-            )}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <label style={{ cursor: 'pointer', padding: '9px 14px', border: '1px solid #E5E7EB', borderRadius: 8, color: '#6B7280', fontSize: 13, backgroundColor: '#F9FAFB' }}>
-                📎 Attach file
-                <input type="file" style={{ display: 'none' }} onChange={(e) => setComposeFile(e.target.files?.[0] ?? null)} />
-              </label>
-              <button
-                onClick={handleSendCompose}
-                disabled={!composeSubject.trim() || !composeBody.trim() || sendingCompose}
-                style={{ padding: '10px 24px', backgroundColor: (!composeSubject.trim() || !composeBody.trim() || sendingCompose) ? '#E5E7EB' : '#F97316', border: 'none', borderRadius: 8, color: (!composeSubject.trim() || !composeBody.trim() || sendingCompose) ? '#9CA3AF' : '#FFFFFF', fontSize: 14, fontWeight: 700, cursor: (!composeSubject.trim() || !composeBody.trim() || sendingCompose) ? 'not-allowed' : 'pointer' }}
-              >
-                {sendingCompose ? 'Sending...' : 'Send Message'}
-              </button>
-            </div>
+        <Modal title="New message" onClose={closeCompose} maxWidth={540}>
+          <div style={{ marginBottom: 14 }}>
+            <label htmlFor="compose-subject" style={fieldLabel}>Subject</label>
+            <input id="compose-subject" type="text" value={composeSubject} onChange={(e) => setComposeSubject(e.target.value)} placeholder="Enter subject..." style={inputSt} />
           </div>
-        </div>
+          <div style={{ marginBottom: 14 }}>
+            <label htmlFor="compose-body" style={fieldLabel}>Message</label>
+            <textarea id="compose-body" value={composeBody} onChange={(e) => setComposeBody(e.target.value)} placeholder="Type your message..." style={{ ...inputSt, resize: 'vertical' as const, minHeight: 120 }} />
+          </div>
+          {composeFile && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, padding: '6px 10px', backgroundColor: colors.bg, borderRadius: radius.control, border: `1px solid ${colors.border}` }}>
+              <Icon name="paperclip" size={14} style={{ color: colors.text2 }} />
+              <span style={{ fontSize: 13, color: colors.text2, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{composeFile.name}</span>
+              <button type="button" className="fo-icon-btn" aria-label="Remove attachment" onClick={() => setComposeFile(null)} style={{ width: 28, height: 28 }}><Icon name="x" size={14} /></button>
+            </div>
+          )}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <label className="fo-btn fo-btn-secondary" style={{ ...btn('secondary').style, fontSize: 13 }}>
+              <Icon name="paperclip" size={14} /> Attach file
+              <input type="file" style={{ display: 'none' }} onChange={(e) => setComposeFile(e.target.files?.[0] ?? null)} />
+            </label>
+            <button
+              type="button"
+              onClick={handleSendCompose}
+              disabled={!composeSubject.trim() || !composeBody.trim() || sendingCompose}
+              {...btn('primary')}
+            >
+              {sendingCompose ? 'Sending...' : 'Send message'}
+            </button>
+          </div>
+        </Modal>
       )}
 
       {/* Edit Name modal */}
       {showEditName && (
-        <div
-          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 2000, padding: 20 }}
-          onClick={() => setShowEditName(false)}
-        >
-          <div style={{ backgroundColor: '#FFFFFF', borderRadius: 14, padding: isMobile ? 20 : 28, width: '100%', maxWidth: isMobile ? 'calc(100% - 32px)' : 400, boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-              <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: '#111827' }}>Edit Name</h3>
-              <button onClick={() => setShowEditName(false)} style={{ backgroundColor: 'transparent', border: '1px solid #E5E7EB', borderRadius: 8, color: '#6B7280', fontSize: 14, cursor: 'pointer', padding: '4px 10px' }}>✕</button>
-            </div>
-            <div style={{ marginBottom: 20 }}>
-              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#6B7280', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 6 }}>Full Name</label>
-              <input
-                type="text"
-                value={editNameValue}
-                onChange={(e) => setEditNameValue(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter' && editNameValue.trim()) handleSaveName(); }}
-                placeholder="Enter your name..."
-                autoFocus
-                style={inputSt}
-              />
-            </div>
-            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-              <button onClick={() => setShowEditName(false)} style={{ padding: '10px 20px', backgroundColor: 'transparent', border: '1px solid #E5E7EB', borderRadius: 8, color: '#6B7280', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
-                Cancel
-              </button>
-              <button
-                onClick={handleSaveName}
-                disabled={!editNameValue.trim() || savingName}
-                style={{ padding: '10px 24px', backgroundColor: (!editNameValue.trim() || savingName) ? '#E5E7EB' : '#F97316', border: 'none', borderRadius: 8, color: (!editNameValue.trim() || savingName) ? '#9CA3AF' : '#FFFFFF', fontSize: 14, fontWeight: 700, cursor: (!editNameValue.trim() || savingName) ? 'not-allowed' : 'pointer' }}
-              >
-                {savingName ? 'Saving...' : 'Save'}
-              </button>
-            </div>
+        <Modal title="Edit name" onClose={() => setShowEditName(false)} maxWidth={400}>
+          <div style={{ marginBottom: 20 }}>
+            <label htmlFor="client-full-name" style={fieldLabel}>Full name</label>
+            <input
+              id="client-full-name"
+              type="text"
+              value={editNameValue}
+              onChange={(e) => setEditNameValue(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && editNameValue.trim()) handleSaveName(); }}
+              placeholder="Enter your name..."
+              autoFocus
+              style={inputSt}
+            />
           </div>
-        </div>
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+            <button type="button" onClick={() => setShowEditName(false)} {...btn('secondary')}>
+              Cancel
+            </button>
+            <button type="button" onClick={handleSaveName} disabled={!editNameValue.trim() || savingName} {...btn('primary')}>
+              {savingName ? 'Saving...' : 'Save'}
+            </button>
+          </div>
+        </Modal>
       )}
 
       {/* Change Orders modal */}
       {showChangeOrders && (
-        <div
-          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 2000, padding: 20 }}
-          onClick={() => setShowChangeOrders(false)}
-        >
-          <div style={{ backgroundColor: '#FFFFFF', borderRadius: 14, padding: isMobile ? 20 : 28, width: '100%', maxWidth: isMobile ? 'calc(100% - 32px)' : 480, maxHeight: '80vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-              <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: '#111827' }}>Pending Change Orders</h3>
-              <button onClick={() => setShowChangeOrders(false)} style={{ backgroundColor: 'transparent', border: '1px solid #E5E7EB', borderRadius: 8, color: '#6B7280', fontSize: 14, cursor: 'pointer', padding: '4px 10px' }}>✕</button>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {(pendingCOs ?? []).map((co: any) => (
-                <div key={co.id} style={{ ...card, padding: 16 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, marginBottom: 8 }}>
-                    <span style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>CO #{co.co_number} — {co.title}</span>
-                    <span style={{ flexShrink: 0, fontSize: 11, fontWeight: 700, color: coStatusColors[co.status] ?? '#6B7280', backgroundColor: (coStatusColors[co.status] ?? '#6B7280') + '18', padding: '3px 10px', borderRadius: 20 }}>
-                      {coStatusLabels[co.status] ?? co.status}
-                    </span>
-                  </div>
-                  {co.estimated_cost != null && (
-                    <div style={{ fontSize: 13, color: '#6B7280' }}>Estimated cost: <strong style={{ color: '#111827' }}>${co.estimated_cost.toLocaleString()}</strong></div>
-                  )}
+        <Modal title="Pending change orders" onClose={() => setShowChangeOrders(false)} maxWidth={480} scroll>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {(pendingCOs ?? []).map((co: any) => (
+              <div key={co.id} style={{ backgroundColor: colors.bg, border: `1px solid ${colors.border}`, borderRadius: radius.card, padding: 16 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, marginBottom: 8 }}>
+                  <span style={{ fontSize: 14, fontWeight: 700, minWidth: 0, overflowWrap: 'anywhere' }}>CO #{co.co_number}: {co.title}</span>
+                  <span style={chip('in_progress')}>{coStatusLabels[co.status] ?? co.status}</span>
                 </div>
-              ))}
-            </div>
+                {co.estimated_cost != null && (
+                  <div style={{ fontSize: 13, color: colors.text2 }}>Estimated cost: <strong style={{ fontFamily: fonts.display, fontSize: 17, color: colors.text }}>${co.estimated_cost.toLocaleString()}</strong></div>
+                )}
+              </div>
+            ))}
           </div>
-        </div>
+        </Modal>
       )}
 
       {/* Photo lightbox */}
       {viewingPhoto && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.92)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 2000 }} onClick={() => setViewingPhoto(null)}>
-          <button onClick={() => setViewingPhoto(null)} style={{ position: 'absolute', top: 24, right: 24, backgroundColor: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: 20, color: '#FFFFFF', fontSize: 16, cursor: 'pointer', width: 40, height: 40 }}>✕</button>
+        <div role="dialog" aria-modal="true" aria-label="Photo" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.92)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 2000 }} onClick={() => setViewingPhoto(null)}>
+          <button type="button" className="fo-icon-btn" aria-label="Close photo" onClick={() => setViewingPhoto(null)} style={{ position: 'absolute', top: 20, right: 20, width: 40, height: 40, backgroundColor: 'rgba(17,24,39,0.8)', color: colors.text }}>
+            <Icon name="x" size={18} />
+          </button>
           <img src={viewingPhoto} alt="" style={{ maxWidth: '90vw', maxHeight: '90vh', objectFit: 'contain', borderRadius: 8 }} onClick={(e) => e.stopPropagation()} />
         </div>
       )}

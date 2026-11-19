@@ -3,9 +3,27 @@ import { useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useIsAdmin } from '../lib/useIsAdmin';
+import { useIsMobile } from '../hooks/useIsMobile';
+import { localDateKey } from '../lib/dates';
+import { btn, card, colors, fonts, input as inputBase, radius, tint } from '../theme';
+import PageHeader from '../components/ui/PageHeader';
+import StatCard from '../components/ui/StatCard';
+import StatusChip from '../components/ui/StatusChip';
+import EmptyState from '../components/ui/EmptyState';
+import Skeleton from '../components/ui/Skeleton';
+import SegmentedControl from '../components/ui/SegmentedControl';
+import Icon from '../components/ui/Icon';
+
+/** Exact count from a count-only request (no rows), so projects past 1,000 tasks count correctly. */
+async function countOf(request: PromiseLike<{ count: number | null; error: any }>): Promise<number> {
+  const { count, error } = await request;
+  if (error) throw error;
+  return count ?? 0;
+}
 
 export default function ProjectsPage() {
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const queryClient = useQueryClient();
   const { data: isAdmin } = useIsAdmin();
   const [search, setSearch] = useState('');
@@ -46,6 +64,29 @@ export default function ProjectsPage() {
       }
     },
     enabled: isAdmin !== undefined,
+  });
+
+  // Read-only task counts for the stat row and each card: progress (completed or archived out of all
+  // tasks, the Dashboard's rule), open (active, not done) and overdue. Under 'web-projects' so it
+  // refreshes with the list.
+  const projectIdsKey = (projects ?? []).map((p: any) => p.id).join(',');
+  const { data: taskCounts } = useQuery({
+    queryKey: ['web-projects', 'task-counts', projectIdsKey],
+    queryFn: async () => {
+      const today = localDateKey(new Date());
+      const t = () => supabase.from('tasks').select('id', { count: 'exact', head: true });
+      const rows = await Promise.all((projects ?? []).map(async (p: any) => {
+        const [total, completed, open, overdue] = await Promise.all([
+          countOf(t().eq('project_id', p.id)),
+          countOf(t().eq('project_id', p.id).or('status.eq.completed,archived.eq.true')),
+          countOf(t().eq('project_id', p.id).eq('archived', false).neq('status', 'completed')),
+          countOf(t().eq('project_id', p.id).eq('archived', false).neq('status', 'completed').lt('due_date', today)),
+        ]);
+        return [p.id, { total, completed, open, overdue }] as const;
+      }));
+      return Object.fromEntries(rows) as Record<string, { total: number; completed: number; open: number; overdue: number }>;
+    },
+    enabled: !showArchived && (projects?.length ?? 0) > 0,
   });
 
   const { mutate: archiveProject } = useMutation({
@@ -111,196 +152,228 @@ export default function ProjectsPage() {
     return matchesSearch && matchesStatus;
   });
 
-  const statusColors: Record<string, string> = {
-    active: '#22C55E', completed: '#6B7280', on_hold: '#F97316',
-  };
-
   const statusLabels: Record<string, string> = {
-    active: 'Active', completed: 'Completed', on_hold: 'On Hold',
+    active: 'Active', completed: 'Completed', on_hold: 'On hold',
   };
 
-  const inputStyle: React.CSSProperties = {
-    width: '100%', padding: '10px 14px', backgroundColor: '#1F2937',
-    border: '1px solid #374151', borderRadius: 8, color: '#FFFFFF',
-    fontSize: 14, outline: 'none', boxSizing: 'border-box',
-  };
+  // Totals for the stat row (the projects in view, before search and status filters).
+  const activeCount = (projects ?? []).filter((p: any) => p.status === 'active').length;
+  const openTotal = (projects ?? []).reduce((s: number, p: any) => s + (taskCounts?.[p.id]?.open ?? 0), 0);
+  const overdueTotal = (projects ?? []).reduce((s: number, p: any) => s + (taskCounts?.[p.id]?.overdue ?? 0), 0);
+  const countsPending = (projects?.length ?? 0) > 0 && !taskCounts;
+  const filtersOn = search.trim() !== '' || statusFilter !== 'all';
+
+  const fieldLabel: React.CSSProperties = { display: 'block', fontSize: 12, fontWeight: 600, color: colors.text2, marginBottom: 6 };
+
+  function closeCreate() {
+    setShowCreate(false); setNewName(''); setNewDescription(''); setNewProjectType('regular');
+  }
 
   return (
-    <div style={{ padding: 32, color: '#FFFFFF' }}>
-      {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
-        <div>
-          <h1 style={{ fontSize: 28, fontWeight: 800, margin: 0, marginBottom: 4 }}>
-            {showArchived ? 'Archived Projects' : 'Projects'}
-          </h1>
-          <p style={{ color: '#6B7280', fontSize: 14, margin: 0 }}>
-            {projects?.length ?? 0} {showArchived ? 'archived' : isAdmin ? 'total' : 'assigned'} projects
-          </p>
-        </div>
-        <div style={{ display: 'flex', gap: 10 }}>
-          {isAdmin && !showArchived && (
-            <button
-              onClick={() => setShowCreate(true)}
-              style={{ padding: '10px 20px', backgroundColor: '#F97316', border: 'none', borderRadius: 10, color: '#0A0F1E', fontSize: 14, fontWeight: 800, cursor: 'pointer' }}
-            >
-              + New Project
-            </button>
-          )}
-          {isAdmin && (
-            <button
-              onClick={() => setShowArchived(!showArchived)}
-              style={{ padding: '10px 16px', backgroundColor: showArchived ? '#F97316' : '#111827', border: '1px solid', borderColor: showArchived ? '#F97316' : '#1F2937', borderRadius: 10, color: showArchived ? '#0A0F1E' : '#9CA3AF', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}
-            >
-              {showArchived ? '← Active' : '📦 Archive'}
-            </button>
-          )}
-        </div>
-      </div>
+    <div style={{ padding: isMobile ? 16 : 32, color: colors.text }}>
+      <PageHeader
+        title={showArchived ? 'Archived Projects' : 'Projects'}
+        subtitle={`${projects?.length ?? 0} ${showArchived ? 'archived' : isAdmin ? 'total' : 'assigned'} projects`}
+        actions={
+          <>
+            {isAdmin && (
+              <button type="button" onClick={() => setShowArchived(!showArchived)} {...btn('secondary')}>
+                {showArchived ? <><Icon name="chevron-left" size={14} /> Active projects</> : 'Archived projects'}
+              </button>
+            )}
+            {isAdmin && !showArchived && (
+              <button type="button" onClick={() => setShowCreate(true)} {...btn('primary')}>
+                <Icon name="plus" size={15} strokeWidth={2.5} /> New project
+              </button>
+            )}
+          </>
+        }
+      />
 
-      {/* Create Project Modal */}
+      {/* Stats */}
+      {!showArchived && (
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, minmax(0, 1fr))' : 'repeat(3, minmax(0, 1fr))', gap: 12, marginBottom: 20 }}>
+          <StatCard label="Active projects" tone="accent" value={isLoading ? undefined : activeCount} sub={projects ? `of ${projects.length} ${isAdmin ? 'total' : 'assigned'}` : undefined} />
+          <StatCard label="Open tasks" tone="gray" value={isLoading || countsPending ? undefined : openTotal.toLocaleString()} sub="not done yet" />
+          <StatCard label="Overdue" tone="red" alert={overdueTotal > 0} value={isLoading || countsPending ? undefined : overdueTotal.toLocaleString()} sub="past due date" />
+        </div>
+      )}
+
+      {/* Filters */}
+      {!showArchived && (
+        <div style={{ ...card, padding: isMobile ? 12 : 14, display: 'flex', gap: 10, marginBottom: 20, flexWrap: 'wrap', alignItems: 'center' }}>
+          <div style={{ position: 'relative', flex: '1 1 240px', maxWidth: isMobile ? 'none' : 360, minWidth: 0 }}>
+            <span aria-hidden="true" style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: colors.text3, display: 'inline-flex' }}>
+              <Icon name="search" size={15} />
+            </span>
+            <label htmlFor="project-search" className="fo-sr-only">Search projects</label>
+            <input
+              id="project-search"
+              type="text"
+              placeholder="Search projects..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              style={{ ...inputBase, paddingLeft: 36, backgroundColor: colors.bg }}
+            />
+          </div>
+          <SegmentedControl
+            label="Project status"
+            options={['all', 'active', 'on_hold', 'completed'].map((s) => ({ value: s, label: s === 'all' ? 'All' : statusLabels[s] }))}
+            value={statusFilter}
+            onChange={setStatusFilter}
+            fullWidth={isMobile}
+          />
+        </div>
+      )}
+
+      {/* Projects grid */}
+      {isLoading ? (
+        <div role="status" aria-label="Loading projects" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 300px), 1fr))', gap: 16 }}>
+          {[0, 1, 2, 3, 4, 5].map((i) => <Skeleton key={i} height={196} radius={12} />)}
+        </div>
+      ) : (filtered?.length ?? 0) === 0 ? (
+        showArchived ? (
+          <EmptyState title="No archived projects" message="Archived projects will appear here." />
+        ) : filtersOn && (projects?.length ?? 0) > 0 ? (
+          <EmptyState title="No projects match" message="No projects match this search and status." actionLabel="Clear filters" onAction={() => { setSearch(''); setStatusFilter('all'); }} />
+        ) : (
+          <EmptyState
+            title="No projects found"
+            message={isAdmin ? 'Create your first project to get started.' : 'You have not been added to any projects yet.'}
+            actionLabel={isAdmin ? 'New project' : undefined}
+            onAction={isAdmin ? () => setShowCreate(true) : undefined}
+          />
+        )
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 300px), 1fr))', gap: 16 }}>
+          {filtered?.map((project) => {
+            const counts = taskCounts?.[project.id];
+            const pct = counts && counts.total > 0 ? Math.round((counts.completed / counts.total) * 100) : 0;
+            const hasOverdue = !!counts && counts.overdue > 0;
+            return (
+              <div key={project.id} className={showArchived ? 'fo-card' : 'fo-card fo-card-link'} style={{ ...card, padding: 0, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                <div
+                  onClick={() => !showArchived && navigate(`/projects/${project.id}`)}
+                  style={{ padding: '18px 20px 16px', cursor: showArchived ? 'default' : 'pointer', flex: 1, minWidth: 0 }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 8 }}>
+                    <h3 style={{ fontFamily: fonts.display, fontSize: 22, fontWeight: 700, lineHeight: 1.1, letterSpacing: '0.01em', textTransform: 'uppercase', margin: 0, flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>
+                      {project.name}
+                    </h3>
+                    <StatusChip status={showArchived ? 'archived' : project.status} label={showArchived ? 'Archived' : statusLabels[project.status]} />
+                  </div>
+                  {project.description && (
+                    <p style={{ fontSize: 13, color: colors.text2, margin: '0 0 12px', lineHeight: 1.5, overflowWrap: 'anywhere' }}>{project.description}</p>
+                  )}
+
+                  {!showArchived && (
+                    <>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12 }}>
+                        <div role="progressbar" aria-label={`${project.name} progress`} aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} style={{ flex: 1, height: 6, background: colors.track, borderRadius: 3, overflow: 'hidden' }}>
+                          <div style={{ height: '100%', width: `${pct}%`, background: colors.accent, borderRadius: 3, transition: 'width 0.4s ease' }} />
+                        </div>
+                        <span style={{ fontFamily: fonts.display, fontSize: 18, fontWeight: 700, minWidth: 42, textAlign: 'right' }}>{counts ? `${pct}%` : '–'}</span>
+                      </div>
+                      <div style={{ display: 'flex', gap: 16, marginTop: 10, fontSize: 13, color: colors.text2, flexWrap: 'wrap' }}>
+                        <span>
+                          <strong style={{ fontFamily: fonts.display, fontSize: 17, color: colors.text }}>{counts ? counts.open.toLocaleString() : '–'}</strong> open
+                        </span>
+                        <span style={{ color: hasOverdue ? colors.red : colors.text2, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                          {hasOverdue && <Icon name="alert" size={13} />}
+                          <strong style={{ fontFamily: fonts.display, fontSize: 17, color: hasOverdue ? colors.red : colors.text }}>{counts ? counts.overdue.toLocaleString() : '–'}</strong> overdue
+                        </span>
+                      </div>
+                    </>
+                  )}
+
+                  <div style={{ fontSize: 12, color: colors.text3, marginTop: 12 }}>
+                    Created {new Date(project.created_at).toLocaleDateString()}
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: 8, borderTop: `1px solid ${colors.border}`, padding: '12px 20px', flexWrap: 'wrap' }}>
+                  {showArchived ? (
+                    isAdmin ? (
+                      <>
+                        <button type="button" onClick={() => archiveProject({ projectId: project.id, archived: false })} {...btn('secondary', { flex: 1, padding: '8px 12px', fontSize: 13 })}>Restore</button>
+                        <button type="button" onClick={() => { if (window.confirm(`Permanently delete "${project.name}"?`)) deleteProject(project.id); }} {...btn('danger', { flex: 1, padding: '8px 12px', fontSize: 13 })}>
+                          <Icon name="trash" size={14} /> Delete
+                        </button>
+                      </>
+                    ) : (
+                      <span style={{ fontSize: 13, color: colors.text3, padding: '8px 0' }}>Archived, contact an admin to restore</span>
+                    )
+                  ) : (
+                    <>
+                      <button type="button" onClick={() => navigate(`/projects/${project.id}`)} {...btn('secondary', { flex: 1, padding: '8px 12px', fontSize: 13 })}>
+                        Open <Icon name="arrow-right" size={14} />
+                      </button>
+                      {isAdmin && (
+                        <button type="button" onClick={() => { if (window.confirm(`Archive "${project.name}"?`)) archiveProject({ projectId: project.id, archived: true }); }} {...btn('ghost', { padding: '8px 12px', fontSize: 13 })}>
+                          Archive
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Create project modal */}
       {showCreate && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.75)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
-          <div style={{ backgroundColor: '#111827', borderRadius: 16, padding: 32, width: '100%', maxWidth: 500, border: '1px solid #1F2937' }}>
-            <h3 style={{ margin: '0 0 20px 0', fontSize: 20, fontWeight: 800 }}>Create New Project</h3>
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.75)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: 16 }}>
+          <div role="dialog" aria-modal="true" aria-labelledby="create-project-title" style={{ ...card, padding: isMobile ? 20 : 28, width: '100%', maxWidth: 500, maxHeight: '90vh', overflowY: 'auto' }}>
+            <h3 id="create-project-title" style={{ margin: '0 0 20px', fontFamily: fonts.display, fontSize: 26, fontWeight: 700, letterSpacing: '0.02em' }}>New project</h3>
             <div style={{ marginBottom: 16 }}>
-              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#6B7280', letterSpacing: 2, marginBottom: 6 }}>PROJECT NAME *</label>
-              <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="e.g. MD Anderson Building A" autoFocus style={inputStyle} onKeyDown={(e) => e.key === 'Enter' && handleCreate()} />
+              <label htmlFor="new-project-name" style={fieldLabel}>Project name *</label>
+              <input id="new-project-name" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="e.g. MD Anderson Building A" autoFocus style={inputBase} onKeyDown={(e) => e.key === 'Enter' && handleCreate()} />
             </div>
             <div style={{ marginBottom: 16 }}>
-              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#6B7280', letterSpacing: 2, marginBottom: 6 }}>DESCRIPTION (OPTIONAL)</label>
-              <textarea value={newDescription} onChange={(e) => setNewDescription(e.target.value)} placeholder="Brief description of the project..." style={{ ...inputStyle, resize: 'vertical', minHeight: 80 }} />
+              <label htmlFor="new-project-description" style={fieldLabel}>Description (optional)</label>
+              <textarea id="new-project-description" value={newDescription} onChange={(e) => setNewDescription(e.target.value)} placeholder="Brief description of the project..." style={{ ...inputBase, resize: 'vertical', minHeight: 80 }} />
             </div>
-            <div style={{ marginBottom: 24 }}>
-              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#6B7280', letterSpacing: 2, marginBottom: 6 }}>STATUS</label>
-              <select value={newStatus} onChange={(e) => setNewStatus(e.target.value)} style={{ ...inputStyle, width: 'auto', cursor: 'pointer' }}>
+            <div style={{ marginBottom: 20 }}>
+              <label htmlFor="new-project-status" style={fieldLabel}>Status</label>
+              <select id="new-project-status" value={newStatus} onChange={(e) => setNewStatus(e.target.value)} style={{ ...inputBase, width: 'auto', minWidth: 180, cursor: 'pointer' }}>
                 <option value="active">Active</option>
                 <option value="on_hold">On Hold</option>
                 <option value="completed">Completed</option>
               </select>
             </div>
             <div style={{ marginBottom: 24 }}>
-              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#6B7280', letterSpacing: 2, marginBottom: 8 }}>PROJECT TYPE</label>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <button
-                  type="button"
-                  onClick={() => setNewProjectType('regular')}
-                  style={{
-                    padding: 16, borderRadius: 12, cursor: 'pointer', textAlign: 'left',
-                    backgroundColor: newProjectType === 'regular' ? '#F9731615' : '#1F2937',
-                    border: `1px solid ${newProjectType === 'regular' ? '#F97316' : '#374151'}`,
-                  }}
-                >
-                  <div style={{ fontSize: 22, marginBottom: 6 }}>📋</div>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: '#FFFFFF', marginBottom: 2 }}>Regular Project</div>
-                  <div style={{ fontSize: 11, color: '#6B7280' }}>Standard tasks and folders</div>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setNewProjectType('checklist')}
-                  style={{
-                    padding: 16, borderRadius: 12, cursor: 'pointer', textAlign: 'left',
-                    backgroundColor: newProjectType === 'checklist' ? '#F9731615' : '#1F2937',
-                    border: `1px solid ${newProjectType === 'checklist' ? '#F97316' : '#374151'}`,
-                  }}
-                >
-                  <div style={{ fontSize: 22, marginBottom: 6 }}>✅</div>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: '#FFFFFF', marginBottom: 2 }}>Tasks + Checklist</div>
-                  <div style={{ fontSize: 11, color: '#6B7280' }}>Tasks carry a parts checklist</div>
-                </button>
+              <p style={fieldLabel}>Project type</p>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
+                {([
+                  { key: 'regular' as const, icon: 'clipboard' as const, title: 'Regular project', sub: 'Standard tasks and folders' },
+                  { key: 'checklist' as const, icon: 'check' as const, title: 'Tasks + Checklist', sub: 'Tasks carry a parts checklist' },
+                ]).map((t) => {
+                  const on = newProjectType === t.key;
+                  return (
+                    <button
+                      key={t.key}
+                      type="button"
+                      aria-pressed={on}
+                      onClick={() => setNewProjectType(t.key)}
+                      style={{ padding: 14, borderRadius: radius.card, cursor: 'pointer', textAlign: 'left', minWidth: 0, color: colors.text, backgroundColor: on ? tint(colors.accent, 0.12) : colors.surface2, border: `1px solid ${on ? colors.accent : colors.border}` }}
+                    >
+                      <span style={{ display: 'inline-flex', color: on ? colors.accent : colors.text2, marginBottom: 8 }}><Icon name={t.icon} size={20} strokeWidth={2} /></span>
+                      <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 2 }}>{t.title}</div>
+                      <div style={{ fontSize: 12, color: colors.text2 }}>{t.sub}</div>
+                    </button>
+                  );
+                })}
               </div>
             </div>
             <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={() => { setShowCreate(false); setNewName(''); setNewDescription(''); setNewProjectType('regular'); }} style={{ flex: 1, padding: '12px', backgroundColor: 'transparent', border: '1px solid #374151', borderRadius: 10, color: '#6B7280', fontSize: 14, cursor: 'pointer' }}>Cancel</button>
-              <button onClick={handleCreate} disabled={creating || !newName.trim()} style={{ flex: 2, padding: '12px', backgroundColor: creating || !newName.trim() ? '#374151' : '#F97316', border: 'none', borderRadius: 10, color: creating || !newName.trim() ? '#6B7280' : '#0A0F1E', fontSize: 14, fontWeight: 800, cursor: creating || !newName.trim() ? 'not-allowed' : 'pointer' }}>
-                {creating ? 'Creating...' : 'Create Project'}
+              <button type="button" onClick={closeCreate} {...btn('secondary', { flex: 1 })}>Cancel</button>
+              <button type="button" onClick={handleCreate} disabled={creating || !newName.trim()} {...btn('primary', { flex: 2 })}>
+                {creating ? 'Creating...' : 'Create project'}
               </button>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* Filters */}
-      {!showArchived && (
-        <div style={{ display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
-          <input
-            type="text"
-            placeholder="Search projects..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            style={{ flex: 1, maxWidth: 320, padding: '10px 16px', backgroundColor: '#111827', border: '1px solid #1F2937', borderRadius: 10, color: '#FFFFFF', fontSize: 14, outline: 'none' }}
-          />
-          {['all', 'active', 'on_hold', 'completed'].map((s) => (
-            <button
-              key={s}
-              onClick={() => setStatusFilter(s)}
-              style={{ padding: '10px 16px', backgroundColor: statusFilter === s ? '#F97316' : '#111827', border: '1px solid', borderColor: statusFilter === s ? '#F97316' : '#1F2937', borderRadius: 10, color: statusFilter === s ? '#0A0F1E' : '#9CA3AF', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
-            >
-              {s === 'all' ? 'All' : statusLabels[s]}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* Projects Grid */}
-      {isLoading ? (
-        <div style={{ color: '#F97316' }}>Loading...</div>
-      ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16 }}>
-          {filtered?.map((project) => (
-            <div key={project.id} style={{ backgroundColor: '#111827', borderRadius: 14, padding: 20, border: '1px solid #1F2937', display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div
-                onClick={() => !showArchived && navigate(`/projects/${project.id}`)}
-                style={{ cursor: showArchived ? 'default' : 'pointer' }}
-                onMouseEnter={(e) => { if (!showArchived) (e.currentTarget as HTMLElement).style.opacity = '0.8'; }}
-                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.opacity = '1'; }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
-                  <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0, flex: 1, marginRight: 12 }}>{project.name}</h3>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: showArchived ? '#6B7280' : statusColors[project.status], backgroundColor: (showArchived ? '#6B7280' : statusColors[project.status]) + '20', padding: '3px 10px', borderRadius: 20, whiteSpace: 'nowrap' }}>
-                    {showArchived ? 'Archived' : statusLabels[project.status]}
-                  </span>
-                </div>
-                {project.description && (
-                  <p style={{ fontSize: 13, color: '#6B7280', margin: 0, lineHeight: 1.5 }}>{project.description}</p>
-                )}
-                <div style={{ fontSize: 12, color: '#374151', marginTop: 8 }}>
-                  Created {new Date(project.created_at).toLocaleDateString()}
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', gap: 8, borderTop: '1px solid #1F2937', paddingTop: 12 }}>
-                {showArchived ? (
-                  isAdmin ? (
-                    <>
-                      <button onClick={() => archiveProject({ projectId: project.id, archived: false })} style={{ flex: 1, padding: '8px', backgroundColor: '#22C55E20', border: '1px solid #22C55E', borderRadius: 8, color: '#22C55E', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>↩ Restore</button>
-                      <button onClick={() => { if (window.confirm(`Permanently delete "${project.name}"?`)) deleteProject(project.id); }} style={{ flex: 1, padding: '8px', backgroundColor: '#EF444420', border: '1px solid #EF4444', borderRadius: 8, color: '#EF4444', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>🗑 Delete</button>
-                    </>
-                  ) : (
-                    <span style={{ fontSize: 13, color: '#4B5563', padding: '8px' }}>Archived — contact admin to restore</span>
-                  )
-                ) : (
-                  <>
-                    <button onClick={() => navigate(`/projects/${project.id}`)} style={{ flex: 1, padding: '8px', backgroundColor: '#F97316', border: 'none', borderRadius: 8, color: '#0A0F1E', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Open →</button>
-                    {isAdmin && (
-                      <button onClick={() => { if (window.confirm(`Archive "${project.name}"?`)) archiveProject({ projectId: project.id, archived: true }); }} style={{ padding: '8px 12px', backgroundColor: 'transparent', border: '1px solid #374151', borderRadius: 8, color: '#6B7280', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>📦 Archive</button>
-                    )}
-                  </>
-                )}
-              </div>
-            </div>
-          ))}
-
-          {filtered?.length === 0 && (
-            <div style={{ color: '#4B5563', fontSize: 14, gridColumn: '1/-1', textAlign: 'center', padding: 40 }}>
-              <div style={{ fontSize: 48, marginBottom: 12 }}>📋</div>
-              <div style={{ fontSize: 18, fontWeight: 700, color: '#FFFFFF', marginBottom: 6 }}>
-                {showArchived ? 'No archived projects' : 'No projects found'}
-              </div>
-              <div style={{ fontSize: 14 }}>
-                {showArchived ? 'Archived projects will appear here' : isAdmin ? 'Click "+ New Project" to get started' : 'You have not been added to any projects yet'}
-              </div>
-            </div>
-          )}
         </div>
       )}
     </div>
