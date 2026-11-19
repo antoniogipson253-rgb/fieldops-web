@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect, useRef } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useUserRole } from '../lib/useIsAdmin';
 import { useIsMobile } from '../hooks/useIsMobile';
@@ -28,6 +28,11 @@ const SECTIONS: { key: SectionKey; label: string }[] = [
   { key: 'billing', label: 'Billing' },
 ];
 
+/** Reads ?tab= from the URL; a missing or unknown value falls back to Profile. */
+function tabFromParam(value: string | null): SectionKey {
+  return SECTIONS.some((s) => s.key === value) ? (value as SectionKey) : 'profile';
+}
+
 const labelStyle: React.CSSProperties = { display: 'block', fontSize: 12, fontWeight: 600, color: colors.text2, marginBottom: 6 };
 const cardTitle: React.CSSProperties = { margin: 0, fontFamily: fonts.display, fontSize: 22, fontWeight: 700, letterSpacing: '0.02em', color: colors.text };
 const cardHint: React.CSSProperties = { margin: '4px 0 0', fontSize: 13, color: colors.text3 };
@@ -51,7 +56,10 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false);
   const [profileMsg, setProfileMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const [currentUser, setCurrentUser] = useState<any>(null);
-  const [activeSection, setActiveSection] = useState<SectionKey>('profile');
+  // The selected tab lives in the URL (?tab=security) so refresh, back and direct links keep it.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeSection = tabFromParam(searchParams.get('tab'));
+  const tabRefs = useRef<Record<SectionKey, HTMLButtonElement | null>>({ profile: null, security: null, company: null, billing: null });
 
   // change email
   const [showEmailForm, setShowEmailForm] = useState(false);
@@ -229,8 +237,27 @@ export default function ProfilePage() {
   }
 
   function goTo(key: SectionKey) {
-    setActiveSection(key);
-    document.getElementById(`settings-${key}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (key === activeSection) return;
+    const next = new URLSearchParams(searchParams);
+    next.set('tab', key);
+    setSearchParams(next);
+  }
+
+  // Arrow keys, Home and End move between tabs (and select them), per the WAI-ARIA tabs pattern.
+  function onTabKeyDown(e: React.KeyboardEvent<HTMLButtonElement>) {
+    const i = SECTIONS.findIndex((s) => s.key === activeSection);
+    let n = -1;
+    if (e.key === 'ArrowRight') n = (i + 1) % SECTIONS.length;
+    else if (e.key === 'ArrowLeft') n = (i - 1 + SECTIONS.length) % SECTIONS.length;
+    else if (e.key === 'Home') n = 0;
+    else if (e.key === 'End') n = SECTIONS.length - 1;
+    if (n < 0) return;
+    e.preventDefault();
+    const key = SECTIONS[n].key;
+    goTo(key);
+    const el = tabRefs.current[key];
+    el?.focus();
+    el?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }
 
   const displayName = fullName || profile?.full_name || '';
@@ -244,7 +271,14 @@ export default function ProfilePage() {
   const plan = companyPlan?.plan ?? 'trial';
   const passwordTooShort = newPassword.length > 0 && newPassword.length < MIN_PASSWORD_LENGTH;
 
-  const sectionCard: React.CSSProperties = { ...card, padding: isMobile ? 16 : 24, marginBottom: 16, scrollMarginTop: 16 };
+  const sectionCard: React.CSSProperties = { ...card, padding: isMobile ? 16 : 24, marginBottom: 16 };
+  const panelProps = (key: SectionKey) => ({
+    id: `settings-${key}`,
+    role: 'tabpanel' as const,
+    'aria-labelledby': `settings-tab-${key}`,
+    tabIndex: 0,
+    style: sectionCard,
+  });
   const row: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: '14px 0', borderTop: `1px solid ${colors.border}` };
 
   return (
@@ -280,30 +314,35 @@ export default function ProfilePage() {
             </button>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '200px minmax(0, 1fr)', gap: 20, alignItems: 'start' }}>
-            {/* Section menu: a side list on desktop, chips on phones */}
-            {isMobile ? (
-              <div role="navigation" aria-label="Settings sections" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                {SECTIONS.map((s) => (
-                  <button key={s.key} type="button" className={`fo-pill${activeSection === s.key ? ' is-active' : ''}`} aria-current={activeSection === s.key ? 'true' : undefined} onClick={() => goTo(s.key)}>
-                    {s.label}
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <nav aria-label="Settings sections" style={{ position: 'sticky', top: 16, display: 'flex', flexDirection: 'column', gap: 2 }}>
-                {SECTIONS.map((s) => (
-                  <button key={s.key} type="button" className={`fo-menu-item${activeSection === s.key ? ' is-active' : ''}`} aria-current={activeSection === s.key ? 'true' : undefined} onClick={() => goTo(s.key)}>
-                    {s.label}
-                  </button>
-                ))}
-              </nav>
-            )}
+          {/* Tabs: only the selected section is shown. Scrolls sideways inside the bar on narrow screens. */}
+          <div className="fo-tabbar" role="tablist" aria-label="Settings sections">
+            {SECTIONS.map((s) => {
+              const selected = activeSection === s.key;
+              return (
+                <button
+                  key={s.key}
+                  ref={(el) => { tabRefs.current[s.key] = el; }}
+                  id={`settings-tab-${s.key}`}
+                  type="button"
+                  role="tab"
+                  aria-selected={selected}
+                  aria-controls={`settings-${s.key}`}
+                  tabIndex={selected ? 0 : -1}
+                  className={`fo-tabbar-btn${selected ? ' is-active' : ''}`}
+                  onClick={() => goTo(s.key)}
+                  onKeyDown={onTabKeyDown}
+                >
+                  {s.label}
+                </button>
+              );
+            })}
+          </div>
 
-            <div style={{ minWidth: 0 }}>
+          <div style={{ minWidth: 0, maxWidth: 820 }}>
               {/* Profile */}
-              <section id="settings-profile" style={sectionCard} aria-labelledby="settings-profile-title">
-                <h2 id="settings-profile-title" style={cardTitle}>Profile</h2>
+              {activeSection === 'profile' && (
+              <section {...panelProps('profile')}>
+                <h2 style={cardTitle}>Profile</h2>
                 <p style={cardHint}>Your name and phone number as your team sees them.</p>
                 <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'repeat(2, minmax(0, 1fr))', gap: 14, marginTop: 18 }}>
                   <div>
@@ -322,10 +361,12 @@ export default function ProfilePage() {
                   </button>
                 </div>
               </section>
+              )}
 
               {/* Sign-in and security */}
-              <section id="settings-security" style={sectionCard} aria-labelledby="settings-security-title">
-                <h2 id="settings-security-title" style={cardTitle}>Sign-in and security</h2>
+              {activeSection === 'security' && (
+              <section {...panelProps('security')}>
+                <h2 style={cardTitle}>Sign-in and security</h2>
                 <p style={cardHint}>How you sign in to FieldOps.</p>
                 <div style={{ marginTop: 14 }}>
                   <div style={row}>
@@ -386,10 +427,12 @@ export default function ProfilePage() {
                   )}
                 </div>
               </section>
+              )}
 
               {/* Company */}
-              <section id="settings-company" style={sectionCard} aria-labelledby="settings-company-title">
-                <h2 id="settings-company-title" style={cardTitle}>Company</h2>
+              {activeSection === 'company' && (
+              <section {...panelProps('company')}>
+                <h2 style={cardTitle}>Company</h2>
                 {company ? (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', marginTop: 16 }}>
                     <div aria-hidden="true" style={{ width: 48, height: 48, borderRadius: 10, flexShrink: 0, backgroundColor: colors.surface2, border: `1px solid ${colors.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: fonts.display, fontSize: 24, fontWeight: 700 }}>
@@ -412,10 +455,12 @@ export default function ProfilePage() {
                   <p style={{ ...cardHint, marginTop: 12 }}>You are not part of a company yet. Set up your company from the mobile app.</p>
                 )}
               </section>
+              )}
 
               {/* Billing */}
-              <section id="settings-billing" style={sectionCard} aria-labelledby="settings-billing-title">
-                <h2 id="settings-billing-title" style={cardTitle}>Billing</h2>
+              {activeSection === 'billing' && (
+              <section {...panelProps('billing')}>
+                <h2 style={cardTitle}>Billing</h2>
                 <p style={cardHint}>View invoices, update your payment method, or change your subscription.</p>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginTop: 16 }}>
                   <button type="button" onClick={handleManageBilling} disabled={loadingBilling} {...btn('secondary')}>
@@ -424,7 +469,7 @@ export default function ProfilePage() {
                   {billingMsg && <Message text={billingMsg} ok={false} />}
                 </div>
               </section>
-            </div>
+              )}
           </div>
         </>
       )}
