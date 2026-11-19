@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react';
 
-export type IconName = 'check' | 'x' | 'alert' | 'plus' | 'chevron-left' | 'chevron-right' | 'chevron-down' | 'arrow-right' | 'trash' | 'mail' | 'dollar' | 'clock' | 'clipboard' | 'shield' | 'logout' | 'upload' | 'search';
+export type IconName = 'check' | 'x' | 'alert' | 'plus' | 'chevron-left' | 'chevron-right' | 'chevron-down' | 'arrow-right' | 'trash' | 'mail' | 'dollar' | 'clock' | 'clipboard' | 'shield' | 'logout' | 'upload' | 'search' | 'paperclip' | 'image';
 
 const PATHS: Record<IconName, string> = {
   check: 'M4 12.5l5 5L20 6.5',
@@ -20,6 +20,8 @@ const PATHS: Record<IconName, string> = {
   logout: 'M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10',
   upload: 'M12 16V4M7 9l5-5 5 5M4 16v4h16v-4',
   search: 'M11 18a7 7 0 100-14 7 7 0 000 14zM20 20l-4-4',
+  paperclip: 'M20 11.5l-8.2 8.2a5 5 0 01-7.1-7.1l8.5-8.5a3.4 3.4 0 014.8 4.8L9.6 17.3a1.7 1.7 0 01-2.4-2.4l7.6-7.6',
+  image: 'M4 5h16v14H4zM4 16l5-5 4 4 2-2 5 5M15.5 9.5v.01',
 };
 
 type Props = { name: IconName; size?: number; strokeWidth?: number; style?: CSSProperties; title?: string };

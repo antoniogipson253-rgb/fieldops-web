@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { useIsMobile } from '../hooks/useIsMobile';
+import AuthShell, { AuthField, AuthError } from '../components/AuthShell';
+import Icon from '../components/ui/Icon';
 
 const APP_STORE_URL = 'https://apps.apple.com/app/id6767338478';
 // TODO: Add Google Play button once Android app is published.
@@ -8,7 +9,6 @@ const APP_STORE_URL = 'https://apps.apple.com/app/id6767338478';
 // const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.fieldopspro.app';
 
 export default function AcceptInvitePage() {
-  const isMobile = useIsMobile();
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [loading, setLoading] = useState(false);
@@ -115,126 +115,90 @@ export default function AcceptInvitePage() {
   // Wrong-email-link state: user clicked the branded email CTA instead of the Supabase magic link
   if (noSession) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', backgroundColor: '#0A0F1E', padding: 24 }}>
-        <div style={{ backgroundColor: '#111827', borderRadius: 8, padding: isMobile ? 20 : 40, width: '100%', maxWidth: isMobile ? 'calc(100% - 32px)' : 420, border: '1px solid #1F2937', textAlign: 'center' }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: '#F97316', letterSpacing: 4, marginBottom: 20, textTransform: 'uppercase' as const }}>
-            FieldOps Pro
-          </div>
-          <div style={{ fontSize: 32, marginBottom: 16 }}>📧</div>
-          <h2 style={{ color: '#FFFFFF', fontSize: 20, fontWeight: 800, margin: '0 0 12px 0' }}>
-            Check Your Email
-          </h2>
-          <p style={{ color: '#9CA3AF', fontSize: 14, lineHeight: 1.6, margin: '0 0 0 0' }}>
-            To set up your account, open the <strong style={{ color: '#F97316' }}>FieldOps invitation email</strong> sent by Supabase and click the secure confirmation link inside it.
-          </p>
-          <p style={{ color: '#6B7280', fontSize: 13, marginTop: 16 }}>
-            Once you've clicked that link, this page will let you set your password.
-          </p>
+      <AuthShell title="Check your email" center>
+        <div className="fo-auth-badge" aria-hidden="true" style={{ backgroundColor: 'rgba(249, 115, 22, 0.12)', border: '2px solid #F97316', color: '#F97316' }}>
+          <Icon name="mail" size={24} strokeWidth={2} />
         </div>
-      </div>
+        <p style={{ color: '#C7CDD6', fontSize: 14, lineHeight: 1.6, margin: 0 }}>
+          To set up your account, open the <strong style={{ color: '#F9FAFB' }}>FieldOps invitation email</strong> sent by Supabase and click the secure confirmation link inside it.
+        </p>
+        <p style={{ color: '#C7CDD6', fontSize: 13, lineHeight: 1.5, marginTop: 16 }}>
+          Once you've clicked that link, this page will let you set your password.
+        </p>
+      </AuthShell>
     );
   }
 
   // Loading state while session check runs
   if (!ready) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', backgroundColor: '#0A0F1E', color: '#F97316', fontSize: 24, fontWeight: 'bold', letterSpacing: 4 }}>
-        FIELDOPS
-      </div>
+      <AuthShell title="Activate your account">
+        <div role="status" aria-label="Checking your invitation" style={{ width: 120, height: 3, borderRadius: 2, backgroundColor: '#1A2235', overflow: 'hidden', marginTop: 16 }}>
+          <div className="fo-loading-bar" style={{ width: '40%', height: '100%', borderRadius: 2, backgroundColor: '#F97316' }} />
+        </div>
+      </AuthShell>
     );
   }
 
   // Success state — show after password is set; direct workers to the mobile app
   if (done) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', backgroundColor: '#0A0F1E', padding: 24 }}>
-        <div style={{ backgroundColor: '#111827', borderRadius: 8, padding: isMobile ? 20 : 40, width: '100%', maxWidth: isMobile ? 'calc(100% - 32px)' : 440, border: '1px solid #1F2937', textAlign: 'center' }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: '#F97316', letterSpacing: 4, marginBottom: 20, textTransform: 'uppercase' as const }}>
-            FieldOps Pro
-          </div>
-          <div style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: '#22C55E20', border: '2px solid #22C55E', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px', fontSize: 28 }}>
-            ✓
-          </div>
-          <h2 style={{ color: '#FFFFFF', fontSize: 22, fontWeight: 900, margin: '0 0 10px 0', textTransform: 'uppercase' as const, letterSpacing: 1 }}>
-            Account Activated!
-          </h2>
-          <p style={{ color: '#9CA3AF', fontSize: 14, lineHeight: 1.6, margin: '0 0 28px 0' }}>
-            Your account is ready. Download the <strong style={{ color: '#F97316' }}>FieldOps Pro</strong> mobile app to clock in, view tasks, and get started.
-          </p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <a
-              href={APP_STORE_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, padding: '14px 24px', backgroundColor: '#F97316', borderRadius: 8, color: '#FFFFFF', fontSize: 14, fontWeight: 800, textDecoration: 'none', letterSpacing: 1 }}
-            >
-              <span style={{ fontSize: 18 }}>🍎</span> Download on the App Store
-            </a>
-            {/* TODO: Add Google Play button once Android app is published.
-            <a
-              href="https://play.google.com/store/apps/details?id=com.fieldopspro.app"
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, padding: '14px 24px', backgroundColor: 'transparent', border: '1px solid #374151', borderRadius: 8, color: '#9CA3AF', fontSize: 14, fontWeight: 700, textDecoration: 'none', letterSpacing: 1 }}
-            >
-              <span style={{ fontSize: 18 }}>▶</span> Get it on Google Play
-            </a>
-            */}
-          </div>
-          <p style={{ color: '#4B5563', fontSize: 12, marginTop: 20 }}>
-            Log in with your email and the password you just created.
-          </p>
+      <AuthShell title="Account activated" center>
+        <div className="fo-auth-badge" aria-hidden="true" style={{ backgroundColor: 'rgba(34, 197, 94, 0.12)', border: '2px solid #22C55E', color: '#22C55E' }}>
+          <Icon name="check" size={26} strokeWidth={3} />
         </div>
-      </div>
+        <p style={{ color: '#C7CDD6', fontSize: 14, lineHeight: 1.6, margin: '0 0 24px 0' }}>
+          Your account is ready. Download the <strong style={{ color: '#F9FAFB' }}>FieldOps Pro</strong> mobile app to clock in, view tasks, and get started.
+        </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <a href={APP_STORE_URL} target="_blank" rel="noopener noreferrer" className="fo-auth-btn">
+            Download on the App Store
+          </a>
+          {/* TODO: Add Google Play button once Android app is published.
+          <a
+            href="https://play.google.com/store/apps/details?id=com.fieldopspro.app"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="fo-auth-btn"
+            style={{ backgroundColor: 'transparent', border: '1px solid #2A3445', color: '#F9FAFB' }}
+          >
+            Get it on Google Play
+          </a>
+          */}
+        </div>
+        <p style={{ color: '#C7CDD6', fontSize: 13, marginTop: 20 }}>
+          Log in with your email and the password you just created.
+        </p>
+      </AuthShell>
     );
   }
 
   return (
-    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', backgroundColor: '#0A0F1E' }}>
-      <div style={{ backgroundColor: '#111827', borderRadius: 8, padding: isMobile ? 20 : 40, width: '100%', maxWidth: isMobile ? 'calc(100% - 32px)' : 420, border: '1px solid #1F2937' }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: '#F97316', letterSpacing: 4, marginBottom: 16, textTransform: 'uppercase' as const }}>
-          FieldOps Pro
-        </div>
-        <h2 style={{ color: '#FFFFFF', fontSize: 24, fontWeight: 900, margin: '0 0 8px 0', textTransform: 'uppercase' as const, letterSpacing: 1 }}>
-          Set Your Password
-        </h2>
-        <p style={{ color: '#6B7280', fontSize: 14, margin: '0 0 32px 0' }}>
-          Create a password to activate your account and join your team.
-        </p>
-        <div style={{ marginBottom: 16 }}>
-          <label style={{ color: '#9CA3AF', fontSize: 12, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase' as const, display: 'block', marginBottom: 8 }}>
-            New Password
-          </label>
-          <input
-            type="password"
-            value={password}
-            onChange={e => setPassword(e.target.value)}
-            style={{ width: '100%', padding: '12px 14px', minHeight: isMobile ? 44 : undefined, backgroundColor: '#0A0F1E', border: '1px solid #1F2937', borderRadius: 6, color: '#FFFFFF', fontSize: 14, boxSizing: 'border-box' as const, outline: 'none' }}
-          />
-        </div>
-        <div style={{ marginBottom: 24 }}>
-          <label style={{ color: '#9CA3AF', fontSize: 12, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase' as const, display: 'block', marginBottom: 8 }}>
-            Confirm Password
-          </label>
-          <input
-            type="password"
-            value={confirm}
-            onChange={e => setConfirm(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleSubmit()}
-            style={{ width: '100%', padding: '12px 14px', minHeight: isMobile ? 44 : undefined, backgroundColor: '#0A0F1E', border: '1px solid #1F2937', borderRadius: 6, color: '#FFFFFF', fontSize: 14, boxSizing: 'border-box' as const, outline: 'none' }}
-          />
-        </div>
-        {error && (
-          <div style={{ color: '#EF4444', fontSize: 13, marginBottom: 16 }}>{error}</div>
-        )}
-        <button
-          onClick={handleSubmit}
-          disabled={loading}
-          style={{ width: '100%', padding: '14px', minHeight: isMobile ? 44 : undefined, backgroundColor: '#F97316', border: 'none', borderRadius: 6, color: '#FFFFFF', fontSize: 13, fontWeight: 800, letterSpacing: 2, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1, textTransform: 'uppercase' as const }}
-        >
-          {loading ? 'Activating...' : 'Activate Account'}
+    <AuthShell title="Set your password" subtitle="Create a password to activate your account and join your team.">
+      <AuthField
+        id="invite-password"
+        label="New password"
+        hint="At least 8 characters."
+        type="password"
+        autoComplete="new-password"
+        value={password}
+        onChange={e => setPassword(e.target.value)}
+      />
+      <AuthField
+        id="invite-confirm"
+        label="Confirm password"
+        type="password"
+        autoComplete="new-password"
+        value={confirm}
+        onChange={e => setConfirm(e.target.value)}
+        onKeyDown={e => e.key === 'Enter' && handleSubmit()}
+      />
+      <div style={{ marginTop: 8 }}>
+        {error && <AuthError>{error}</AuthError>}
+        <button type="button" className="fo-auth-btn" onClick={handleSubmit} disabled={loading}>
+          {loading ? 'Activating...' : 'Activate account'}
         </button>
       </div>
-    </div>
+    </AuthShell>
   );
 }
