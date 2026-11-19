@@ -18,7 +18,44 @@ type Settings = {
   last_sent_at: string | null;
   export_email_enabled: boolean;
   export_last_sent_at: string | null;
+  export_frequency: ExportFrequency;
+  export_weekday: number | null;
+  export_last_outcome: 'sent' | 'skipped_no_changes' | 'failed' | null;
+  export_last_outcome_at: string | null;
 };
+
+// "Send when" for the spreadsheet email. Same values as send-project-export.
+type ExportFrequency = 'daily' | 'daily_if_changed' | 'weekly';
+const FREQUENCY_OPTIONS: { value: ExportFrequency; label: string }[] = [
+  { value: 'daily_if_changed', label: 'Daily, only if something changed' },
+  { value: 'daily', label: 'Daily, every day' },
+  { value: 'weekly', label: 'Weekly, only if something changed' },
+];
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+/** Today's weekday (0 = Sunday) in the project's time zone, the default for a new weekly setting. */
+function todayWeekday(timeZone: string): number {
+  try {
+    const name = new Intl.DateTimeFormat('en-US', { timeZone, weekday: 'long' }).format(new Date());
+    const i = WEEKDAYS.indexOf(name);
+    return i >= 0 ? i : 1;
+  } catch {
+    return 1;
+  }
+}
+
+function exportStatusLine(s: Settings | null | undefined): string {
+  if (!s) return '';
+  const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString() : '');
+  const lastSent = s.export_last_sent_at ? ` Last sent ${when(s.export_last_sent_at)}.` : '';
+  if (s.export_last_outcome === 'skipped_no_changes' && s.export_last_outcome_at) {
+    return `${lastSent} Last check ${when(s.export_last_outcome_at)}: not sent, nothing changed since the last email.`;
+  }
+  if (s.export_last_outcome === 'failed' && s.export_last_outcome_at) {
+    return `${lastSent} Last attempt ${when(s.export_last_outcome_at)} could not be delivered; it is retried within 2 hours of the send time.`;
+  }
+  return lastSent;
+}
 
 type RecipientRow = {
   id: string;
@@ -74,7 +111,7 @@ export function DailyReportSettings({ projectId }: { projectId: string }) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('project_report_settings')
-        .select('project_id, enabled, send_time, timezone, last_sent_at, export_email_enabled, export_last_sent_at')
+        .select('project_id, enabled, send_time, timezone, last_sent_at, export_email_enabled, export_last_sent_at, export_frequency, export_weekday, export_last_outcome, export_last_outcome_at')
         .eq('project_id', projectId)
         .maybeSingle();
       if (error) throw error;
@@ -132,6 +169,8 @@ export function DailyReportSettings({ projectId }: { projectId: string }) {
   const [enabled, setEnabled] = useState(false);
   const [exportEmailEnabled, setExportEmailEnabled] = useState(false);
   const [sendTime, setSendTime] = useState('17:00');
+  const [exportFrequency, setExportFrequency] = useState<ExportFrequency>('daily_if_changed');
+  const [exportWeekday, setExportWeekday] = useState<number | null>(null);
   const [testingSheet, setTestingSheet] = useState(false);
   const [sheetTestMessage, setSheetTestMessage] = useState<{ ok: boolean; text: string } | null>(null);
   const [saving, setSaving] = useState(false);
@@ -163,15 +202,20 @@ export function DailyReportSettings({ projectId }: { projectId: string }) {
       setEnabled(settings.enabled);
       setExportEmailEnabled(!!settings.export_email_enabled);
       setSendTime(settings.send_time.slice(0, 5));
+      setExportFrequency(settings.export_frequency ?? 'daily_if_changed');
+      setExportWeekday(settings.export_weekday ?? null);
     }
   }, [settings]);
 
   const timezone = settings?.timezone ?? 'America/Chicago';
   const recipientCount = recipients?.length ?? 0;
   const atCap = recipientCount >= MAX_RECIPIENTS;
+  // The weekday is only stored for weekly; other frequencies save null.
+  const weekdayToSave = exportFrequency === 'weekly' ? (exportWeekday ?? todayWeekday(timezone)) : null;
   const dirty = settings
-    ? (settings.enabled !== enabled || !!settings.export_email_enabled !== exportEmailEnabled || settings.send_time.slice(0, 5) !== sendTime)
-    : (enabled || exportEmailEnabled || sendTime !== '17:00');
+    ? (settings.enabled !== enabled || !!settings.export_email_enabled !== exportEmailEnabled || settings.send_time.slice(0, 5) !== sendTime
+      || (settings.export_frequency ?? 'daily_if_changed') !== exportFrequency || (settings.export_weekday ?? null) !== weekdayToSave)
+    : (enabled || exportEmailEnabled || sendTime !== '17:00' || exportFrequency !== 'daily_if_changed');
 
   // Same resolution as the scheduled send: team member -> profiles.email, external -> stored email.
   const recipientAddress = (r: RecipientRow) => (r.user_id ? r.profile?.email || null : r.email);
@@ -195,8 +239,8 @@ export function DailyReportSettings({ projectId }: { projectId: string }) {
     try {
       // project_id is insert-only for clients, so insert the row once, then update it.
       const { error } = settings
-        ? await supabase.from('project_report_settings').update({ enabled, export_email_enabled: exportEmailEnabled, send_time: sendTime }).eq('project_id', projectId)
-        : await supabase.from('project_report_settings').insert({ project_id: projectId, enabled, export_email_enabled: exportEmailEnabled, send_time: sendTime, timezone });
+        ? await supabase.from('project_report_settings').update({ enabled, export_email_enabled: exportEmailEnabled, send_time: sendTime, export_frequency: exportFrequency, export_weekday: weekdayToSave }).eq('project_id', projectId)
+        : await supabase.from('project_report_settings').insert({ project_id: projectId, enabled, export_email_enabled: exportEmailEnabled, send_time: sendTime, timezone, export_frequency: exportFrequency, export_weekday: weekdayToSave });
       if (error) throw error;
       await queryClient.invalidateQueries({ queryKey: ['report-settings', projectId] });
       setSaveMessage({ ok: true, text: 'Report settings saved.' });
@@ -307,13 +351,50 @@ export function DailyReportSettings({ projectId }: { projectId: string }) {
       <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', marginBottom: 16 }}>
         <input type="checkbox" checked={exportEmailEnabled} onChange={(e) => setExportEmailEnabled(e.target.checked)} style={{ width: 18, height: 18, accentColor: '#F97316', cursor: 'pointer', marginTop: 1 }} />
         <span>
-          <span style={{ display: 'block', fontSize: 14, fontWeight: 600, color: '#FFFFFF' }}>Email the project spreadsheet daily</span>
+          <span style={{ display: 'block', fontSize: 14, fontWeight: 600, color: '#FFFFFF' }}>Email the project spreadsheet</span>
           <span style={{ display: 'block', fontSize: 12, color: '#6B7280', marginTop: 2 }}>
             A separate email with the task spreadsheet attached, sent at the send time below to the recipients below. Not sent on days when the project has no tasks.
-            {settings?.export_last_sent_at ? ` Last sent ${new Date(settings.export_last_sent_at).toLocaleString()}.` : ''}
+            {exportStatusLine(settings)}
           </span>
         </span>
       </label>
+      {exportEmailEnabled && (
+        <div style={{ margin: '-4px 0 16px 28px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div>
+            <label style={label} htmlFor="export-frequency">SEND WHEN</label>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <select
+                id="export-frequency"
+                value={exportFrequency}
+                onChange={(e) => {
+                  const next = e.target.value as ExportFrequency;
+                  setExportFrequency(next);
+                  if (next === 'weekly' && exportWeekday === null) setExportWeekday(todayWeekday(timezone));
+                }}
+                style={{ ...input, flex: '1 1 220px', maxWidth: '100%', cursor: 'pointer' }}
+              >
+                {FREQUENCY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+              {exportFrequency === 'weekly' && (
+                <select
+                  id="export-weekday"
+                  aria-label="Day of the week"
+                  value={weekdayToSave ?? 1}
+                  onChange={(e) => setExportWeekday(Number(e.target.value))}
+                  style={{ ...input, flex: '0 1 160px', cursor: 'pointer' }}
+                >
+                  {WEEKDAYS.map((d, i) => <option key={d} value={i}>{d}</option>)}
+                </select>
+              )}
+            </div>
+          </div>
+          <div style={{ fontSize: 12, color: '#6B7280' }}>
+            {exportFrequency === 'daily' && 'Sent every day at the send time, even if nothing changed.'}
+            {exportFrequency === 'daily_if_changed' && 'Sent at the send time only on days when tasks or checklist items changed since the last spreadsheet email. The first email always goes out.'}
+            {exportFrequency === 'weekly' && `Sent each ${WEEKDAYS[weekdayToSave ?? 1]} at the send time, only if tasks or checklist items changed since the last spreadsheet email. The first email always goes out.`}
+          </div>
+        </div>
+      )}
 
       {/* Send time */}
       <div style={{ marginBottom: 16 }}>
