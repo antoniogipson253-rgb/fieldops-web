@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { supabase } from './lib/supabase';
@@ -253,6 +253,12 @@ function ClientGuard({ session, children }: { session: Session | null; children:
   return <>{children}</>;
 }
 
+/** /settings is an alias for /profile; the query string (for example ?tab=billing) is kept. */
+function SettingsRedirect() {
+  const { search } = useLocation();
+  return <Navigate to={{ pathname: '/profile', search }} replace />;
+}
+
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
@@ -311,6 +317,7 @@ export default function App() {
           <Route path="/files" element={<ClientGuard session={session}><AppLayout><FilesPage /></AppLayout></ClientGuard>} />
           <Route path="/payroll" element={<ClientGuard session={session}><AppLayout><PayrollPage /></AppLayout></ClientGuard>} />
           <Route path="/profile" element={<ClientGuard session={session}><AppLayout><ProfilePage /></AppLayout></ClientGuard>} />
+          <Route path="/settings" element={<SettingsRedirect />} />
           <Route path="/punch-list" element={<ClientGuard session={session}><AppLayout><PunchListPage /></AppLayout></ClientGuard>} />
           <Route path="/incidents" element={<ClientGuard session={session}><AppLayout><IncidentsPage /></AppLayout></ClientGuard>} />
           <Route path="/timesheet" element={<ClientGuard session={session}><AppLayout><TimesheetPage /></AppLayout></ClientGuard>} />
