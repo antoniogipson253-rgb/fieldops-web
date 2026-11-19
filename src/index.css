@@ -169,6 +169,54 @@ button.fo-row {
   border-bottom-color: var(--accent);
 }
 
+/* Tab bar with a solid active tab (Settings). Scrolls sideways inside itself, never the page. */
+.fo-tabbar {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  margin-bottom: 20px;
+  max-width: 100%;
+  width: max-content;
+  overflow-x: auto;
+  scrollbar-width: none;
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+}
+.fo-tabbar::-webkit-scrollbar {
+  display: none;
+}
+.fo-tabbar-btn {
+  flex: 0 0 auto;
+  min-height: 40px;
+  padding: 8px 18px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-2);
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color var(--ease), color var(--ease);
+}
+.fo-tabbar-btn:hover {
+  color: var(--text);
+  background-color: var(--surface-2);
+}
+.fo-tabbar-btn.is-active,
+.fo-tabbar-btn.is-active:hover {
+  background-color: var(--accent);
+  color: var(--on-accent);
+}
+.fo-tabbar-btn:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+
 /* Pills (folder filter) */
 .fo-pill {
   display: inline-flex;
