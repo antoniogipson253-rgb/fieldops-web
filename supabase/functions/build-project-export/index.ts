@@ -10,6 +10,16 @@ import { localDateOf } from '../_shared/schedule.ts';
 //    the project (can_read_project_export, checked AS the caller). Builds a fresh file from the
 //    app's data, stores it as project-exports/<project_id>.xlsx and returns it.
 //    Returned as application/octet-stream so supabase-js functions.invoke hands back a Blob.
+//  - Mobile download (user JWT, body { projectId, format: 'signedUrl' }): same company-isolation
+//    check, PLUS caller must be admin or project_manager (checked here only — can_read_project_export
+//    and the storage RLS policy both stay company-member-wide for web, unchanged). Stores the fresh
+//    file under a separate mobile/<project_id>.xlsx path that the existing storage policy's
+//    project_export_object_project() regex never matches (it only matches a bare "<uuid>.xlsx" object
+//    name, not one with a "mobile/" prefix) — so no company member, admin/PM or not, can read it by
+//    calling storage directly; only this function's service-role client can, and it only hands out a
+//    short-lived signed URL after the admin/PM check above passes. Mirrors the already-shipped
+//    files.tsx pattern on mobile: a signed URL downloaded with expo-file-system, then shared with
+//    expo-sharing, instead of bytes in the function response.
 //  - Queue (service-role token, body { mode: 'queue' }; pg_cron every minute): rebuilds stored
 //    files for projects that changed, once a project has been quiet for 30 s or dirty for 90 s,
 //    so rapid taps produce one rebuild.
@@ -18,6 +28,7 @@ const BUCKET = 'project-exports';
 const QUIET_MS = 30 * 1000;
 const MAX_WAIT_MS = 90 * 1000;
 const MAX_PER_RUN = 20;
+const MOBILE_SIGNED_URL_TTL_SECONDS = 90;
 
 async function buildBytes(admin: SupabaseClient, projectId: string) {
   const data = await loadExportData(admin, projectId);
@@ -27,9 +38,18 @@ async function buildBytes(admin: SupabaseClient, projectId: string) {
   return { data, bytes, counts, sheets };
 }
 
-async function store(admin: SupabaseClient, projectId: string, bytes: Uint8Array) {
-  const { error } = await admin.storage.from(BUCKET).upload(`${projectId}.xlsx`, bytes, { contentType: XLSX_MIME, upsert: true });
+async function store(admin: SupabaseClient, path: string, bytes: Uint8Array) {
+  const { error } = await admin.storage.from(BUCKET).upload(path, bytes, { contentType: XLSX_MIME, upsert: true });
   if (error) throw error;
+}
+
+// Mobile-only gate: admin or project_manager, within the company membership can_read_project_export
+// already verified. Does not change can_read_project_export or the storage RLS policy — those stay
+// company-member-wide, matching today's web behavior.
+async function isAdminOrPM(admin: SupabaseClient, userId: string): Promise<boolean> {
+  const { data, error } = await admin.from('company_members').select('role').eq('user_id', userId).maybeSingle();
+  if (error || !data) return false;
+  return data.role === 'admin' || data.role === 'project_manager';
 }
 
 async function runQueue(admin: SupabaseClient) {
@@ -69,7 +89,7 @@ async function runQueue(admin: SupabaseClient) {
         summary.removed++;
         continue;
       }
-      await store(admin, r.project_id, built.bytes);
+      await store(admin, `${r.project_id}.xlsx`, built.bytes);
       summary.built++;
     } catch (e: any) {
       const message = String(e?.message ?? e).slice(0, 500);
@@ -82,7 +102,7 @@ async function runQueue(admin: SupabaseClient) {
   return summary;
 }
 
-async function runDownload(admin: SupabaseClient, token: string, projectId: unknown) {
+async function runDownload(admin: SupabaseClient, token: string, projectId: unknown, format: unknown) {
   const { data: userData, error: userError } = await admin.auth.getUser(token);
   if (userError || !userData?.user) return json({ success: false, error: 'Not authenticated' }, 401);
   if (typeof projectId !== 'string' || !UUID_RE.test(projectId)) return json({ success: false, error: 'projectId is required' }, 400);
@@ -94,9 +114,24 @@ async function runDownload(admin: SupabaseClient, token: string, projectId: unkn
   if (rpcError) throw rpcError;
   if (allowed !== true) return json({ success: false, error: 'Only members of the company that owns this project can download its spreadsheet' }, 403);
 
+  if (format === 'signedUrl') {
+    if (!(await isAdminOrPM(admin, userData.user.id))) {
+      return json({ success: false, error: 'Only admins and project managers can download the spreadsheet from the mobile app' }, 403);
+    }
+    const built = await buildBytes(admin, projectId);
+    if (!built) return json({ success: false, error: 'Project not found' }, 404);
+    const mobilePath = `mobile/${projectId}.xlsx`;
+    await store(admin, mobilePath, built.bytes);
+    const { data: signed, error: signError } = await admin.storage.from(BUCKET).createSignedUrl(mobilePath, MOBILE_SIGNED_URL_TTL_SECONDS);
+    if (signError) throw signError;
+    const { data: settings } = await admin.from('project_report_settings').select('timezone').eq('project_id', projectId).maybeSingle();
+    const filename = exportFileName(built.data.project.name, localDateOf(new Date(), settings?.timezone ?? 'America/Chicago'));
+    return json({ success: true, url: signed.signedUrl, filename });
+  }
+
   const built = await buildBytes(admin, projectId);
   if (!built) return json({ success: false, error: 'Project not found' }, 404);
-  try { await store(admin, projectId, built.bytes); } catch (e: any) { console.error(`Project ${projectId}: storing export failed: ${e?.message ?? e}`); }
+  try { await store(admin, `${projectId}.xlsx`, built.bytes); } catch (e: any) { console.error(`Project ${projectId}: storing export failed: ${e?.message ?? e}`); }
 
   const { data: settings } = await admin.from('project_report_settings').select('timezone').eq('project_id', projectId).maybeSingle();
   const filename = exportFileName(built.data.project.name, localDateOf(new Date(), settings?.timezone ?? 'America/Chicago'));
@@ -122,7 +157,7 @@ Deno.serve(async (req) => {
       if ((body as any)?.mode === 'queue') return json(await runQueue(admin));
       return json({ success: false, error: 'Unknown mode' }, 400);
     }
-    return await runDownload(admin, token, (body as any)?.projectId);
+    return await runDownload(admin, token, (body as any)?.projectId, (body as any)?.format);
   } catch (e: any) {
     console.error('build-project-export error:', e?.message ?? e);
     return json({ success: false, error: e?.message ?? 'Unexpected error' }, 500);
