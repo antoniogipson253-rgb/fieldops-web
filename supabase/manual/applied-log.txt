@@ -1,0 +1,23 @@
+Phase 1 security migrations — application log
+================================================
+
+Method used for every application below: `supabase db query --linked -f <single migration file> -o json`,
+run once per file, never `supabase db push` (which would apply every pending file in the
+migrations folder at once). Each file was applied individually, in the order specified.
+
+2026-11-23 — 20261123090001_revoke_update_company_plan_limits.sql
+  Applied via: supabase db query --linked -f supabase/migrations/20261123090001_revoke_update_company_plan_limits.sql
+  Result: executed with no error, 0 rows (expected for a REVOKE statement).
+  Verified via has_function_privilege('<role>', 'public.update_company_plan_limits(uuid,text)', 'EXECUTE'):
+    anon: false | authenticated: false | service_role: true
+  No Stripe test event was sent (per instruction, deferred until after 090002).
+
+2026-11-23 — 20261123090002_revoke_cleanup_old_notifications.sql
+  Applied via: supabase db query --linked -f supabase/migrations/20261123090002_revoke_cleanup_old_notifications.sql
+  Result: executed with no error, 0 rows (expected for a REVOKE statement).
+  Verified via has_function_privilege('<role>', 'public.cleanup_old_notifications()', 'EXECUTE'):
+    anon: false | authenticated: false | service_role: true
+
+Both verifications passed. No rollback was needed for either file.
+
+STOPPED HERE per instruction. 20261123090003 and later have NOT been applied.
