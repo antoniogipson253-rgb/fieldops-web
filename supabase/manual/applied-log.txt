@@ -80,3 +80,18 @@ STOPPED HERE per instruction. 20261123090005 (storage/project_files) and
   Deployed via: supabase functions deploy send-invite --project-ref
   dpmlpqenanyoxfupferv --use-api. Version 12 -> 13, verify_jwt stayed true.
   Tested live: no token -> 401 (UNAUTHORIZED_NO_AUTH_HEADER), no real email sent.
+
+2026-11-24 — security/phase1-fixes merged into main (fast-forward, 2d1c3c6 ->
+4797c9d), pushed. Vercel production deploy confirmed Ready.
+
+2026-11-24 — 20261123090005_storage_project_files_policy.sql
+  Backup taken first: C:\Users\anton\fieldops-backups\2026-11-23\
+  storage-policies-backup-2026-11-24.sql (all storage.objects policy
+  definitions + bucket public flags, read-only export, no file contents).
+  Applied via: supabase db query --linked -f supabase/migrations/20261123090005_storage_project_files_policy.sql
+  Result: executed with no error (replaces "Authenticated users can view
+  project files" on storage.objects).
+  Verified via pg_policies: the new USING clause joins project_files on
+  storage_key and requires is_project_member(), confirmed present in the
+  catalog exactly as written.
+  20261123090006 (project-photos) was NOT applied, per instruction.
