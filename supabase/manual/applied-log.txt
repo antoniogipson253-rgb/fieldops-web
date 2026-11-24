@@ -94,4 +94,14 @@ STOPPED HERE per instruction. 20261123090005 (storage/project_files) and
   Verified via pg_policies: the new USING clause joins project_files on
   storage_key and requires is_project_member(), confirmed present in the
   catalog exactly as written.
-  20261123090006 (project-photos) was NOT applied, per instruction.
+  20261123090006 (project-photos) was NOT applied yet at this point, per instruction.
+
+2026-11-24 — 20261123090006_storage_project_photos_policy.sql (on branch security/phase2-sweep, off main)
+  Applied via: supabase db query --linked -f supabase/migrations/20261123090006_storage_project_photos_policy.sql
+  Result: executed with no error (creates project_photo_project_id() helper
+    and the new "Authenticated users can view project photos" SELECT policy --
+    this bucket had no authenticated-path policy at all before).
+  Verified via pg_policies and pg_proc: both present in the catalog exactly as
+  written.
+  20261124090007 (payroll_send_log) was NOT applied, per instruction -- waits
+  until after tomorrow's noon SnT payroll run.
