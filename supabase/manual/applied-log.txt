@@ -73,3 +73,10 @@ STOPPED HERE per instruction. 20261123090005 (storage/project_files) and
   the same day, version 11 -> 12, verify_jwt stayed true, before 090009 was
   applied. Tested live: no token -> 401; anon key -> 401; both confirmed to
   create nothing.
+
+2026-11-24 — send-invite sender fix (no new migration; function-only change)
+  Changed the Resend `from` address to noreply@mail.fieldopspro.org (matching
+  send-payroll-report's verified sender), display name kept as "FieldOps".
+  Deployed via: supabase functions deploy send-invite --project-ref
+  dpmlpqenanyoxfupferv --use-api. Version 12 -> 13, verify_jwt stayed true.
+  Tested live: no token -> 401 (UNAUTHORIZED_NO_AUTH_HEADER), no real email sent.
