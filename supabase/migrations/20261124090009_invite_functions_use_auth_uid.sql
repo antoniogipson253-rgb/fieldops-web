@@ -109,6 +109,14 @@ BEGIN
     RETURN json_build_object('status', 'error', 'message', 'Only company admins can invite members');
   END IF;
 
+  -- company_members.role has no CHECK constraint or enum at all (confirmed:
+  -- only profiles_role_check and project_members_role_check exist, on different
+  -- tables). Without this, any string in p_role silently skips every quota
+  -- check below, since none of the IF blocks match an unrecognized role.
+  IF p_role NOT IN ('admin', 'project_manager', 'worker') THEN
+    RETURN json_build_object('status', 'error', 'message', 'Invalid role');
+  END IF;
+
   SELECT plan, max_members, max_admins, max_project_managers, max_workers
   INTO v_plan, v_max_members, v_max_admins, v_max_pms, v_max_workers
   FROM public.companies WHERE id = v_company_id;
