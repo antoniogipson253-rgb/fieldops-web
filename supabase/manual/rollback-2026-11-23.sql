@@ -51,6 +51,16 @@ DROP POLICY IF EXISTS "Authenticated users can view project photos" ON storage.o
 DROP FUNCTION IF EXISTS public.project_photo_project_id(text);
 
 -- ============================================================
+-- 090008: revoke anon/public EXECUTE on invite/lookup functions
+-- Pre-fix state: EXECUTE granted to anon, authenticated, and public on all five.
+-- ============================================================
+GRANT EXECUTE ON FUNCTION public.invite_to_company(text, uuid) TO anon, public;
+GRANT EXECUTE ON FUNCTION public.invite_to_company(text, uuid, text) TO anon, public;
+GRANT EXECUTE ON FUNCTION public.invite_user_to_project(uuid, text, uuid) TO anon, public;
+GRANT EXECUTE ON FUNCTION public.get_company_members(uuid) TO anon, public;
+GRANT EXECUTE ON FUNCTION public.get_user_id_by_email(text) TO anon, public;
+
+-- ============================================================
 -- NOT INCLUDED in this batch -- task-photos' "Public can view photos" policy.
 -- Deferred: that bucket is shared by six unrelated features (task_photos,
 -- incident-report.tsx, budget.tsx expense receipts, change-orders.tsx,

@@ -46,3 +46,19 @@ Both verifications passed. No rollback was needed for either file.
 
 STOPPED HERE per instruction. 20261123090005 (storage/project_files) and
 20261123090006 (storage/project_photos) have NOT been applied.
+
+2026-11-24 — 20261124090008_revoke_anon_invite_lookup_functions.sql
+  Applied via: supabase db query --linked -f supabase/migrations/20261124090008_revoke_anon_invite_lookup_functions.sql
+  Result: executed with no error (5 REVOKE statements, no function bodies changed).
+  Verified via has_function_privilege for all 5: anon=false, public=false,
+    authenticated=true, service_role=true (unchanged for authenticated/service_role).
+  Verified live via REST: POST .../rpc/get_user_id_by_email with the anon key and a
+    nonsense email (test-should-not-exist-xyz@example.invalid, no real data touched)
+    returned 401 { "code": "42501", "message": "permission denied for function
+    get_user_id_by_email" } -- rejected as expected.
+  handle_new_user intentionally left untouched (trigger function, not meaningfully
+  RPC-callable; trigger firing isn't gated by the firing role's EXECUTE grant).
+  Rollback added to supabase/manual/rollback-2026-11-23.sql.
+
+20261124090009 (rewrite invite_to_company/invite_user_to_project to use auth.uid()
+and require admin/membership) is PREPARED but NOT APPLIED, per instruction.
