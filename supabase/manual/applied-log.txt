@@ -117,3 +117,22 @@ STOPPED HERE per instruction. 20261123090005 (storage/project_files) and
   stayed true.
   Tested live: no token -> 401; anon key -> 401 {"error":"Not authorized"}.
   Did NOT call with the service-role key (would send real emails).
+
+2026-11-24 — 20261124090010_scope_company_lookup_functions.sql
+  Applied via: supabase db query --linked -f supabase/migrations/20261124090010_scope_company_lookup_functions.sql
+  Result: executed with no error (2 CREATE OR REPLACE FUNCTION statements).
+  get_company_members now requires auth.uid() be a member of p_company_id
+  (inline EXISTS, not the unpinned-search_path is_company_member helper) --
+  returns an empty set otherwise. get_user_id_by_email now requires
+  auth.uid() be an admin or project_manager in some company -- returns NULL
+  otherwise. Verified via catalog: both reference auth.uid(); anon=false,
+  authenticated=true, service_role=true, unchanged.
+
+2026-11-24 — 20261124090011_scope_task_project_override_functions.sql
+  Applied via: supabase db query --linked -f supabase/migrations/20261124090011_scope_task_project_override_functions.sql
+  Result: executed with no error (2 CREATE OR REPLACE FUNCTION statements).
+  complete_task_with_override and convert_project_to_checklist now also
+  require the target task's/project's company (resolved via created_by ->
+  profiles.company_id) to match the caller's own company, in addition to
+  the existing admin/PM role check. Verified via catalog: both contain the
+  new "does not belong to your company" check; grants unchanged.
