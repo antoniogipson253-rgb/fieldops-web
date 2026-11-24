@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { bearer, isServiceRole } from '../_shared/common.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -90,16 +91,47 @@ serve(async (req) => {
   }
 
   try {
-    const { recipientEmail, companyId, weekOffset = -1 } = await req.json()
+    const token = bearer(req)
+    if (!token) {
+      return new Response(JSON.stringify({ success: false, error: 'Not authenticated' }), {
+        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
 
-    console.log('Starting payroll report for company:', companyId)
-    console.log('Recipient:', recipientEmail)
-    console.log('RESEND_API_KEY exists:', !!Deno.env.get('RESEND_API_KEY'))
+    const { recipientEmail, companyId, weekOffset = -1 } = await req.json()
 
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
+
+    if (!isServiceRole(token)) {
+      // Real caller (e.g. PayrollPage.tsx) -- verify identity, and require that
+      // they're actually an admin of the company they're asking about.
+      // automated-payroll-check's own calls skip this entirely -- it already
+      // picked companyId/recipientEmail from payroll_settings itself, not from
+      // any external input, and authenticates with the service-role key.
+      const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token)
+      if (authError || !user) {
+        return new Response(JSON.stringify({ success: false, error: 'Not authenticated' }), {
+          status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+      const { data: callerRoles } = await supabaseAdmin
+        .from('company_members')
+        .select('company_id, role')
+        .eq('user_id', user.id)
+      const isAdminHere = (callerRoles ?? []).some((r: any) => r.company_id === companyId && r.role === 'admin')
+      if (!isAdminHere) {
+        return new Response(JSON.stringify({ success: false, error: 'Forbidden' }), {
+          status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+    }
+
+    console.log('Starting payroll report for company:', companyId)
+    console.log('Recipient:', recipientEmail)
+    console.log('RESEND_API_KEY exists:', !!Deno.env.get('RESEND_API_KEY'))
 
     const { start, end } = getWeekRange(weekOffset)
     const weekLabel = `${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/Chicago' })} – ${end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'America/Chicago' })}`

@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { bearer, isServiceRole } from '../_shared/common.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -8,6 +9,14 @@ const corsHeaders = {
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+
+  // This function is only meant to be invoked by pg_cron (via net.http_post, with the
+  // service-role key) on a schedule. It is not a user-facing endpoint.
+  if (!isServiceRole(bearer(req))) {
+    return new Response(JSON.stringify({ error: 'Not authorized' }), {
+      status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
 
   try {
     const supabase = createClient(
