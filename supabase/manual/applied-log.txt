@@ -105,3 +105,15 @@ STOPPED HERE per instruction. 20261123090005 (storage/project_files) and
   written.
   20261124090007 (payroll_send_log) was NOT applied, per instruction -- waits
   until after tomorrow's noon SnT payroll run.
+
+2026-11-24 — send-missing-part-reminders: isServiceRole guard (function-only, no migration)
+  Before deploying: confirmed via cron.job that only the send-missing-part-
+  reminders cron job (every 15 min, as postgres) calls this -- grepped both
+  repos' app code, zero other callers. Confirmed the cron job's hardcoded
+  bearer token is byte-for-byte the real service_role key (compared in
+  memory, never printed, boolean result only: true).
+  Deployed via: supabase functions deploy send-missing-part-reminders
+  --project-ref dpmlpqenanyoxfupferv --use-api. Version 2 -> 3, verify_jwt
+  stayed true.
+  Tested live: no token -> 401; anon key -> 401 {"error":"Not authorized"}.
+  Did NOT call with the service-role key (would send real emails).
