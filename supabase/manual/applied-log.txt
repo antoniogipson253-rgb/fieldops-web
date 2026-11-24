@@ -169,3 +169,24 @@ STOPPED HERE per instruction. 20261123090005 (storage/project_files) and
   Local source untouched (supabase/functions/create-company-bucket/index.ts
   still in the repo) -- redeploy command recorded in
   supabase/manual/rollback-2026-11-23.sql.
+
+2026-11-24 — Empty-companies cleanup, Phase 1 (read-only + backup). NOTHING APPLIED.
+  Found 20 companies with zero projects/tasks/files/photos/messages/daily
+  reports/invitations; of those, 19 have literally zero rows in every
+  dependent table (company_members, profiles, invitations, announcements,
+  incidents, client_projects, time_entries, overtime_settings,
+  report_settings, clock_exemptions, payroll_settings) -- the 10 named
+  "Test", 8 of the 9 named "fieldops.pro1's Company", and "Smith
+  Construction". The 20th (fieldops.pro1's Company, id 5cb6aec2-...) has
+  one real, currently-active admin (signed in 2026-11-20, after the
+  company's 2026-06-18 creation, since moved to a different real company)
+  -- excluded as "possibly real" per the brief's own Group B criteria.
+  Backup taken: C:\Users\anton\fieldops-backups\2026-11-23\
+  empty-companies-delete-candidates-2026-11-24.json (19 companies rows,
+  verified row count matches; nothing else needed backing up since every
+  dependent table was already empty). Not committed, contents not printed.
+  Migration 20261124090013_delete_empty_test_companies.sql written on a
+  new branch, cleanup/empty-companies, off main -- contains the DELETE in
+  an explicit transaction with the 19 ids spelled out, and rollback INSERTs
+  reconstructed from the backup. NOT APPLIED -- waiting for the approved
+  final id list.
