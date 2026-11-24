@@ -232,7 +232,7 @@ serve(async (req) => {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${resendKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        from: 'FieldOps <fieldops.pro1@gmail.com>',
+        from: 'FieldOps <noreply@mail.fieldopspro.org>',
         to: normalizedEmail,
         subject,
         html: bodyHtml,
