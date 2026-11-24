@@ -20,4 +20,29 @@ migrations folder at once). Each file was applied individually, in the order spe
 
 Both verifications passed. No rollback was needed for either file.
 
-STOPPED HERE per instruction. 20261123090003 and later have NOT been applied.
+2026-11-24 — 20261123090003_company_members_delete_policy.sql
+  Applied via: supabase db query --linked -f supabase/migrations/20261123090003_company_members_delete_policy.sql
+  Result: executed with no error (creates is_company_admin() helper, replaces the
+    "Users can delete company members" DELETE policy).
+  Verified with 4 scenarios, each in its own BEGIN...ROLLBACK transaction with
+  set_config('request.jwt.claim.sub', ...) + SET LOCAL ROLE authenticated, confirmed
+  via a live row-count query afterward that nothing persisted:
+    SnT admin (ae8ac5e5-...) deletes another member:            ALLOWED (1 row)
+    SnT worker (6f350e53-...) deletes another member:            DENIED (0 rows)
+    SnT worker (c59c2261-...) deletes their own row:             ALLOWED (1 row)
+    Great Scott Plumbing admin (95de99f7-...) deletes an SnT admin: DENIED (0 rows)
+  No recursion error in any scenario. Matches the pre-apply dry-run results exactly.
+
+2026-11-24 — 20261123090004_user_presence_select_policy.sql
+  Applied via: supabase db query --linked -f supabase/migrations/20261123090004_user_presence_select_policy.sql
+  Result: executed with no error (replaces "Users can view presence" SELECT policy).
+  Table is empty in production, so verified by inserting one throwaway row inside a
+  BEGIN...ROLLBACK transaction, then checking visibility under two simulated users:
+    Project member (ae8ac5e5-..., member of project e1cbae9f-...):     1 row visible
+    User from an unrelated company (95de99f7-..., Great Scott Plumbing): 0 rows visible
+  Confirmed afterward with a live count(*) that the test row did not persist (0 rows).
+
+Both verifications passed. No rollback was needed for either file.
+
+STOPPED HERE per instruction. 20261123090005 (storage/project_files) and
+20261123090006 (storage/project_photos) have NOT been applied.
