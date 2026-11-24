@@ -73,3 +73,43 @@ GRANT EXECUTE ON FUNCTION public.get_user_id_by_email(text) TO anon, public;
 -- feature's access rule individually, not a single project-membership check
 -- that would silently mishandle avatars/incidents/receipts. No file for this
 -- is included in the current migration batch.
+
+-- ============================================================
+-- 090012: create_company(text) -- revoke anon/public + null guard
+-- Pre-fix state: EXECUTE granted to anon, authenticated, public; no null check.
+-- ============================================================
+GRANT EXECUTE ON FUNCTION public.create_company(text) TO anon, public;
+CREATE OR REPLACE FUNCTION public.create_company(company_name text)
+RETURNS json
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $function$
+declare
+  v_company_id uuid;
+begin
+  insert into public.companies (name, created_by)
+  values (company_name, auth.uid())
+  returning id into v_company_id;
+
+  insert into public.company_members (company_id, user_id, role)
+  values (v_company_id, auth.uid(), 'admin');
+
+  update public.profiles
+  set company_id = v_company_id
+  where id = auth.uid();
+
+  return json_build_object('id', v_company_id, 'name', company_name);
+end;
+$function$;
+-- (also captured verbatim in schema-snapshot.sql, line 1004)
+
+-- ============================================================
+-- create-company-bucket: undeployed 2026-11-24 (was version 2, verify_jwt=false)
+-- Not a migration -- an edge function deploy/delete action. `supabase
+-- functions delete` only removes the live deployment, never local source --
+-- supabase/functions/create-company-bucket/index.ts is still in the working
+-- tree, unchanged, same content first added at commit 57778b2.
+-- To redeploy exactly as it was:
+--   supabase functions deploy create-company-bucket --project-ref dpmlpqenanyoxfupferv --no-verify-jwt --use-api
+-- (--no-verify-jwt matches its prior verify_jwt=false; omit it and the
+-- deploy defaults to true, which would NOT match the original setting.)
