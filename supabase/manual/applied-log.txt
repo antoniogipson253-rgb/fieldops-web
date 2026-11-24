@@ -60,5 +60,16 @@ STOPPED HERE per instruction. 20261123090005 (storage/project_files) and
   RPC-callable; trigger firing isn't gated by the firing role's EXECUTE grant).
   Rollback added to supabase/manual/rollback-2026-11-23.sql.
 
-20261124090009 (rewrite invite_to_company/invite_user_to_project to use auth.uid()
-and require admin/membership) is PREPARED but NOT APPLIED, per instruction.
+2026-11-24 — 20261124090009_invite_functions_use_auth_uid.sql
+  Applied via: supabase db query --linked -f supabase/migrations/20261124090009_invite_functions_use_auth_uid.sql
+  Result: executed with no error (3 CREATE OR REPLACE FUNCTION statements).
+  Verified via catalog + has_function_privilege for all three functions:
+    all three now reference auth.uid() in their body (confirmed via
+    pg_get_functiondef ILIKE check); invite_to_company's 3-arg overload has
+    the new "Invalid role" validation, the other two correctly do not (they
+    take no p_role); anon=false, authenticated=true, service_role=true for
+    all three, unchanged from before this migration.
+  send-invite (supabase/functions/send-invite/index.ts) deployed separately
+  the same day, version 11 -> 12, verify_jwt stayed true, before 090009 was
+  applied. Tested live: no token -> 401; anon key -> 401; both confirmed to
+  create nothing.
