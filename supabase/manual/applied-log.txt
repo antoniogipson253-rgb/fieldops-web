@@ -210,3 +210,36 @@ STOPPED HERE per instruction. 20261123090005 (storage/project_files) and
   announcements could not have changed at all, since the re-verification
   guard itself confirmed zero rows in every one of them for all 19 ids
   immediately before the delete.
+
+2026-11-25 — build-project-export: web download restricted to admin/PM (branch web/export-admin-only)
+  Server (not a migration -- function-only change): the default/web branch
+  of runDownload only checked company membership (can_read_project_export,
+  any role) -- unlike the mobile signedUrl branch, which also requires
+  admin/PM. Added isAdminOrPmOfProjectCompany(), scoped to the project's
+  OWN company (project.created_by -> profiles.company_id ->
+  company_members), and gated the web branch on it. Deliberately did not
+  reuse the existing isAdminOrPM() helper used by the mobile branch -- that
+  helper checks admin/PM in ANY company, not specifically the project's
+  (a pre-existing gap, left unchanged per instruction; flagged separately).
+  UI: the "Download spreadsheet" button on ProjectDetailPage.tsx had no
+  role guard in its JSX at all. Now wrapped in {(isAdmin || isPM) && ...}.
+  Deployed via: supabase functions deploy build-project-export --project-ref
+  dpmlpqenanyoxfupferv --use-api. Version 2 -> 3, verify_jwt stayed true
+  (previous version/source: commit a63628a).
+  Tested live with fresh fixtures (2 companies, admin/PM/worker in A, admin
+  in B, 1 project each): admin-A -> 200, valid .xlsx (PK magic bytes,
+  verified); PM-A -> 200, same; worker-A -> 403 "Only admins and project
+  managers can download this project's spreadsheet"; admin-B -> 403 "Only
+  members of the company that owns this project..." (caught by the earlier
+  company-membership check, since admin-B isn't even a member of company
+  A); no token -> 401 (gateway); anon key as bearer -> 401 "Not
+  authenticated". Mobile signedUrl path re-tested for admin-A: unchanged,
+  200 with a signed URL + filename. No email was sent at any point (this
+  function has no Resend call anywhere in its source).
+  Cleanup: removed the 2 storage.objects the tests wrote
+  (project-exports/<projA>.xlsx and project-exports/mobile/<projA>.xlsx)
+  plus all fixture rows and the 4 test auth users. Before/after counts
+  identical (companies 4/4, company_members 9/9, profiles 13/13, projects
+  6/6, auth.users 13/13, storage.objects(project-exports) 8/8); residue
+  scan all zero.
+  Tests passed, so the deploy stands -- no rollback needed.

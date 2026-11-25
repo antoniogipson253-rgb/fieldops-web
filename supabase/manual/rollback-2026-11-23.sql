@@ -113,3 +113,16 @@ $function$;
 --   supabase functions deploy create-company-bucket --project-ref dpmlpqenanyoxfupferv --no-verify-jwt --use-api
 -- (--no-verify-jwt matches its prior verify_jwt=false; omit it and the
 -- deploy defaults to true, which would NOT match the original setting.)
+
+-- ============================================================
+-- build-project-export: web admin/PM gate (2026-11-25, branch web/export-admin-only)
+-- Not a migration -- an edge function deploy + a web UI change. Pre-change
+-- source is commit a63628a (supabase/functions/build-project-export/index.ts
+-- and src/pages/ProjectDetailPage.tsx).
+-- To roll back the function (verify_jwt stays true either way):
+--   git show a63628a:supabase/functions/build-project-export/index.ts > supabase/functions/build-project-export/index.ts
+--   supabase functions deploy build-project-export --project-ref dpmlpqenanyoxfupferv --use-api
+-- To roll back the web UI (not deployed as of this entry -- only restore if
+-- it was later deployed and needs reverting):
+--   git show a63628a:src/pages/ProjectDetailPage.tsx > src/pages/ProjectDetailPage.tsx
+-- (then rebuild/redeploy the web app through its normal path, e.g. a push to main)
