@@ -369,3 +369,39 @@ STOPPED HERE per instruction. 20261123090005 (storage/project_files) and
   C:\Users\anton\fieldops-backups\2026-11-23\
   daily-reports-table-backup-2026-11-25.json, verified row_count=1, not
   committed, contents not printed. Nothing dropped or altered.
+
+2026-11-25 — 20261125090016_drop_daily_reports_table.sql APPLIED (branch cleanup/drop-daily-reports)
+  Pre-checks (all passed):
+    a. Backup file daily-reports-table-backup-2026-11-25.json confirmed
+       present, row_count=1, matches live count (1).
+    b. Re-checked dependencies via pg_depend plus an exact-substring scan
+       (not LIKE, which has an underscore-wildcard false positive: the
+       pattern "daily_reports" also matches "daily-reports" with a hyphen,
+       which is why the cron job named "send-daily-reports" appeared in an
+       earlier loose scan -- confirmed via exact substring matching that it
+       does not actually reference this table). Zero foreign keys from
+       other tables; nothing beyond the table's own 4 policies, its own
+       trigger, and notify_daily_report_submitted() depends on it anywhere.
+    c. Full definition snapshot (table, constraints, indexes, 4 policies,
+       trigger, function body) exported to
+       C:\Users\anton\fieldops-backups\2026-11-23\
+       daily-reports-schema-snapshot-2026-11-25.sql. Not committed.
+  Applied via: supabase db query --linked -f supabase/migrations/20261125090016_drop_daily_reports_table.sql
+  -- one transaction: dropped the trigger, the trigger function, all 4
+  policies, then the table (no CASCADE). No error.
+  Verified via catalog: to_regclass('public.daily_reports') IS NULL,
+  to_regproc('public.notify_daily_report_submitted') IS NULL, no row in
+  pg_trigger named on_daily_report_submitted -- all three confirmed gone.
+  Verified the other 6 send-push-notification triggers (comments, change
+  orders, 2 RFI triggers, client messages, task assignments) are still
+  present and enabled -- unaffected.
+  Verified (read-only, did not call) that send-daily-reports is still
+  deployed (version 5, verify_jwt=true, unchanged) with its cron job still
+  active, and its source has zero references to daily_reports anywhere
+  (exact substring check) -- confirms it never depended on the dropped
+  table.
+  The 1 data row (project "MDA") is real customer content -- deliberately
+  NOT embedded in this repo or in rollback-2026-11-23.sql. A ready-to-run
+  restore INSERT was written only to
+  C:\Users\anton\fieldops-backups\2026-11-23\
+  daily-reports-row-restore-2026-11-25.sql (not committed).

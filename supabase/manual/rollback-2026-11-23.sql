@@ -157,3 +157,74 @@ DROP FUNCTION IF EXISTS public.sync_profile_email();
 -- see C:\Users\anton\fieldops-backups\2026-11-23\
 -- profiles-email-backfill-changed-ids-2026-11-25.json for the exact ids, then:
 --   UPDATE public.profiles SET email = NULL WHERE id IN (<ids from that file>);
+
+-- ============================================================
+-- 090016: drop daily_reports table (schema recreation only)
+-- Pre-fix state: table existed with 4 policies, 1 trigger, 1 function, 1 row.
+-- The 1 data row is NOT included here -- it is real customer content. See
+-- C:\Users\anton\fieldops-backups\2026-11-23\daily-reports-row-restore-2026-11-25.sql
+-- (not committed) to restore it, AFTER running the schema recreation below.
+-- ============================================================
+CREATE TABLE public.daily_reports (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  project_id uuid,
+  created_by uuid,
+  report_date date NOT NULL DEFAULT CURRENT_DATE,
+  notes text,
+  weather text,
+  created_at timestamp with time zone DEFAULT now(),
+  issues text,
+  crew_log text,
+  photo_keys text[],
+  updated_at timestamp with time zone DEFAULT now(),
+  materials text,
+  visible_to_client boolean NOT NULL DEFAULT false
+);
+ALTER TABLE public.daily_reports ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.daily_reports ADD CONSTRAINT daily_reports_pkey PRIMARY KEY (id);
+ALTER TABLE public.daily_reports ADD CONSTRAINT daily_reports_created_by_fkey FOREIGN KEY (created_by) REFERENCES profiles(id) ON DELETE SET NULL;
+ALTER TABLE public.daily_reports ADD CONSTRAINT daily_reports_project_id_fkey FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE;
+ALTER TABLE public.daily_reports ADD CONSTRAINT daily_reports_unique_per_day UNIQUE (project_id, created_by, report_date);
+
+CREATE POLICY "Clients can view daily reports for their projects" ON public.daily_reports
+  FOR SELECT USING (EXISTS (SELECT 1 FROM client_projects WHERE client_projects.project_id = daily_reports.project_id AND client_projects.client_id = auth.uid()));
+CREATE POLICY "Users can create daily reports in their projects" ON public.daily_reports
+  FOR INSERT WITH CHECK ((auth.uid() = created_by) AND EXISTS (SELECT 1 FROM project_members WHERE project_members.project_id = daily_reports.project_id AND project_members.user_id = auth.uid()));
+CREATE POLICY "Users can update their own daily reports" ON public.daily_reports
+  FOR UPDATE USING (created_by = auth.uid());
+CREATE POLICY "Users can view daily reports in their projects" ON public.daily_reports
+  FOR SELECT USING (is_project_member(project_id, auth.uid()));
+
+CREATE OR REPLACE FUNCTION public.notify_daily_report_submitted()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER AS $function$
+DECLARE
+  v_author_name text;
+  v_project_name text;
+  v_recipient record;
+BEGIN
+  IF TG_OP = 'UPDATE' THEN RETURN NEW; END IF;
+  SELECT full_name INTO v_author_name FROM public.profiles WHERE id = NEW.created_by;
+  v_author_name := COALESCE(v_author_name, 'A team member');
+  SELECT name INTO v_project_name FROM public.projects WHERE id = NEW.project_id;
+  FOR v_recipient IN
+    SELECT DISTINCT p.id AS user_id FROM public.profiles p
+    WHERE p.role = 'admin' AND p.company_id = (SELECT company_id FROM public.profiles WHERE id = NEW.created_by) AND p.id != NEW.created_by
+    UNION
+    SELECT DISTINCT pm.user_id FROM public.project_members pm JOIN public.profiles p ON p.id = pm.user_id
+    WHERE pm.project_id = NEW.project_id AND p.role IN ('project_manager', 'pm') AND pm.user_id != NEW.created_by
+  LOOP
+    INSERT INTO public.notifications (user_id, title, body, project_id, read)
+    VALUES (v_recipient.user_id, 'Daily Report Submitted', v_author_name || ' submitted a daily report for ' || COALESCE(v_project_name, 'a project'), NEW.project_id, false);
+    PERFORM net.http_post(
+      url := (SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'supabase_url') || '/functions/v1/send-push-notification',
+      body := json_build_object('userId', v_recipient.user_id, 'title', 'Daily Report Submitted', 'body', v_author_name || ' submitted a daily report for ' || COALESCE(v_project_name, 'a project'), 'data', json_build_object('projectId', NEW.project_id))::jsonb,
+      headers := jsonb_build_object('Content-Type', 'application/json', 'Authorization', 'Bearer ' || (SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'service_role_key'))
+    );
+  END LOOP;
+  RETURN NEW;
+END;
+$function$;
+
+CREATE TRIGGER on_daily_report_submitted
+  AFTER INSERT OR UPDATE ON public.daily_reports
+  FOR EACH ROW EXECUTE FUNCTION notify_daily_report_submitted();
