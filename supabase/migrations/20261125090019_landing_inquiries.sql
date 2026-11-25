@@ -23,6 +23,11 @@ ALTER TABLE public.landing_inquiries ENABLE ROW LEVEL SECURITY;
 -- No policies: anon/authenticated get zero access under RLS by default.
 -- Only the service-role client (submit-contact edge function) can read/write.
 
+-- Belt-and-suspenders alongside RLS: anon/authenticated get no table privileges at all, not
+-- just "no rows via RLS." (service_role and postgres are unaffected -- REVOKE never touches
+-- roles it isn't told to.)
+REVOKE ALL ON public.landing_inquiries FROM anon, authenticated;
+
 CREATE INDEX landing_inquiries_ip_hash_created_at_idx
   ON public.landing_inquiries (ip_hash, created_at);
 

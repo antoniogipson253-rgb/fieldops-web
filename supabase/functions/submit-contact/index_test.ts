@@ -2,7 +2,7 @@
 // (subject-injection guard), and HTML escaping in the email body. No network, no deploy,
 // no real emails -- `handle` itself (which touches Supabase/Resend) is not exercised here.
 import { assert, assertEquals, assertStringIncludes } from 'https://deno.land/std@0.168.0/testing/asserts.ts';
-import { buildEmailHtml, buildSubject, stripNewlines, validateContact } from './index.ts';
+import { buildEmailHtml, buildSubject, corsHeadersFor, isLikelyAutomated, stripNewlines, validateContact } from './index.ts';
 
 const base = { kind: 'call', name: 'Jane Smith', email: 'jane@example.com', company: '', phone: '', message: '' };
 
@@ -121,4 +121,61 @@ Deno.test('buildEmailHtml: includes optional fields when present', () => {
   const html = buildEmailHtml(payload);
   assertStringIncludes(html, 'Acme Co');
   assertStringIncludes(html, '555-1234');
+});
+
+Deno.test('corsHeadersFor: allows the production domains', () => {
+  assertEquals(corsHeadersFor('https://www.fieldopspro.org')['Access-Control-Allow-Origin'], 'https://www.fieldopspro.org');
+  assertEquals(corsHeadersFor('https://fieldopspro.org')['Access-Control-Allow-Origin'], 'https://fieldopspro.org');
+});
+
+Deno.test('corsHeadersFor: allows a netlify.app subdomain', () => {
+  assertEquals(corsHeadersFor('https://fieldops-preview-123.netlify.app')['Access-Control-Allow-Origin'], 'https://fieldops-preview-123.netlify.app');
+});
+
+Deno.test('corsHeadersFor: rejects an unrelated origin', () => {
+  assertEquals(corsHeadersFor('https://evil.example.com')['Access-Control-Allow-Origin'], 'null');
+});
+
+Deno.test('corsHeadersFor: rejects a domain that merely contains netlify.app as a substring', () => {
+  // e.g. "https://notnetlify.app.evil.com" must NOT pass just because the string appears.
+  assertEquals(corsHeadersFor('https://fieldopspro.org.evil.com')['Access-Control-Allow-Origin'], 'null');
+});
+
+Deno.test('corsHeadersFor: handles a null origin (no header sent)', () => {
+  assertEquals(corsHeadersFor(null)['Access-Control-Allow-Origin'], 'null');
+});
+
+Deno.test('corsHeadersFor: never throws on a malformed Origin header, and never allows it', () => {
+  for (const bad of ['not-a-url', 'http://', '://missing-scheme', '   ', 'javascript:alert(1)']) {
+    // The assertion is twofold: this call must not throw (reaching the next line proves that),
+    // and a value that fails URL parsing must never be treated as an allowed origin.
+    const headers = corsHeadersFor(bad);
+    assertEquals(headers['Access-Control-Allow-Origin'], 'null');
+  }
+});
+
+Deno.test('isLikelyAutomated: true when loadedAt is missing', () => {
+  assert(isLikelyAutomated(undefined));
+});
+
+Deno.test('isLikelyAutomated: true when loadedAt is not a number', () => {
+  assert(isLikelyAutomated('12345'));
+  assert(isLikelyAutomated(null));
+  assert(isLikelyAutomated({}));
+});
+
+Deno.test('isLikelyAutomated: true when loadedAt is NaN or Infinity', () => {
+  assert(isLikelyAutomated(NaN));
+  assert(isLikelyAutomated(Infinity));
+});
+
+Deno.test('isLikelyAutomated: true when the form was filled in too fast', () => {
+  const now = 1_000_000;
+  assert(isLikelyAutomated(now - 2999, now));
+});
+
+Deno.test('isLikelyAutomated: false when the form was filled in with enough time', () => {
+  const now = 1_000_000;
+  assert(!isLikelyAutomated(now - 3000, now));
+  assert(!isLikelyAutomated(now - 10_000, now));
 });
