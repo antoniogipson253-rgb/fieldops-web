@@ -144,3 +144,16 @@ DROP FUNCTION IF EXISTS public.is_admin_or_pm_of_project(uuid);
 -- To roll back (verify_jwt stays true either way):
 --   git show e1e3a92:supabase/functions/build-project-export/index.ts > supabase/functions/build-project-export/index.ts
 --   supabase functions deploy build-project-export --project-ref dpmlpqenanyoxfupferv --use-api
+
+-- ============================================================
+-- 090015: profiles.email sync trigger
+-- Pre-fix state: no trigger existed; profiles.email was set once at signup
+-- and never updated again. 2 profiles had NULL email before the backfill.
+-- ============================================================
+DROP TRIGGER IF EXISTS on_auth_user_email_updated ON auth.users;
+DROP FUNCTION IF EXISTS public.sync_profile_email();
+-- The backfill is not reversible by dropping the trigger/function (it was a
+-- one-time UPDATE). To restore the 2 profiles that were NULL before this ran,
+-- see C:\Users\anton\fieldops-backups\2026-11-23\
+-- profiles-email-backfill-changed-ids-2026-11-25.json for the exact ids, then:
+--   UPDATE public.profiles SET email = NULL WHERE id IN (<ids from that file>);

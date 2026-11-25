@@ -309,3 +309,32 @@ STOPPED HERE per instruction. 20261123090005 (storage/project_files) and
   identical (companies 4/4, company_members 9/9, profiles 13/13, projects
   6/6, auth.users 13/13, storage.objects(project-exports) 8/8); residue
   scan all zero.
+
+2026-11-25 — 20261125090015_profiles_email_sync_trigger.sql (branch housekeeping/db-conventions)
+  Read-first: profiles.email is set once, at signup, by handle_new_user();
+  nothing else ever updates it. Mobile's profile.tsx has a real email-change
+  flow (auth.updateUser({email})) that never syncs profiles.email. Readers:
+  web DailyReportSettings.tsx, edge functions send-daily-reports,
+  send-incident-notification, send-missing-part-reminders. No RLS policy or
+  other SQL function depends on it. Before state: 13 profiles, 11 match,
+  2 NULL, 0 mismatched (no case-only mismatches either).
+  Saved the 2 affected profile ids (not emails) to
+  C:\Users\anton\fieldops-backups\2026-11-23\
+  profiles-email-backfill-changed-ids-2026-11-25.json before applying.
+  Applied via: supabase db query --linked -f supabase/migrations/20261125090015_profiles_email_sync_trigger.sql
+  -- creates sync_profile_email() (SECURITY DEFINER, pinned search_path),
+  an AFTER UPDATE OF email trigger on auth.users, and backfills the 2 NULL
+  rows. Only ever writes profiles.email.
+  After state: 13 profiles, 13 match, 0 NULL, 0 mismatched. Trigger
+  confirmed enabled via pg_trigger.
+  Tested live with a fresh fixture: normal signup (company_name metadata)
+  created the profile correctly (full_name, company_id set, email matched
+  the signup address); changing the auth email via admin.updateUserById
+  correctly updated profiles.email to the new address.
+  Cleanup: caught the SAME companies.created_by ON DELETE SET NULL
+  ordering issue as the earlier export-followups cleanup (deleted profiles
+  before companies in the same script) -- left 1 company behind, caught by
+  the residue scan, fixed by deleting it directly by id. Re-verified:
+  before/after counts identical (companies 4/4, company_members 9/9,
+  profiles 13/13, auth.users 13/13); residue scan all zero on the second
+  pass.
