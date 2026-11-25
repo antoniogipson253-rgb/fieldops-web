@@ -243,3 +243,43 @@ STOPPED HERE per instruction. 20261123090005 (storage/project_files) and
   6/6, auth.users 13/13, storage.objects(project-exports) 8/8); residue
   scan all zero.
   Tests passed, so the deploy stands -- no rollback needed.
+
+2026-11-25 — 20261125090014_restrict_project_exports_storage_read.sql (branch security/export-followups)
+  Read-first: the only policy on storage.objects for 'project-exports' was
+  "Company members can read their project exports" (SELECT, roles
+  {authenticated}), USING can_read_project_export(...) -- company
+  membership, ANY role. No INSERT/UPDATE/DELETE policy exists on this
+  bucket at all (writes only via the service-role client). Confirmed
+  nothing depends on member-wide reads through this policy: web gets
+  bytes directly in the HTTP response (never reads storage itself);
+  mobile reads via a service-role-signed URL under mobile/ (already
+  excluded by the path regex); send-project-export builds and attaches
+  its own bytes, never touching storage.objects; grep across both repos
+  found zero other references to this bucket.
+  Applied: created is_admin_or_pm_of_project(p_project_id), scoped to the
+  project's own company (same join as isAdminOrPmOfProjectCompany in the
+  edge function). Replaced the policy with "Admins and PMs can read their
+  project exports", same USING shape, now requiring that role. (First
+  apply omitted "TO authenticated" by my own mistake, defaulting to
+  public -- caught immediately via the catalog check and fixed with
+  ALTER POLICY ... TO authenticated before any test ran; the migration
+  file reflects the corrected version.)
+  Verified via pg_policies: new policy present, roles={authenticated},
+  qual uses is_admin_or_pm_of_project.
+  Tested live: built a real stored file via build-project-export as
+  admin-A, then read storage.objects directly (bypassing the edge
+  function) as each persona. admin-A and PM-A: 200, real bytes. worker-A,
+  admin-B, and the anon key: all "404 Object not found" (Supabase
+  Storage's standard RLS-denial response -- a filtered-out row simply
+  isn't found, it doesn't distinguish "forbidden" from "doesn't exist").
+  No auth at all: rejected before reaching the object lookup.
+  Cleanup: removed the 1 storage object the test wrote, all fixture rows,
+  and the 4 test auth users. Caught and fixed a real cleanup-ordering bug
+  myself: companies.created_by is ON DELETE SET NULL (via profiles), and
+  my first cleanup pass deleted profiles before companies in the same
+  script, so the companies DELETE's "WHERE created_by IN (...)" matched
+  nothing (already NULL) and left 2 companies behind. Caught via the
+  residue scan, fixed by deleting them directly by id, re-verified:
+  before/after counts identical (companies 4/4, company_members 9/9,
+  profiles 13/13, projects 6/6, auth.users 13/13, storage.objects
+  (project-exports) 8/8); residue scan all zero on the second pass.

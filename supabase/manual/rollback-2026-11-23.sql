@@ -126,3 +126,13 @@ $function$;
 -- it was later deployed and needs reverting):
 --   git show a63628a:src/pages/ProjectDetailPage.tsx > src/pages/ProjectDetailPage.tsx
 -- (then rebuild/redeploy the web app through its normal path, e.g. a push to main)
+
+-- ============================================================
+-- 090014: project-exports storage read policy -- admin/PM only
+-- Pre-fix state: "Company members can read their project exports" (any role).
+-- ============================================================
+DROP POLICY IF EXISTS "Admins and PMs can read their project exports" ON storage.objects;
+CREATE POLICY "Company members can read their project exports" ON storage.objects
+  FOR SELECT TO authenticated
+  USING ((bucket_id = 'project-exports'::text) AND can_read_project_export(project_export_object_project(name)));
+DROP FUNCTION IF EXISTS public.is_admin_or_pm_of_project(uuid);
