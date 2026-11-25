@@ -405,3 +405,75 @@ STOPPED HERE per instruction. 20261123090005 (storage/project_files) and
   restore INSERT was written only to
   C:\Users\anton\fieldops-backups\2026-11-23\
   daily-reports-row-restore-2026-11-25.sql (not committed).
+
+2026-11-25 — 20261125090017_tasks_completed_at.sql (feature/sheet-completed-and-missing, not merged)
+  Read-first: no existing completion timestamp on tasks; 7 live triggers on
+  public.tasks checked via pg_trigger/pg_get_triggerdef (apply_folder_checklist_to_new_task,
+  log_task_activity, mark_export_dirty, on_task_status_change, on_task_updated,
+  tasks_checklist_completion_gate, tasks_is_punch_list_immutable) -- none touch
+  completion state, and the new BEFORE UPDATE OF status trigger doesn't interfere:
+  if tasks_checklist_completion_gate aborts the statement, any value this trigger
+  set is rolled back with it.
+  Applied via: supabase db query --linked -f supabase/migrations/20261125090017_tasks_completed_at.sql
+  Result: executed with no error (one transaction: ADD COLUMN, CREATE FUNCTION,
+  CREATE TRIGGER).
+  Verified via catalog: information_schema.columns shows tasks.completed_at as
+  date; pg_get_triggerdef shows tasks_set_completed_at BEFORE UPDATE OF status ...
+  WHEN (NEW.status IS DISTINCT FROM OLD.status).
+  completed_at is a DATE (not timestamptz) to match due_date's type/format
+  exactly, computed as (now() AT TIME ZONE 'America/Chicago')::date -- the same
+  fallback timezone already used elsewhere in this codebase (no company-level
+  timezone column exists).
+
+2026-11-25 — shared spreadsheet builder update (supabase/functions/_shared/project_export.ts),
+  deployed via build-project-export (v4 -> v5) and send-project-export (v2 -> v3),
+  both --use-api, verify_jwt unchanged (true for both). feature/sheet-completed-and-missing,
+  not merged.
+  Changes: new "Completed date" column (tasks.completed_at) immediately after
+  "Due date", same width/format ('mmm d, yyyy'); checklist cell logic changed
+  from Yes/blank to Yes (done) / "Missing" with light-yellow fill FFFFF2CC
+  (missing_part) / blank (part_received, not_started). No other styling changes;
+  no Assignee column added. Response shapes and status codes of both functions
+  unchanged.
+  send-project-export (the emailed copy) was NOT exercised -- confirmed via code
+  review only that it calls the same loadExportData()/buildWorkbook() from
+  _shared/project_export.ts as the two tested paths, so it gets the same output
+  with no function-specific formatting code of its own. No email was sent.
+  Test (fixtures: zz-test-admin-<ts>@example.invalid via admin API,
+  email_confirm:true; one company created via the company_name signup metadata
+  path, so the fixture user comes out as company admin automatically; one
+  checklist-type project; one folder; 4 tasks):
+    Task A (items: one set to done, one to part_received, both resolved) -> task
+      marked completed -> Completed date set (2026-11-25); checklist cells:
+      done item "Yes"/green, part_received item blank.
+    Task B (one item) -> missing_part -> cell "Missing", fill FFFFF2CC (yellow)
+      -- confirmed by a direct download snapshot while in that state. Then ->
+      part_received -> cell blank again.
+    Task C (one item done) -> task completed (Completed date set, 2026-11-25)
+      -> reopened (status back to open: Completed date cleared to NULL) ->
+      completed again (Completed date set again, still 2026-11-25 since this
+      ran same-day -- the overwrite mechanism was confirmed directly via SQL
+      read-back between each transition, not just via the exported file).
+    Task D: inserted directly with status='completed' (simulating a task
+      finished before this migration existed -- INSERT bypasses the BEFORE
+      UPDATE OF status trigger) -> Completed date stayed NULL, confirming no
+      backfill.
+    Downloaded through both paths with the fixture admin's own JWT: web path
+      (POST build-project-export {projectId}, raw bytes) and mobile path (POST
+      build-project-export {projectId, format:'signedUrl'}, then fetched the
+      signed URL). Parsed both .xlsx files with exceljs and compared every zz-
+      Task row's cell values and fills: identical between the two paths. (Raw
+      bytes differed, as expected -- each call runs buildWorkbook() fresh with
+      its own embedded workbook.created timestamp; this is not a content
+      difference.)
+    Column order confirmed: Task Name, Description, Status, Due Date, Completed
+      date, then the 4 distinct checklist-item columns in first-seen order.
+    Cleanup: checklist_items (4), tasks (4), folders (1), projects (1),
+      company_members (1), companies (1), profiles (1), and the 1 auth user --
+      all deleted. Before/after counts: 4/0, 4/0, 1/0, 1/0, 1/0, 1/0, 1/0.
+      Storage: removed project-exports/<project_id>.xlsx and
+      project-exports/mobile/<project_id>.xlsx; a listing of both paths after
+      removal came back empty. Residue scan (ilike 'zz-test-%' on
+      companies.name and projects.name, 'ZZ Test%' on profiles.full_name): 0/0/0.
+  Not yet merged to main -- holding on feature/sheet-completed-and-missing
+  pending explicit approval.

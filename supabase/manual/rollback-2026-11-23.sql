@@ -228,3 +228,10 @@ $function$;
 CREATE TRIGGER on_daily_report_submitted
   AFTER INSERT OR UPDATE ON public.daily_reports
   FOR EACH ROW EXECUTE FUNCTION notify_daily_report_submitted();
+
+-- ============================================================
+-- 090017: tasks.completed_at + tasks_set_completed_at trigger
+-- ============================================================
+DROP TRIGGER IF EXISTS tasks_set_completed_at ON public.tasks;
+DROP FUNCTION IF EXISTS public.set_task_completed_at();
+ALTER TABLE public.tasks DROP COLUMN IF EXISTS completed_at;

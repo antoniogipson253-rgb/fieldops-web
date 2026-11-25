@@ -5,14 +5,18 @@
 //  - One worksheet per folder (folder order = created_at, as in the app), plus one "Punch List"
 //    worksheet for folderless punch items. Sheet names: max 31 chars, no : \ / ? * [ ],
 //    unique (case-insensitive, as Excel requires), deduped with " (2)", " (3)", ...
-//  - Columns: Task Name, Description, Status, Due Date, then one column per checklist item.
+//  - Columns: Task Name, Description, Status, Due Date, Completed date, then one column per
+//    checklist item.
 //  - Status text: Open / In Progress / Done (app values open / in_progress / completed).
-//  - Due Date: blank, or a real date shown as "Nov 21, 2026".
-//  - Checklist cell: "Yes" when the item is Done or Part Received; blank otherwise
-//    (Not Started, Missing Part).
+//  - Due Date / Completed date: blank, or a real date shown as "Nov 21, 2026" (same column
+//    type and format; Completed date is tasks.completed_at, set by the tasks_set_completed_at
+//    trigger -- blank while not Done, cleared on reopen, latest finish date if finished again).
+//    Tasks finished before that trigger existed keep a blank Completed date -- never backfilled.
+//  - Checklist cell: "Yes" when the item is Done; "Missing" (yellow fill) when Missing Part;
+//    blank when Part Received or Not Started.
 //  - Checklist columns only in Tasks + Checklist projects. Folder with a saved folder checklist:
 //    its items in its order. Otherwise one column per distinct item name across the folder's
-//    tasks, in first-seen order. Punch List: first four columns only.
+//    tasks, in first-seen order. Punch List: the base columns only, no checklist columns.
 //  - Archived tasks: included only if completed (shown as Done). Archived and not completed: left
 //    out. Deleted tasks simply are not in the data.
 //  - Task rows within a sheet: oldest first (created_at), then by name.
@@ -22,7 +26,8 @@ export type ExportFolder = { id: string; name: string; created_at: string; check
 export type ExportFolderItem = { id: string; folder_id: string; item_text: string; sort_order: number };
 export type ExportTask = {
   id: string; folder_id: string | null; title: string; description: string | null; status: string;
-  due_date: string | null; archived: boolean | null; created_at: string; is_punch_list: boolean | null;
+  due_date: string | null; completed_at: string | null; archived: boolean | null; created_at: string;
+  is_punch_list: boolean | null;
 };
 export type ExportItem = { task_id: string; item_text: string; status: string; sort_order: number; folder_item_id: string | null };
 export type ExportData = {
@@ -32,9 +37,9 @@ export type ExportCounts = { open: number; in_progress: number; done: number; to
 
 export const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 export const STATUS_LABEL: Record<string, string> = { open: 'Open', in_progress: 'In Progress', completed: 'Done' };
-const TICKED = new Set(['done', 'part_received']);
 const GREEN = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2EFDA' } };
-const BASE_HEADERS = ['Task Name', 'Description', 'Status', 'Due Date'];
+const YELLOW = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF2CC' } };
+const BASE_HEADERS = ['Task Name', 'Description', 'Status', 'Due Date', 'Completed date'];
 const PUNCH_SHEET = 'Punch List';
 
 export function includeTask(t: ExportTask): boolean {
@@ -93,11 +98,17 @@ export function checklistColumns(data: ExportData, folder: ExportFolder, sheetTa
   return cols;
 }
 
-function isTicked(items: ExportItem[], col: Column): boolean {
+// 'Yes' for done, 'Missing' for missing_part, blank (null) for part_received / not_started /
+// no matching item at all.
+function checklistCellValue(items: ExportItem[], col: Column): 'Yes' | 'Missing' | null {
   const match = col.folderItemId
     ? items.find((i) => i.folder_item_id === col.folderItemId) ?? items.find((i) => i.item_text === col.header)
-    : items.find((i) => i.item_text === col.header && TICKED.has(i.status)) ?? items.find((i) => i.item_text === col.header);
-  return !!match && TICKED.has(match.status);
+    : items.find((i) => i.item_text === col.header && (i.status === 'done' || i.status === 'missing_part')) ??
+      items.find((i) => i.item_text === col.header);
+  if (!match) return null;
+  if (match.status === 'done') return 'Yes';
+  if (match.status === 'missing_part') return 'Missing';
+  return null;
 }
 
 // deno-lint-ignore no-explicit-any
@@ -138,6 +149,7 @@ export function buildWorkbook(ExcelJS: any, data: ExportData): { workbook: any; 
       { header: BASE_HEADERS[1], width: 60 },
       { header: BASE_HEADERS[2], width: 13 },
       { header: BASE_HEADERS[3], width: 14 },
+      { header: BASE_HEADERS[4], width: 14 },
       ...cols.map((c) => ({ header: c.header, width: Math.min(24, Math.max(8, c.header.length + 2)) })),
     ];
     const header = ws.getRow(1);
@@ -147,18 +159,25 @@ export function buildWorkbook(ExcelJS: any, data: ExportData): { workbook: any; 
     for (const t of tasks) {
       const items = itemsByTask.get(t.id) ?? [];
       const status = STATUS_LABEL[t.status] ?? t.status;
+      const cellValues = cols.map((c) => checklistCellValue(items, c));
       const row = ws.addRow([
         t.title,
         t.description || null,          // blank cell, not an empty string
         status,
         excelDate(t.due_date),
-        ...cols.map((c) => (isTicked(items, c) ? 'Yes' : null)),
+        excelDate(t.completed_at),
+        ...cellValues,
       ]);
       row.getCell(2).alignment = { wrapText: true, vertical: 'top' };
       row.getCell(1).alignment = { vertical: 'top', wrapText: true };
       row.getCell(4).numFmt = 'mmm d, yyyy';
+      row.getCell(5).numFmt = 'mmm d, yyyy';
       if (status === 'Done') row.getCell(3).fill = GREEN;
-      cols.forEach((_, i) => { const cell = row.getCell(5 + i); if (cell.value === 'Yes') cell.fill = GREEN; });
+      cellValues.forEach((v, i) => {
+        const cell = row.getCell(6 + i);
+        if (v === 'Yes') cell.fill = GREEN;
+        else if (v === 'Missing') cell.fill = YELLOW;
+      });
     }
     return ws;
   };
@@ -200,7 +219,7 @@ export async function loadExportData(admin: any, projectId: string): Promise<Exp
 
   const [folders, tasks] = await Promise.all([
     pageAll<ExportFolder>((a, b) => admin.from('folders').select('id, name, created_at, checklist_managed').eq('project_id', projectId).order('created_at').order('id').range(a, b)),
-    pageAll<ExportTask>((a, b) => admin.from('tasks').select('id, folder_id, title, description, status, due_date, archived, created_at, is_punch_list').eq('project_id', projectId).order('created_at').order('id').range(a, b)),
+    pageAll<ExportTask>((a, b) => admin.from('tasks').select('id, folder_id, title, description, status, due_date, completed_at, archived, created_at, is_punch_list').eq('project_id', projectId).order('created_at').order('id').range(a, b)),
   ]);
   const folderIds = folders.map((f) => f.id);
   const [folderItems, items] = await Promise.all([
