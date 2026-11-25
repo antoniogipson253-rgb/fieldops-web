@@ -7,9 +7,12 @@ import { localDateOf } from '../_shared/schedule.ts';
 // build-project-export (verify_jwt = true)
 //
 //  - Download (user JWT, body { projectId }): caller must be a member of the company that owns
-//    the project (can_read_project_export, checked AS the caller). Builds a fresh file from the
-//    app's data, stores it as project-exports/<project_id>.xlsx and returns it.
-//    Returned as application/octet-stream so supabase-js functions.invoke hands back a Blob.
+//    the project (can_read_project_export, checked AS the caller), AND must be admin or
+//    project_manager specifically within that same company (isAdminOrPmOfProjectCompany).
+//    Builds a fresh file from the app's data, stores it as project-exports/<project_id>.xlsx and
+//    returns it. Returned as application/octet-stream so supabase-js functions.invoke hands back
+//    a Blob. Storage RLS on that path stays company-member-wide (any role) -- unchanged; this gate
+//    only covers the "trigger a fresh build via this function" path.
 //  - Mobile download (user JWT, body { projectId, format: 'signedUrl' }): same company-isolation
 //    check, PLUS caller must be admin or project_manager (checked here only — can_read_project_export
 //    and the storage RLS policy both stay company-member-wide for web, unchanged). Stores the fresh
@@ -50,6 +53,24 @@ async function isAdminOrPM(admin: SupabaseClient, userId: string): Promise<boole
   const { data, error } = await admin.from('company_members').select('role').eq('user_id', userId).maybeSingle();
   if (error || !data) return false;
   return data.role === 'admin' || data.role === 'project_manager';
+}
+
+// Web gate: admin or project_manager specifically within the company that owns THIS project
+// (resolved the same way can_read_project_export does: project -> created_by -> profiles.company_id).
+// Unlike isAdminOrPM above, this is scoped to the project's own company, not "admin/PM of any
+// company" -- intentionally not reusing isAdminOrPM here.
+async function isAdminOrPmOfProjectCompany(admin: SupabaseClient, userId: string, projectId: string): Promise<boolean> {
+  const { data: project } = await admin.from('projects').select('created_by').eq('id', projectId).maybeSingle();
+  if (!project?.created_by) return false;
+  const { data: creatorProfile } = await admin.from('profiles').select('company_id').eq('id', project.created_by).maybeSingle();
+  if (!creatorProfile?.company_id) return false;
+  const { data: membership } = await admin
+    .from('company_members')
+    .select('role')
+    .eq('company_id', creatorProfile.company_id)
+    .eq('user_id', userId)
+    .maybeSingle();
+  return membership?.role === 'admin' || membership?.role === 'project_manager';
 }
 
 async function runQueue(admin: SupabaseClient) {
@@ -127,6 +148,10 @@ async function runDownload(admin: SupabaseClient, token: string, projectId: unkn
     const { data: settings } = await admin.from('project_report_settings').select('timezone').eq('project_id', projectId).maybeSingle();
     const filename = exportFileName(built.data.project.name, localDateOf(new Date(), settings?.timezone ?? 'America/Chicago'));
     return json({ success: true, url: signed.signedUrl, filename });
+  }
+
+  if (!(await isAdminOrPmOfProjectCompany(admin, userData.user.id, projectId))) {
+    return json({ success: false, error: 'Only admins and project managers can download this project\'s spreadsheet' }, 403);
   }
 
   const built = await buildBytes(admin, projectId);

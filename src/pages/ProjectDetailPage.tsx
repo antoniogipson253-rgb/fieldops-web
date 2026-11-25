@@ -1036,9 +1036,11 @@ async function handleSaveTask() {
             <button onClick={() => navigate(`/projects/${id}/chat`)} {...btn('secondary')}>Chat</button>
             {canManageChecklist && <button onClick={() => navigate(`/projects/${id}/daily-reports`)} {...btn('secondary')}>Daily Reports</button>}
             {canEdit && <button onClick={() => { resetImport(); setShowImport(true); }} {...btn('secondary')}><Icon name="plus" /> Add Tasks</button>}
-            <button onClick={handleDownloadSpreadsheet} disabled={downloadingSheet} title="Builds a fresh spreadsheet of this project's tasks" {...btn('primary', { cursor: downloadingSheet ? 'wait' : 'pointer' })}>
-              {downloadingSheet ? 'Building spreadsheet...' : 'Download spreadsheet'}
-            </button>
+            {(isAdmin || isPM) && (
+              <button onClick={handleDownloadSpreadsheet} disabled={downloadingSheet} title="Builds a fresh spreadsheet of this project's tasks" {...btn('primary', { cursor: downloadingSheet ? 'wait' : 'pointer' })}>
+                {downloadingSheet ? 'Building spreadsheet...' : 'Download spreadsheet'}
+              </button>
+            )}
             {downloadSheetError && (
               <span role="alert" style={{ alignSelf: 'center', fontSize: 13, color: colors.red, maxWidth: 320 }}>{downloadSheetError}</span>
             )}
