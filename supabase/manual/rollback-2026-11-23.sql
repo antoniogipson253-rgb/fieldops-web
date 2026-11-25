@@ -136,3 +136,11 @@ CREATE POLICY "Company members can read their project exports" ON storage.object
   FOR SELECT TO authenticated
   USING ((bucket_id = 'project-exports'::text) AND can_read_project_export(project_export_object_project(name)));
 DROP FUNCTION IF EXISTS public.is_admin_or_pm_of_project(uuid);
+
+-- ============================================================
+-- build-project-export: mobile path role check rescoped (2026-11-25)
+-- Not a migration -- function-only change. Pre-change source: commit e1e3a92
+-- (supabase/functions/build-project-export/index.ts).
+-- To roll back (verify_jwt stays true either way):
+--   git show e1e3a92:supabase/functions/build-project-export/index.ts > supabase/functions/build-project-export/index.ts
+--   supabase functions deploy build-project-export --project-ref dpmlpqenanyoxfupferv --use-api
