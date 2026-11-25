@@ -30,6 +30,55 @@
 
 BEGIN;
 
+-- Re-verify immediately before the DELETE, inside this same transaction, that
+-- every dependent table is still empty for all 19 ids. If anything now has a
+-- dependent row, abort and delete nothing.
+DO $$
+DECLARE
+  v_count bigint;
+BEGIN
+  WITH candidate_ids(id) AS (
+    VALUES
+      ('05c8e65d-1929-4575-973d-261e77f26fc3'::uuid),
+      ('714594c2-4d9f-4560-a0cc-d0feea5410be'::uuid),
+      ('2f42cf75-e763-4eea-aed5-d94f666227ac'::uuid),
+      ('4e212d4a-31de-4ae3-9b5b-e7dd65c35127'::uuid),
+      ('1bfd5e2c-7b99-489a-b377-cd2c8d921c6e'::uuid),
+      ('93ebbb54-9f73-483a-9c1b-089a9be5db4f'::uuid),
+      ('1b3cbed6-a5e8-4cc7-a189-1e7bdc965ab9'::uuid),
+      ('b9976472-e9d4-49bf-abc3-5679aec11b74'::uuid),
+      ('f1fb72e0-638c-4be1-9481-58bcb37bbca7'::uuid),
+      ('5db69265-2411-459b-8c9f-b20d11d1ee4b'::uuid),
+      ('037495c2-9a9c-4c3a-bbc1-d75eac1a2e9b'::uuid),
+      ('3a519cd1-458e-462b-97e1-fc565c73ee5f'::uuid),
+      ('28602afd-251b-4c87-a11b-fbea4e2210d0'::uuid),
+      ('dfdc2b80-bbcb-4274-a7f2-2267de9db37e'::uuid),
+      ('5e10701d-d881-458d-b6cd-65bb5e2dda06'::uuid),
+      ('38d5dd4c-db9a-42f6-bfd5-e14dcc4a22b8'::uuid),
+      ('11a6f7ed-7be7-4781-80d1-9ecb033cf60f'::uuid),
+      ('8d57d6ff-6d10-4b85-8308-a78f8c3658e4'::uuid),
+      ('7f9e7434-bdd1-480d-8d3f-2761ee8eb7b9'::uuid)
+  )
+  SELECT
+    (SELECT count(*) FROM public.projects proj JOIN public.profiles cp ON cp.id = proj.created_by WHERE cp.company_id IN (SELECT id FROM candidate_ids)) +
+    (SELECT count(*) FROM public.company_members WHERE company_id IN (SELECT id FROM candidate_ids)) +
+    (SELECT count(*) FROM public.profiles WHERE company_id IN (SELECT id FROM candidate_ids)) +
+    (SELECT count(*) FROM public.invitations WHERE company_id IN (SELECT id FROM candidate_ids)) +
+    (SELECT count(*) FROM public.time_entries WHERE company_id IN (SELECT id FROM candidate_ids)) +
+    (SELECT count(*) FROM public.overtime_settings WHERE company_id IN (SELECT id FROM candidate_ids)) +
+    (SELECT count(*) FROM public.report_settings WHERE company_id IN (SELECT id FROM candidate_ids)) +
+    (SELECT count(*) FROM public.clock_exemptions WHERE company_id IN (SELECT id FROM candidate_ids)) +
+    (SELECT count(*) FROM public.payroll_settings WHERE company_id IN (SELECT id FROM candidate_ids)) +
+    (SELECT count(*) FROM public.incidents WHERE company_id IN (SELECT id FROM candidate_ids)) +
+    (SELECT count(*) FROM public.client_projects WHERE company_id IN (SELECT id FROM candidate_ids)) +
+    (SELECT count(*) FROM public.announcements WHERE company_id IN (SELECT id FROM candidate_ids))
+  INTO v_count;
+
+  IF v_count > 0 THEN
+    RAISE EXCEPTION 'Re-verification found % dependent row(s) across the 19 candidate companies -- aborting, deleting nothing', v_count;
+  END IF;
+END $$;
+
 DELETE FROM public.companies
 WHERE id IN (
   '05c8e65d-1929-4575-973d-261e77f26fc3',

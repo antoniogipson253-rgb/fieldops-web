@@ -190,3 +190,23 @@ STOPPED HERE per instruction. 20261123090005 (storage/project_files) and
   an explicit transaction with the 19 ids spelled out, and rollback INSERTs
   reconstructed from the backup. NOT APPLIED -- waiting for the approved
   final id list.
+
+2026-11-24 — 20261124090013_delete_empty_test_companies.sql APPLIED (on branch cleanup/empty-companies)
+  Before applying, added an inline re-verification guard (a DO block, inside
+  the same transaction, immediately before the DELETE) that re-checks all 19
+  ids against all 12 dependent tables and RAISEs (aborting, deleting nothing)
+  if any count is nonzero. Applied via: supabase db query --linked -f
+  supabase/migrations/20261124090013_delete_empty_test_companies.sql --
+  the guard passed (zero dependent rows found), the DELETE executed and
+  committed.
+  Verified: companies 23 -> 4. Remaining: SnT (065c6765), Test Ops
+  (a1ee017e), fieldops.pro1's Company (5cb6aec2), Great Scott Plumbing
+  (d9145793) -- exactly the expected 4. None of the 19 deleted ids exist
+  anymore (direct count check: 0).
+  Every dependent table's row count unaffected: company_members 9,
+  profiles 13, invitations 7, projects 6 (all match the pre-delete
+  baseline exactly); time_entries, overtime_settings, report_settings,
+  clock_exemptions, payroll_settings, incidents, client_projects, and
+  announcements could not have changed at all, since the re-verification
+  guard itself confirmed zero rows in every one of them for all 19 ids
+  immediately before the delete.
