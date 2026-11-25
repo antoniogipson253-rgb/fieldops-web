@@ -14,8 +14,8 @@ import { localDateOf } from '../_shared/schedule.ts';
 //    a Blob. Storage RLS on that path stays company-member-wide (any role) -- unchanged; this gate
 //    only covers the "trigger a fresh build via this function" path.
 //  - Mobile download (user JWT, body { projectId, format: 'signedUrl' }): same company-isolation
-//    check, PLUS caller must be admin or project_manager (checked here only — can_read_project_export
-//    and the storage RLS policy both stay company-member-wide for web, unchanged). Stores the fresh
+//    check, PLUS caller must be admin or project_manager specifically within that same company
+//    (isAdminOrPmOfProjectCompany -- same check the web branch uses). Stores the fresh
 //    file under a separate mobile/<project_id>.xlsx path that the existing storage policy's
 //    project_export_object_project() regex never matches (it only matches a bare "<uuid>.xlsx" object
 //    name, not one with a "mobile/" prefix) — so no company member, admin/PM or not, can read it by
@@ -46,19 +46,11 @@ async function store(admin: SupabaseClient, path: string, bytes: Uint8Array) {
   if (error) throw error;
 }
 
-// Mobile-only gate: admin or project_manager, within the company membership can_read_project_export
-// already verified. Does not change can_read_project_export or the storage RLS policy — those stay
-// company-member-wide, matching today's web behavior.
-async function isAdminOrPM(admin: SupabaseClient, userId: string): Promise<boolean> {
-  const { data, error } = await admin.from('company_members').select('role').eq('user_id', userId).maybeSingle();
-  if (error || !data) return false;
-  return data.role === 'admin' || data.role === 'project_manager';
-}
-
-// Web gate: admin or project_manager specifically within the company that owns THIS project
-// (resolved the same way can_read_project_export does: project -> created_by -> profiles.company_id).
-// Unlike isAdminOrPM above, this is scoped to the project's own company, not "admin/PM of any
-// company" -- intentionally not reusing isAdminOrPM here.
+// Shared gate for both the web and mobile branches: admin or project_manager specifically
+// within the company that owns THIS project (resolved the same way can_read_project_export
+// does: project -> created_by -> profiles.company_id). Previously the mobile branch used a
+// separate isAdminOrPM() that checked admin/PM in ANY company, not specifically this project's
+// -- that gap is now closed; both branches use this same, correctly-scoped check.
 async function isAdminOrPmOfProjectCompany(admin: SupabaseClient, userId: string, projectId: string): Promise<boolean> {
   const { data: project } = await admin.from('projects').select('created_by').eq('id', projectId).maybeSingle();
   if (!project?.created_by) return false;
@@ -136,7 +128,7 @@ async function runDownload(admin: SupabaseClient, token: string, projectId: unkn
   if (allowed !== true) return json({ success: false, error: 'Only members of the company that owns this project can download its spreadsheet' }, 403);
 
   if (format === 'signedUrl') {
-    if (!(await isAdminOrPM(admin, userData.user.id))) {
+    if (!(await isAdminOrPmOfProjectCompany(admin, userData.user.id, projectId))) {
       return json({ success: false, error: 'Only admins and project managers can download the spreadsheet from the mobile app' }, 403);
     }
     const built = await buildBytes(admin, projectId);
