@@ -338,3 +338,34 @@ STOPPED HERE per instruction. 20261123090005 (storage/project_files) and
   before/after counts identical (companies 4/4, company_members 9/9,
   profiles 13/13, auth.users 13/13); residue scan all zero on the second
   pass.
+
+2026-11-25 — daily_reports table: read-only investigation + backup (no changes made)
+  Table has 1 row (project "MDA", report_date 2026-06-13). 4 RLS policies
+  exist (client view, project-member view, insert, update by owner) --
+  functional, not dead, but unreachable in practice since nothing currently
+  calls into this table.
+  Zero references anywhere in current web code or edge functions. Mobile
+  repo's current code has zero references too (only a stale generated-types
+  entry). Git history: the manual daily-report screen and its hook
+  (app/(app)/project/[id]/report.tsx, hooks/useDailyReport.ts) were removed
+  in commit 71e40d5 ("remove manual daily report, add automatic report
+  settings"), replaced by the project_report_settings-based system
+  (send-daily-reports edge function). That screen both read (useTodayReport,
+  useDailyReports) and wrote (useCreateDailyReport) this table.
+  DB-level: one still-enabled trigger, on_daily_report_submitted, fires on
+  INSERT and calls net.http_post to send-push-notification (plus writes a
+  notifications row) -- fully live, would fire if anyone ever inserted a row
+  today, even though nothing currently does. The cron job named
+  "send-daily-reports" is the unrelated NEW system calling the edge function
+  of the same name -- confirmed it does not reference this table at all
+  (initial ILIKE match was a function-name substring false positive).
+  Released mobile versions: could not determine with confidence whether an
+  actual 1.5.5 TestFlight/App Store build was ever submitted with the old
+  feature still present -- the removal commit's parent shows app.json
+  version 1.0.0 jumping straight to 1.5.5 in one commit, so the git history
+  here does not cleanly track real build submissions. Current shipped
+  version (1.5.6) definitely does not reference this table.
+  Backup: exported the 1 row (all columns) to
+  C:\Users\anton\fieldops-backups\2026-11-23\
+  daily-reports-table-backup-2026-11-25.json, verified row_count=1, not
+  committed, contents not printed. Nothing dropped or altered.
