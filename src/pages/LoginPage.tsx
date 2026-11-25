@@ -72,7 +72,7 @@ export default function LoginPage() {
   return (
     <AuthShell
       title={isLogin ? 'Sign in' : 'Create your account'}
-      subtitle={isLogin ? 'Welcome back.' : '14 days free - no credit card required'}
+      subtitle={isLogin ? 'Welcome back.' : '30 days free - no credit card required'}
     >
       {!isLogin && (
         <AuthField id="signup-name" label="Full name" type="text" autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="John Smith" />

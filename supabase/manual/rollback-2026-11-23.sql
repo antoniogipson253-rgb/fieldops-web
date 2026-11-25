@@ -235,3 +235,126 @@ CREATE TRIGGER on_daily_report_submitted
 DROP TRIGGER IF EXISTS tasks_set_completed_at ON public.tasks;
 DROP FUNCTION IF EXISTS public.set_task_completed_at();
 ALTER TABLE public.tasks DROP COLUMN IF EXISTS completed_at;
+
+-- ============================================================
+-- 090018: handle_new_user() 30-day trial (not applied, prepared only)
+-- ============================================================
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $function$
+DECLARE
+  new_company_id UUID;
+  v_invite record;
+  v_meta_role text;
+  v_project_id uuid;
+  v_company_id uuid;
+BEGIN
+  v_meta_role := NEW.raw_user_meta_data->>'role';
+
+  SELECT company_id, role, project_id INTO v_invite
+  FROM public.invitations
+  WHERE email = lower(NEW.email)
+  AND status = 'pending'
+  ORDER BY created_at DESC
+  LIMIT 1;
+
+  IF v_meta_role = 'client' OR v_invite.role = 'client' THEN
+
+    INSERT INTO public.profiles (id, full_name, email, role, trial_start, trial_end, is_subscribed)
+    VALUES (
+      NEW.id,
+      COALESCE(NEW.raw_user_meta_data->>'full_name', 'Client'),
+      NEW.email,
+      'client',
+      NOW(),
+      NOW(),
+      true
+    )
+    ON CONFLICT (id) DO NOTHING;
+
+    v_project_id := COALESCE(
+      (NEW.raw_user_meta_data->>'project_id')::uuid,
+      v_invite.project_id
+    );
+    v_company_id := COALESCE(
+      (NEW.raw_user_meta_data->>'company_id')::uuid,
+      v_invite.company_id
+    );
+
+    IF v_project_id IS NOT NULL AND v_company_id IS NOT NULL THEN
+      INSERT INTO public.client_projects (client_id, project_id, company_id)
+      VALUES (NEW.id, v_project_id, v_company_id)
+      ON CONFLICT DO NOTHING;
+    END IF;
+
+  ELSIF v_invite.company_id IS NOT NULL THEN
+
+    INSERT INTO public.profiles (id, full_name, email, role, trial_start, trial_end, is_subscribed)
+    VALUES (
+      NEW.id,
+      COALESCE(NEW.raw_user_meta_data->>'full_name', 'New User'),
+      NEW.email,
+      v_invite.role,
+      NOW(),
+      NOW(),
+      true
+    )
+    ON CONFLICT (id) DO NOTHING;
+
+    UPDATE public.profiles
+    SET company_id = v_invite.company_id
+    WHERE id = NEW.id;
+
+    INSERT INTO public.company_members (company_id, user_id, role)
+    VALUES (v_invite.company_id, NEW.id, v_invite.role)
+    ON CONFLICT DO NOTHING;
+
+  ELSE
+
+    INSERT INTO public.profiles (id, full_name, email, role, trial_start, trial_end, is_subscribed)
+    VALUES (
+      NEW.id,
+      COALESCE(NEW.raw_user_meta_data->>'full_name', 'New User'),
+      NEW.email,
+      CASE WHEN NEW.raw_user_meta_data->>'company_name' IS NOT NULL THEN 'admin' ELSE 'worker' END,
+      NOW(),
+      NOW() + INTERVAL '14 days',
+      false
+    )
+    ON CONFLICT (id) DO NOTHING;
+
+    IF NEW.raw_user_meta_data->>'company_name' IS NOT NULL THEN
+      INSERT INTO public.companies (name, created_by, max_admins, max_project_managers, max_workers, max_members, plan, storage_used, storage_limit)
+      VALUES (
+        NEW.raw_user_meta_data->>'company_name',
+        NEW.id,
+        1, 4, 5, 10, 'trial', 0, 1099511627776
+      )
+      RETURNING id INTO new_company_id;
+
+      UPDATE public.profiles
+      SET company_id = new_company_id
+      WHERE id = NEW.id;
+
+      INSERT INTO public.company_members (company_id, user_id, role)
+      VALUES (new_company_id, NEW.id, 'admin')
+      ON CONFLICT DO NOTHING;
+    END IF;
+
+  END IF;
+
+  RETURN NEW;
+EXCEPTION
+  WHEN OTHERS THEN
+    RAISE NOTICE 'Error in handle_new_user: %', SQLERRM;
+    RETURN NEW;
+END;
+$function$;
+
+-- ============================================================
+-- 090019: landing_inquiries table (not applied, prepared only)
+-- ============================================================
+DROP INDEX IF EXISTS public.landing_inquiries_ip_hash_created_at_idx;
+DROP TABLE IF EXISTS public.landing_inquiries;

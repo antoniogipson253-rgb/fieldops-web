@@ -23,7 +23,7 @@ entrypoint = "./functions/create-checkout/index.ts"
 
 [functions.stripe-webhook]
 enabled = true
-verify_jwt = true
+verify_jwt = false
 import_map = "./functions/stripe-webhook/deno.json"
 # Uncomment to specify a custom file path to the entrypoint.
 # Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
@@ -62,3 +62,13 @@ entrypoint = "./functions/build-project-export/index.ts"
 enabled = true
 verify_jwt = true
 entrypoint = "./functions/send-project-export/index.ts"
+
+# Public, unauthenticated form endpoint for the landing page (no Supabase user session
+# involved at all) -- verify_jwt = false is correct here, unlike the warning above about
+# build-project-export/send-project-export's queue modes. PREPARED, NOT DEPLOYED; deploying
+# this later still needs an explicit --no-verify-jwt flag since the CLI does not reliably
+# pick this setting up from config.toml alone for every deploy path.
+[functions.submit-contact]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/submit-contact/index.ts"
