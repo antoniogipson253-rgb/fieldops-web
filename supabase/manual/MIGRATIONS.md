@@ -106,3 +106,15 @@ history against files — only manual verification, file by file. See the
 drift report in this project's working notes for a concrete example of this
 exercise (every local file was checked against live function/policy
 definitions, not against a history table that doesn't exist).
+
+A concrete example: `public.handle_new_user()` (the `AFTER INSERT ON
+auth.users` trigger function) was never tracked in any migration file before
+`20261125090018_trial_30_days.sql` — it existed only live, predating this
+project's migration-file convention. That file's `CREATE OR REPLACE` is the
+first time its body appears in `supabase/migrations/`. It also has **no
+`SET search_path` pin**, confirmed via `pg_get_functiondef` both before
+writing that migration and again immediately before applying it — this is a
+pre-existing gap, not something introduced by that migration, and it was
+deliberately left as-is rather than silently adding a pin while also changing
+the trial length. **Follow-up, not yet scheduled:** pin `search_path` on
+`handle_new_user()` as its own separate, deliberate change.

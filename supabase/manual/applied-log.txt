@@ -477,3 +477,63 @@ STOPPED HERE per instruction. 20261123090005 (storage/project_files) and
       companies.name and projects.name, 'ZZ Test%' on profiles.full_name): 0/0/0.
   Not yet merged to main -- holding on feature/sheet-completed-and-missing
   pending explicit approval.
+
+2026-11-26 -- 20261125090018_trial_30_days.sql (web/landing-prereqs)
+  Pre-check: re-fetched the LIVE public.handle_new_user() via
+  pg_get_functiondef and diffed it against this file's CREATE OR REPLACE.
+  Only real difference: NOW() + INTERVAL '14 days' -> '30 days' in the
+  new-company branch (the other two diff lines are formatting artifacts of
+  pg_get_functiondef's introspection output -- a leading-space indent and no
+  trailing semicolon -- not logic differences).
+  Snapshot before applying: 13 rows in public.profiles; md5 hash over
+  "id:trial_end" for every row (order by id) = 16bf5df9ac2360d23ff28e51e3d3fb9a.
+  Applied via: supabase db query --linked -f supabase/migrations/20261125090018_trial_30_days.sql
+  Result: executed with no error (single CREATE OR REPLACE FUNCTION statement
+  -- atomic in Postgres on its own; no explicit BEGIN/COMMIT needed or added).
+  Verified: pg_get_functiondef now contains '30 days' and no longer contains
+  '14 days'. Re-ran the exact same profiles snapshot query: 13 rows, same
+  hash 16bf5df9ac2360d23ff28e51e3d3fb9a -- byte-identical, confirming zero
+  existing trial_end values changed.
+  Note (see MIGRATIONS.md "Handling drift" for the full writeup):
+  handle_new_user() was not previously tracked in any migration file -- this
+  is the first time its body appears in supabase/migrations/. It has no
+  SET search_path pin, confirmed both before writing this file and again
+  just before applying it; this is a pre-existing gap, left alone
+  deliberately rather than bundling an unrelated change. Follow-up, not yet
+  scheduled: pin search_path on handle_new_user() separately.
+
+2026-11-26 -- 20261125090019_landing_inquiries.sql (web/landing-prereqs)
+  Applied via: supabase db query --linked -f supabase/migrations/20261125090019_landing_inquiries.sql
+  Result: executed with no error (one transaction: CREATE TABLE, ENABLE ROW
+  LEVEL SECURITY, REVOKE ALL FROM anon/authenticated, CREATE INDEX).
+  Verified via catalog: pg_class.relrowsecurity = true for
+  public.landing_inquiries. has_table_privilege for anon and authenticated,
+  all of SELECT/INSERT/UPDATE/DELETE: false in every case (8/8 checks).
+
+2026-11-26 -- submit-contact deployed (build-project-export/send-project-export
+  untouched this entry)
+  Deployed via: supabase functions deploy submit-contact --project-ref
+  dpmlpqenanyoxfupferv --use-api --no-verify-jwt
+  Result: version 1, verify_jwt confirmed false via functions list.
+  Tested live without sending any email or storing any row (row count
+  0 before, 0 after):
+    (a) OPTIONS from https://www.fieldopspro.org -> 200, Access-Control-Allow-Origin
+        echoes that exact origin, Allow-Headers/Allow-Methods present.
+    (b) OPTIONS from https://evil.example.com -> 200, Access-Control-Allow-Origin: null
+        (not allowed).
+    (c) POST with an empty body -> 400.
+    (d) POST with the honeypot field ("website") filled -> 200 (fake
+        success), landing_inquiries row count unchanged (0 -> 0).
+  No valid/real submission was sent (per instruction, left for a real test to
+  be submitted separately). No email sent, no row stored by any of these
+  tests.
+
+2026-11-26 -- web/landing-prereqs merged to main
+  See git log for the merge commit hash and diff scope (public/index.html,
+  public/manifest.json, public/favicon-32.png, public/apple-touch-icon.png,
+  public/icon-192.png, public/icon-512.png, src/pages/LoginPage.tsx,
+  supabase/config.toml, supabase/migrations/20261125090018_trial_30_days.sql,
+  supabase/migrations/20261125090019_landing_inquiries.sql,
+  supabase/functions/submit-contact/*, supabase/manual/*). Vercel was not
+  logged into -- checked only with the existing CLI session (vercel whoami)
+  per standing rule.
